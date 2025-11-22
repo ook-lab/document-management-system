@@ -1,0 +1,39 @@
+# Google APIs
+google-api-python-client==2.108.0
+google-auth==2.25.2
+google-auth-oauthlib==1.2.0
+google-auth-httplib2==0.2.0
+google-generativeai==0.3.0
+
+# Anthropic
+anthropic==0.39.0
+
+# OpenAI
+openai==1.54.0
+
+# Supabase
+supabase==2.3.0
+
+# ファイル処理
+pdfplumber==0.10.3
+python-docx==1.1.0
+openpyxl==3.1.2
+Pillow
+pytesseract==0.3.10  # オプション
+
+# ベクトル処理
+numpy==1.26.2
+pgvector==0.2.4
+
+# ユーティリティ
+python-dotenv==1.0.0
+loguru==0.7.2
+pydantic  # バージョン指定を削除
+pydantic-settings  # バージョン指定を削除
+
+# UI
+streamlit==1.29.0
+
+# テスト
+pytest==7.4.3
+pytest-asyncio==0.21.1
