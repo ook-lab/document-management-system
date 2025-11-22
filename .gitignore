@@ -4,3 +4,4 @@ logs/
 .env
 venv/
 logs/
+credentials/google_credentials.json
