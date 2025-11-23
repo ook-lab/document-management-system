@@ -1,19 +1,20 @@
 """
-マルチLLMクライアント (FINAL_UNIFIED_COMPLETE_v4.md, COMPLETE_IMPLEMENTATION_GUIDE_v3.mdに基づく)
+LLMクライアント（v3.0: マルチプロバイダ対応）
 Gemini / Claude / OpenAI を統一インターフェースで利用
 """
+
 import os
 from typing import Dict, List, Any, Optional, Union
 from pathlib import Path
 import json
+import mimetypes
 
 import google.generativeai as genai
-from anthropic import Anthropic
+from anthropic import Anthropic, RateLimitError
 from openai import OpenAI
-from loguru import logger
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, RetryError
 
-# 設定ファイルからインポート
-from config.model_tiers import AIProvider, get_model_config
+from config.model_tiers import AIProvider, ModelTier, get_model_config
 
 class LLMClient:
     """統合LLMクライアント"""
@@ -21,27 +22,25 @@ class LLMClient:
     def __init__(self):
         """環境変数からAPIキーを取得し、各プロバイダーを初期化"""
         
-        self.gemini_api_key = os.getenv("GOOGLE_API_KEY")
+        self.gemini_api_key = os.getenv("GOOGLE_AI_API_KEY")
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
         
-        # Gemini設定 (FINAL_UNIFIED_COMPLETE_v4.md, 5.1節)
+        # Gemini設定
         if self.gemini_api_key:
             genai.configure(api_key=self.gemini_api_key)
         
-        # Claude設定 (FINAL_UNIFIED_COMPLETE_v4.md, 5.1節)
+        # Claude設定
         if self.anthropic_api_key:
             self.anthropic_client = Anthropic(api_key=self.anthropic_api_key)
         else:
             self.anthropic_client = None
         
-        # OpenAI設定 (FINAL_UNIFIED_COMPLETE_v4.md, 5.1節)
+        # OpenAI設定
         if self.openai_api_key:
             self.openai_client = OpenAI(api_key=self.openai_api_key)
         else:
             self.openai_client = None
-        
-        #logger.info("LLMクライアント初期化完了")
     
     def call_model(
         self,
@@ -74,7 +73,12 @@ class LLMClient:
         elif provider == AIProvider.CLAUDE:
             if not self.anthropic_client:
                 return {"success": False, "error": "Claude API key is missing", "model": model_name}
-            return self._call_claude(model_name, prompt, config, **kwargs)
+            try:
+                return self._call_claude(model_name, prompt, config, **kwargs)
+            except RetryError as e:
+                # リトライが全て失敗した場合
+                original_error = e.last_attempt.exception()
+                return {"success": False, "error": str(original_error), "model": model_name, "provider": "claude"}
         
         elif provider == AIProvider.OPENAI:
             if not self.openai_client:
@@ -92,38 +96,77 @@ class LLMClient:
         config: Dict,
         **kwargs
     ) -> Dict[str, Any]:
-        """Gemini API呼び出し (FINAL_UNIFIED_COMPLETE_v4.md, 4.2節を参考に実装)"""
+        """Gemini API呼び出し"""
+        uploaded_file = None
         try:
             model = genai.GenerativeModel(model_name)
             
             content_parts = [prompt]
             
             if file_path and file_path.exists():
-                uploaded_file = genai.upload_file(file_path)
+                # MIMEタイプを自動判定
+                mime_type, _ = mimetypes.guess_type(str(file_path))
+                if not mime_type:
+                    mime_type = "application/pdf"  # デフォルト
+                
+                # ファイルをアップロード
+                uploaded_file = genai.upload_file(path=str(file_path), mime_type=mime_type)
                 content_parts.append(uploaded_file)
             
             response = model.generate_content(
                 content_parts,
                 generation_config=genai.GenerationConfig(
-                    max_output_tokens=config.get("max_tokens", 1000),
+                    max_output_tokens=config.get("max_tokens", 2000),
                     temperature=config.get("temperature", 0.1)
                 )
             )
             
-            # アップロードしたファイルを削除（コスト節約とクリーンアップのため）
-            if file_path and file_path.exists():
-                 genai.delete_file(uploaded_file.name)
+            # レスポンスの検証
+            if not response.candidates:
+                if uploaded_file:
+                    genai.delete_file(name=uploaded_file.name)
+                return {"success": False, "error": "Gemini returned no candidates", "model": model_name, "provider": "gemini"}
+            
+            candidate = response.candidates[0]
+            
+            # finish_reason をチェック
+            if candidate.finish_reason != 1:  # 1 = STOP (正常終了)
+                if uploaded_file:
+                    genai.delete_file(name=uploaded_file.name)
+                return {
+                    "success": False, 
+                    "error": f"Gemini finish_reason: {candidate.finish_reason}",
+                    "model": model_name,
+                    "provider": "gemini"
+                }
+            
+            # テキストを取得
+            text_content = candidate.content.parts[0].text if candidate.content.parts else ""
+            
+            # ファイルを削除
+            if uploaded_file:
+                genai.delete_file(name=uploaded_file.name)
             
             return {
                 "success": True,
-                "content": response.text,
+                "content": text_content,
                 "model": model_name,
                 "provider": "gemini"
             }
             
         except Exception as e:
+            if uploaded_file:
+                try:
+                    genai.delete_file(name=uploaded_file.name)
+                except:
+                    pass
             return {"success": False, "error": str(e), "model": model_name, "provider": "gemini"}
 
+    @retry(
+        retry=retry_if_exception_type(RateLimitError),
+        stop=stop_after_attempt(5),
+        wait=wait_exponential(multiplier=1, min=2, max=60)
+    )
     def _call_claude(
         self,
         model_name: str,
@@ -131,7 +174,7 @@ class LLMClient:
         config: Dict,
         **kwargs
     ) -> Dict[str, Any]:
-        """Claude API呼び出し (FINAL_UNIFIED_COMPLETE_v4.md, 4.3節を参考に実装)"""
+        """Claude API呼び出し"""
         try:
             response = self.anthropic_client.messages.create(
                 model=model_name,
@@ -141,14 +184,17 @@ class LLMClient:
                     {"role": "user", "content": prompt}
                 ]
             )
-            
+
             return {
                 "success": True,
                 "content": response.content[0].text,
                 "model": model_name,
                 "provider": "claude"
             }
-            
+
+        except RateLimitError:
+            # RateLimitErrorは再スローしてtenacityにリトライさせる
+            raise
         except Exception as e:
             return {"success": False, "error": str(e), "model": model_name, "provider": "claude"}
 
@@ -159,9 +205,8 @@ class LLMClient:
         config: Dict,
         **kwargs
     ) -> Dict[str, Any]:
-        """OpenAI API呼び出し (FINAL_UNIFIED_COMPLETE_v4.md, 5.1節を参考に実装)"""
+        """OpenAI API呼び出し"""
         try:
-            # max_tokensをmax_completion_tokensとして渡す（APIの互換性対応）
             max_tokens = config.get("max_tokens", 2048)
             
             response = self.openai_client.chat.completions.create(
@@ -169,7 +214,7 @@ class LLMClient:
                 messages=[
                     {"role": "user", "content": prompt}
                 ],
-                max_completion_tokens=max_tokens, # パラメータ名を修正
+                max_tokens=max_tokens,
                 temperature=config.get("temperature", 0.7)
             )
             
@@ -181,19 +226,28 @@ class LLMClient:
             }
             
         except Exception as e:
-            # エラーログを改善
             return {"success": False, "error": str(e), "model": model_name, "provider": "openai"}
 
     def generate_embedding(self, text: str) -> List[float]:
-        """Embedding生成 (COMPLETE_IMPLEMENTATION_GUIDE_v3.md, 3.2節を参考に実装)"""
+        """
+        Embedding生成
+
+        Args:
+            text: Embeddingを生成するテキスト
+
+        Returns:
+            1536次元のembeddingベクトル
+        """
         config = get_model_config("embeddings")
-        
+
         if not self.openai_client:
             raise ConnectionError("OpenAI client not initialized for embedding generation.")
-            
+
+        # text-embedding-3-smallモデルで1536次元を明示的に指定
         response = self.openai_client.embeddings.create(
             model=config["model"],
-            input=text
+            input=text,
+            dimensions=config.get("dimensions", 1536)  # デフォルト1536次元
         )
-        
+
         return response.data[0].embedding

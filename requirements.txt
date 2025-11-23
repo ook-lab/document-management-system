@@ -30,9 +30,12 @@ python-dotenv==1.0.0
 loguru==0.7.2
 pydantic  # バージョン指定を削除
 pydantic-settings  # バージョン指定を削除
+tenacity>=8.2.0
 
 # UI
 streamlit==1.29.0
+flask==3.0.0
+flask-cors==4.0.0
 
 # テスト
 pytest==7.4.3
