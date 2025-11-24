@@ -65,18 +65,18 @@ class DatabaseClient:
         self,
         query: str,
         embedding: List[float],
-        limit: int = 10,
+        limit: int = 50,
         workspace: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         ベクトル検索で文書を検索
-        
+
         Args:
             query: 検索クエリ
             embedding: クエリのembeddingベクトル
-            limit: 取得する最大件数
+            limit: 取得する最大件数（デフォルト: 50）
             workspace: ワークスペースフィルタ (オプション)
-        
+
         Returns:
             検索結果のリスト
         """
