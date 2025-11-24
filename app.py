@@ -34,7 +34,7 @@ def search_documents():
     try:
         data = request.get_json()
         query = data.get('query', '')
-        limit = data.get('limit', 5)
+        limit = data.get('limit', 20)  # デフォルトを5から20に増やして検索精度を向上
         workspace = data.get('workspace')
 
         if not query:

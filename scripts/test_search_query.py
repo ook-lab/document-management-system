@@ -80,7 +80,7 @@ def build_context(documents: list) -> str:
     return "\n".join(context_parts)
 
 
-async def search_and_answer(query: str, workspace: str = None, limit: int = 5):
+async def search_and_answer(query: str, workspace: str = None, limit: int = 50):
     """検索→回答生成を実行"""
 
     print(f"🔍 質問: {query}")
