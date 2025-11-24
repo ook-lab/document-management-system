@@ -271,7 +271,39 @@ class Stage2Extractor:
    - date: 作成日 (YYYY-MM-DD)
    - key_findings: 主要な発見・結論リスト
             """,
-            
+
+            "cram_school_text": """
+   - cram_school_name: 塾名 (例: "〇〇塾", "〇〇ゼミ")
+   - subject: 科目 (数学/国語/英語/理科/社会 など)
+   - grade: 対象学年 (例: "中学2年")
+   - chapter: 章・単元 (例: "第3章 二次方程式")
+   - difficulty: 難易度 (基礎/標準/応用/発展)
+   - page_range: ページ範囲 (例: "p.45-60")
+            """,
+
+            "cram_school_test": """
+   - cram_school_name: 塾名
+   - test_name: テスト名 (例: "第2回模試", "実力テスト")
+   - subject: 科目
+   - test_date: 実施日 (YYYY-MM-DD)
+   - grade: 学年
+   - max_score: 満点
+   - score: 得点 (記載があれば)
+   - deviation_value: 偏差値 (記載があれば)
+   - rank: 順位 (記載があれば)
+            """,
+
+            "cram_school_notice": """
+   - cram_school_name: 塾名
+   - notice_type: 種別 (お知らせ/請求書/案内/その他)
+   - notice_date: 通知日 (YYYY-MM-DD)
+   - subject: 件名
+   - amount: 金額 (請求書の場合、数値)
+   - payment_due: 支払期限 (YYYY-MM-DD)
+   - important_items: 重要事項リスト
+   - event_info: イベント情報 (案内の場合)
+            """,
+
             "other": """
    - 文書の内容に応じて適切なフィールドを自由に設定してください
    - 可能な限り構造化された情報を抽出してください
