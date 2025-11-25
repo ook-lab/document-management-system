@@ -1,0 +1,123 @@
+"""
+Google Drive コネクタ (サービスアカウント認証)
+
+設計書: COMPLETE_IMPLEMENTATION_GUIDE_v3.md の 1.4節に基づき、Google Driveと通信する。
+"""
+import os
+from typing import List, Dict, Any, Optional, Union
+from google.oauth2 import service_account
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseDownload
+from io import FileIO
+from loguru import logger
+from pathlib import Path
+
+# 認証情報ファイルのパス (環境変数から取得)
+CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+
+class GoogleDriveConnector:
+    """Google Drive APIクライアント"""
+    
+    def __init__(self):
+        self.service = self._authenticate()
+        # logger.info("Google Driveコネクタ初期化完了")
+    
+    def _authenticate(self):
+        """サービスアカウント認証の実行"""
+        if not CREDENTIALS_PATH or not os.path.exists(CREDENTIALS_PATH):
+            raise FileNotFoundError(
+                f"認証情報ファイルが見つかりません: {CREDENTIALS_PATH}. 環境変数 GOOGLE_APPLICATION_CREDENTIALS を確認してください。"
+            )
+            
+        try:
+            creds = service_account.Credentials.from_service_account_file(
+                CREDENTIALS_PATH, scopes=SCOPES
+            )
+            return build('drive', 'v3', credentials=creds)
+        except Exception as e:
+            # logger.error(f"Google Drive認証エラー: {e}")
+            raise ConnectionError(f"Google Drive認証に失敗しました: {e}")
+
+    def list_files_in_folder(self, folder_id: str, mime_type_filter: str = None) -> List[Dict[str, Any]]:
+        """
+        指定されたフォルダ内のファイルを一覧表示
+        
+        Args:
+            folder_id: 親フォルダのID
+            mime_type_filter: MIMEタイプによるフィルタリング（オプション）
+            
+        Returns:
+            ファイルメタデータのリスト
+        """
+        # フォルダを除外するクエリを構築
+        query = f"'{folder_id}' in parents and trashed=false"
+        
+        # デフォルトでフォルダを除外
+        if mime_type_filter is None:
+            query += " and mimeType != 'application/vnd.google-apps.folder'"
+        else:
+            query += f" and {mime_type_filter}"
+        
+        try:
+            results = self.service.files().list(
+                q=query,
+                spaces='drive',
+                fields='nextPageToken, files(id, name, mimeType, size)',
+            ).execute()
+            
+            return results.get('files', [])
+        except Exception as e:
+            print(f"Error listing files: {e}")
+            return []
+
+    def download_file(self, file_id: str, file_name: str, dest_dir: Union[str, Path]) -> str:
+        """
+        Google Driveからファイルをダウンロードし、一時パスを返す
+        
+        Args:
+            file_id: ファイルのID
+            file_name: ファイル名
+            dest_dir: 保存先ディレクトリ
+            
+        Returns:
+            ダウンロードされたファイルへのローカルパス
+        """
+        dest_path = Path(dest_dir) / file_name
+        dest_path.parent.mkdir(parents=True, exist_ok=True)
+        
+        # DriveのMIMEタイプをチェックし、Google Docs形式の場合はエクスポート
+        file_metadata = self.service.files().get(fileId=file_id, fields='mimeType').execute()
+        mime_type = file_metadata['mimeType']
+        
+        request = None
+        if mime_type == 'application/vnd.google-apps.document':
+            # Google Docs -> DOCXとしてエクスポート
+            request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+            dest_path = dest_path.with_suffix('.docx')
+        elif mime_type == 'application/vnd.google-apps.spreadsheet':
+            # Google Sheets -> XLSXとしてエクスポート
+            request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+            dest_path = dest_path.with_suffix('.xlsx')
+        elif mime_type == 'application/vnd.google-apps.presentation':
+            # Google Slides -> PPTXとしてエクスポート
+            request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+            dest_path = dest_path.with_suffix('.pptx')
+        else:
+            # 通常のファイル (PDF, DOCXなど) はダウンロード
+            request = self.service.files().get_media(fileId=file_id)
+
+        try:
+            with open(dest_path, 'wb') as fh:
+                downloader = MediaIoBaseDownload(fh, request)
+                done = False
+                while done is False:
+                    status, done = downloader.next_chunk()
+                    # print(f"Download progress: {int(status.progress() * 100)}%")
+            
+            # logger.info(f"ファイルダウンロード完了: {dest_path}")
+            return str(dest_path)
+            
+        except Exception as e:
+            # logger.error(f"ファイルダウンロードエラー ({file_name}): {e}")
+            raise RuntimeError(f"ファイルダウンロードに失敗しました: {e}")

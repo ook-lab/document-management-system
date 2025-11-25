@@ -1,0 +1,94 @@
+"""
+Embedding Client
+設計書: AUTO_INBOX_COMPLETE_v3.0.md に基づく
+目的: テキストをベクトル化し、Supabaseに格納するためのembeddingsを生成する。
+"""
+from typing import List, Optional
+import google.generativeai as genai
+from config.settings import settings
+
+
+class EmbeddingClient:
+    """
+    Google Generative AI (text-embedding-004) を使用したEmbedding生成クライアント
+    """
+    
+    def __init__(self, api_key: Optional[str] = None):
+        """
+        Embedding Clientの初期化
+        
+        Args:
+            api_key: Google AI API Key (未指定の場合は設定ファイルから取得)
+        """
+        self.api_key = api_key or settings.GOOGLE_AI_API_KEY
+        if not self.api_key:
+            raise ValueError("Google AI API Key が設定されていません")
+        
+        genai.configure(api_key=self.api_key)
+        self.model_name = "models/text-embedding-004"
+    
+    def generate_embedding(self, text: str, task_type: str = "RETRIEVAL_DOCUMENT") -> List[float]:
+        """
+        単一のテキストに対してembeddingを生成
+        
+        Args:
+            text: ベクトル化するテキスト
+            task_type: タスクタイプ
+                - "RETRIEVAL_DOCUMENT": 文書のインデックス化用 (デフォルト)
+                - "RETRIEVAL_QUERY": 検索クエリ用
+                - "SEMANTIC_SIMILARITY": 類似度計算用
+        
+        Returns:
+            embedding ベクトル (768次元のfloatリスト)
+        """
+        if not text or not text.strip():
+            raise ValueError("空のテキストはembedding化できません")
+        
+        result = genai.embed_content(
+            model=self.model_name,
+            content=text,
+            task_type=task_type
+        )
+        
+        return result['embedding']
+    
+    def generate_embeddings_batch(
+        self,
+        texts: List[str],
+        task_type: str = "RETRIEVAL_DOCUMENT"
+    ) -> List[List[float]]:
+        """
+        複数のテキストに対してembeddingを一括生成
+        
+        Args:
+            texts: ベクトル化するテキストのリスト
+            task_type: タスクタイプ
+        
+        Returns:
+            embedding ベクトルのリスト
+        """
+        if not texts:
+            return []
+        
+        embeddings = []
+        for text in texts:
+            if text and text.strip():
+                embedding = self.generate_embedding(text, task_type)
+                embeddings.append(embedding)
+            else:
+                # 空のテキストの場合はゼロベクトルを追加
+                embeddings.append([0.0] * 768)
+        
+        return embeddings
+    
+    def generate_query_embedding(self, query: str) -> List[float]:
+        """
+        検索クエリ用のembeddingを生成
+        
+        Args:
+            query: 検索クエリ文字列
+        
+        Returns:
+            embedding ベクトル (768次元のfloatリスト)
+        """
+        return self.generate_embedding(query, task_type="RETRIEVAL_QUERY")

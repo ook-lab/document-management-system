@@ -5,3 +5,4 @@ logs/
 venv/
 logs/
 credentials/google_credentials.json
+.env.bak
