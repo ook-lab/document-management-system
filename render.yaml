@@ -2,8 +2,12 @@ services:
   - type: web
     name: doc-search-ui
     env: python
+    runtime: python-3.11.6
     buildCommand: pip install -r requirements.txt
     startCommand: gunicorn app:app
     envVars:
-      - key: PYTHON_VERSION
-        value: 3.11.6
+      - key: SUPABASE_URL
+      - key: SUPABASE_KEY
+      - key: OPENAI_API_KEY
+      - key: ANTHROPIC_API_KEY
+      - key: GOOGLE_API_KEY
