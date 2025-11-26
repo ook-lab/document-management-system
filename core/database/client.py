@@ -92,3 +92,87 @@ class DatabaseClient:
         
         response = self.client.rpc("match_documents", rpc_params).execute()
         return response.data if response.data else []
+
+    def get_documents_for_review(
+        self,
+        status: str = 'completed',
+        max_confidence: float = 0.9,
+        limit: int = 100
+    ) -> List[Dict[str, Any]]:
+        """
+        レビュー対象のドキュメントを取得
+
+        Args:
+            status: 処理ステータス（デフォルト: 'completed'）
+            max_confidence: 信頼度の上限（デフォルト: 0.9）
+            limit: 取得する最大件数
+
+        Returns:
+            ドキュメントのリスト
+        """
+        try:
+            response = (
+                self.client.table('documents')
+                .select('*')
+                .eq('processing_status', status)
+                .lt('confidence', max_confidence)
+                .order('created_at', desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return response.data if response.data else []
+        except Exception as e:
+            print(f"Error getting documents for review: {e}")
+            return []
+
+    def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
+        """
+        IDでドキュメントを取得
+
+        Args:
+            doc_id: ドキュメントID
+
+        Returns:
+            ドキュメント、存在しない場合は None
+        """
+        try:
+            response = self.client.table('documents').select('*').eq('id', doc_id).execute()
+            if response.data and len(response.data) > 0:
+                return response.data[0]
+            return None
+        except Exception as e:
+            print(f"Error getting document by id: {e}")
+            return None
+
+    def update_document_metadata(
+        self,
+        doc_id: str,
+        new_metadata: Dict[str, Any],
+        new_doc_type: Optional[str] = None
+    ) -> bool:
+        """
+        ドキュメントのメタデータと文書タイプを更新
+
+        Args:
+            doc_id: ドキュメントID
+            new_metadata: 新しいメタデータ
+            new_doc_type: 新しい文書タイプ（オプション）
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            update_data = {'metadata': new_metadata}
+            if new_doc_type:
+                update_data['doc_type'] = new_doc_type
+
+            response = (
+                self.client.table('documents')
+                .update(update_data)
+                .eq('id', doc_id)
+                .execute()
+            )
+            return bool(response.data)
+        except Exception as e:
+            print(f"Error updating document metadata: {e}")
+            return False
