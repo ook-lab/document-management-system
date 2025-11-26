@@ -183,10 +183,30 @@ def main():
                 file_path = download_file_from_drive(file_id, file_name)
 
             if file_path and Path(file_path).exists():
-                pdf_html = get_pdf_preview_html(file_path)
-                st.components.v1.html(pdf_html, height=800, scrolling=True)
+                # PDFをバイナリとして読み込み
+                with open(file_path, 'rb') as f:
+                    pdf_bytes = f.read()
+
+
+                # Streamlitのネイティブダウンロードボタン
+                st.download_button(
+                    label="📥 PDFをダウンロード",
+                    data=pdf_bytes,
+                    file_name=file_name,
+                    mime="application/pdf"
+                )
+
+                # Base64でプレビュー表示（Chrome対応版）
+                import base64
+                base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+
+                # embedタグを使用（iframeより安全）
+                pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf">'
+
+                st.markdown(pdf_display, unsafe_allow_html=True)
             else:
                 st.warning("PDFファイルを読み込めませんでした")
+                
         else:
             st.info("PDFファイル以外はプレビューできません")
 
