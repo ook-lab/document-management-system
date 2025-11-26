@@ -24,7 +24,23 @@ class GoogleDriveConnector:
         # logger.info("Google Driveコネクタ初期化完了")
     
     def _authenticate(self):
-        """サービスアカウント認証の実行"""
+        """サービスアカウント認証の実行（Streamlit Secrets対応）"""
+        try:
+            # Streamlit環境の場合: Secretsから読み込み
+            import streamlit as st
+            if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
+                creds_dict = dict(st.secrets["gcp_service_account"])
+                creds = service_account.Credentials.from_service_account_info(
+                    creds_dict, scopes=SCOPES
+                )
+                return build('drive', 'v3', credentials=creds)
+        except ImportError:
+            # Streamlitがインストールされていない場合はスキップ
+            pass
+        except Exception as e:
+            logger.warning(f"Streamlit Secretsからの認証失敗、環境変数にフォールバック: {e}")
+        
+        # ローカル環境の場合: 環境変数から読み込み
         if not CREDENTIALS_PATH or not os.path.exists(CREDENTIALS_PATH):
             raise FileNotFoundError(
                 f"認証情報ファイルが見つかりません: {CREDENTIALS_PATH}. 環境変数 GOOGLE_APPLICATION_CREDENTIALS を確認してください。"
