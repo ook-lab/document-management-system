@@ -2,11 +2,17 @@
 Document Review UI
 人間がAIの抽出結果を確認・修正するための管理画面
 """
+import sys
+from pathlib import Path
+
+# プロジェクトのルートディレクトリをPythonパスに追加
+root_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(root_dir))
+
 import streamlit as st
 import json
 import base64
 import tempfile
-from pathlib import Path
 from typing import Dict, Any, Optional
 import pandas as pd
 
@@ -206,7 +212,7 @@ def main():
             index=doc_type_options.index(doc_type) if doc_type in doc_type_options else 0
         )
 
-        # メタデータ編集（JSON形式）
+        # メタデータ編集(JSON形式)
         st.markdown("#### メタデータ (JSON)")
         metadata_json = format_metadata_json(metadata)
         edited_metadata_json = st.text_area(
