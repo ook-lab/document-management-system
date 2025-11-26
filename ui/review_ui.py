@@ -163,7 +163,9 @@ def main():
 
     selected_doc = documents[selected_index]
     doc_id = selected_doc.get('id')
+    drive_file_id = selected_doc.get('drive_file_id')
     source_id = selected_doc.get('source_id')
+    file_id = drive_file_id or source_id
     file_name = selected_doc.get('file_name', 'unknown')
     doc_type = selected_doc.get('doc_type', '')
     metadata = selected_doc.get('metadata', {})
@@ -178,7 +180,7 @@ def main():
         # PDFのダウンロードと表示
         if source_id and file_name.lower().endswith('.pdf'):
             with st.spinner("PDFをダウンロード中..."):
-                file_path = download_file_from_drive(source_id, file_name)
+                file_path = download_file_from_drive(file_id, file_name)
 
             if file_path and Path(file_path).exists():
                 pdf_html = get_pdf_preview_html(file_path)
