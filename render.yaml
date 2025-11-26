@@ -11,3 +11,17 @@ services:
       - key: OPENAI_API_KEY
       - key: ANTHROPIC_API_KEY
       - key: GOOGLE_API_KEY
+
+  - type: web
+    name: doc-review-ui
+    env: python
+    runtime: python-3.11.6
+    buildCommand: pip install -r requirements.txt
+    startCommand: streamlit run ui/review_ui.py --server.port=$PORT --server.address=0.0.0.0
+    envVars:
+      - key: SUPABASE_URL
+      - key: SUPABASE_KEY
+      - key: OPENAI_API_KEY
+      - key: ANTHROPIC_API_KEY
+      - key: GOOGLE_API_KEY
+      - key: GOOGLE_APPLICATION_CREDENTIALS
