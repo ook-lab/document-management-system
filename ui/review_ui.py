@@ -11,40 +11,12 @@ sys.path.insert(0, str(root_dir))
 
 import streamlit as st
 import json
-import base64
 import tempfile
 from typing import Dict, Any, Optional
 import pandas as pd
 
 from core.database.client import DatabaseClient
 from core.connectors.google_drive import GoogleDriveConnector
-
-
-def get_pdf_preview_html(file_path: str) -> str:
-    """
-    PDFファイルをBase64エンコードしてHTMLで表示可能にする
-
-    Args:
-        file_path: PDFファイルのパス
-
-    Returns:
-        PDFを表示するHTMLコード
-    """
-    with open(file_path, 'rb') as f:
-        pdf_bytes = f.read()
-        base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-
-    # PDFをiframeで表示するHTML
-    pdf_display = f'''
-        <iframe
-            src="data:application/pdf;base64,{base64_pdf}"
-            width="100%"
-            height="800"
-            type="application/pdf"
-            style="border: 1px solid #ccc; border-radius: 4px;">
-        </iframe>
-    '''
-    return pdf_display
 
 
 def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
@@ -178,7 +150,7 @@ def main():
         st.markdown("### 📄 PDFプレビュー")
 
         # PDFのダウンロードと表示
-        if source_id and file_name.lower().endswith('.pdf'):
+        if file_id and file_name.lower().endswith('.pdf'):
             with st.spinner("PDFをダウンロード中..."):
                 file_path = download_file_from_drive(file_id, file_name)
 
@@ -187,26 +159,26 @@ def main():
                 with open(file_path, 'rb') as f:
                     pdf_bytes = f.read()
 
+                # streamlit-pdf-viewerでプレビュー表示
+                try:
+                    from streamlit_pdf_viewer import pdf_viewer
+                    pdf_viewer(pdf_bytes, height=800)
+                except ImportError:
+                    st.warning("PDFビューアーライブラリがインストールされていません")
+                    st.info("ダウンロードボタンからPDFを確認してください")
+                except Exception as e:
+                    st.warning(f"PDFプレビュー表示エラー: {e}")
+                    st.info("ダウンロードボタンからPDFを確認してください")
 
-                # Streamlitのネイティブダウンロードボタン
+                # ダウンロードボタンも残す
                 st.download_button(
                     label="📥 PDFをダウンロード",
                     data=pdf_bytes,
                     file_name=file_name,
                     mime="application/pdf"
                 )
-
-                # Base64でプレビュー表示（Chrome対応版）
-                import base64
-                base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-
-                # embedタグを使用（iframeより安全）
-                pdf_display = f'<embed src="data:application/pdf;base64,{base64_pdf}" width="100%" height="800" type="application/pdf">'
-
-                st.markdown(pdf_display, unsafe_allow_html=True)
             else:
                 st.warning("PDFファイルを読み込めませんでした")
-                
         else:
             st.info("PDFファイル以外はプレビューできません")
 
