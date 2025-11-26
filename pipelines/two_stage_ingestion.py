@@ -259,6 +259,7 @@ class TwoStageIngestionPipeline:
                 "source_type": "drive",
                 "source_id": file_id,
                 "source_url": f"https://drive.google.com/file/d/{file_id}/view",
+                "drive_file_id": file_id,  # ← この1行を追加
                 "file_name": file_name,
                 "file_type": self._get_file_type(mime_type),
                 "doc_type": doc_type,
