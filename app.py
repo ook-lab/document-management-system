@@ -81,7 +81,7 @@ def generate_answer():
         # ドキュメントコンテキストを構築
         context = _build_context(documents)
 
-        # プロンプトを作成
+        # プロンプトを作成（Phase 2.2.3: 構造的クエリ対応）
         prompt = f"""以下の文書情報を参考に、ユーザーの質問に日本語で回答してください。
 
 【質問】
@@ -92,6 +92,10 @@ def generate_answer():
 
 【回答の条件】
 - 参考文書の情報を基に、正確に回答してください
+- **【表データ】**が含まれている場合、表形式の情報を積極的に活用してください
+  * 時間割やスケジュールに関する質問には、表データから該当する科目や予定を抽出して回答してください
+  * 議事録の質問には、議題グループや担当者・期限情報を参照してください
+  * 複数のクラスやグループがある場合、質問に該当するものを絞り込んで回答してください
 - 情報が不足している場合は、その旨を伝えてください
 - 簡潔で分かりやすい回答を心がけてください
 - 回答の最後に、参考にした文書のタイトルを列挙してください
@@ -125,9 +129,95 @@ def generate_answer():
         }), 500
 
 
+def _format_table_to_markdown(table_data: Dict[str, Any]) -> str:
+    """
+    表データをMarkdown形式のテーブルに変換（Phase 2.2.3 構造的クエリ対応）
+
+    Args:
+        table_data: 表データ（table_type, headers, rows などを含む）
+
+    Returns:
+        Markdown形式のテーブル文字列
+    """
+    try:
+        table_type = table_data.get("table_type", "table")
+        headers = table_data.get("headers", [])
+
+        # ヘッダー行の構築
+        if isinstance(headers, list) and headers:
+            # シンプルなリスト形式のヘッダー
+            header_line = "| " + " | ".join(str(h) for h in headers) + " |"
+            separator_line = "|" + "|".join(["---" for _ in headers]) + "|"
+            markdown_lines = [f"\n**表形式データ ({table_type})**\n", header_line, separator_line]
+        elif isinstance(headers, dict):
+            # 複雑なヘッダー構造（例: class_timetable の classes）
+            classes = headers.get("classes", [])
+            if classes:
+                header_line = "| 日 | " + " | ".join(str(c) for c in classes) + " |"
+                separator_line = "|" + "|".join(["---" for _ in range(len(classes) + 1)]) + "|"
+                markdown_lines = [f"\n**クラス別時間割 ({table_type})**\n", header_line, separator_line]
+            else:
+                markdown_lines = [f"\n**表形式データ ({table_type})**\n"]
+        else:
+            markdown_lines = [f"\n**表形式データ ({table_type})**\n"]
+
+        # 行データの処理
+        rows = table_data.get("rows", [])
+        if rows:
+            for row in rows:
+                # 行が辞書形式の場合
+                if isinstance(row, dict):
+                    # cells フィールドがある場合
+                    if "cells" in row:
+                        cells = row["cells"]
+                        cell_values = []
+                        for cell in cells:
+                            if isinstance(cell, dict):
+                                value = cell.get("value", "")
+                                cell_values.append(str(value))
+                            else:
+                                cell_values.append(str(cell))
+                        row_line = "| " + " | ".join(cell_values) + " |"
+                        markdown_lines.append(row_line)
+                    else:
+                        # 通常の辞書行（キー: 値）
+                        values = [str(v) for v in row.values()]
+                        row_line = "| " + " | ".join(values) + " |"
+                        markdown_lines.append(row_line)
+
+        # daily_schedule や agenda_groups などの特殊構造
+        if "daily_schedule" in table_data:
+            markdown_lines.append("\n**日別スケジュール:**")
+            for schedule in table_data["daily_schedule"]:
+                day = schedule.get("day", "")
+                markdown_lines.append(f"\n- **{day}曜日:**")
+
+                if "class_schedules" in schedule:
+                    for class_schedule in schedule["class_schedules"]:
+                        class_name = class_schedule.get("class", "")
+                        subjects = class_schedule.get("subjects", []) or class_schedule.get("periods", [])
+                        markdown_lines.append(f"  - {class_name}: {', '.join(str(s) for s in subjects)}")
+
+        if "agenda_groups" in table_data:
+            markdown_lines.append("\n**議題グループ:**")
+            for group in table_data["agenda_groups"]:
+                topic = group.get("topic", "")
+                markdown_lines.append(f"\n- **{topic}:**")
+                for item in group.get("items", []):
+                    decision = item.get("decision", "")
+                    assignee = item.get("assignee", "")
+                    deadline = item.get("deadline", "")
+                    markdown_lines.append(f"  - {decision} (担当: {assignee}, 期限: {deadline})")
+
+        return "\n".join(markdown_lines)
+
+    except Exception as e:
+        return f"\n[表データの変換エラー: {str(e)}]\n"
+
+
 def _format_metadata(metadata: Dict[str, Any], indent: int = 0) -> str:
     """
-    メタデータを見やすく整形
+    メタデータを見やすく整形（Phase 2.2.3: tables フィールド対応）
 
     Args:
         metadata: メタデータ辞書
@@ -143,6 +233,19 @@ def _format_metadata(metadata: Dict[str, Any], indent: int = 0) -> str:
     prefix = "  " * indent
 
     for key, value in metadata.items():
+        # Phase 2.2.3: tables フィールドを特別に処理
+        if key == "tables" and isinstance(value, list):
+            if not value:
+                continue
+            lines.append(f"{prefix}【表データ】")
+            for idx, table in enumerate(value, 1):
+                if isinstance(table, dict):
+                    # 表をMarkdown形式に変換
+                    markdown_table = _format_table_to_markdown(table)
+                    lines.append(markdown_table)
+            continue
+
+        # 通常のメタデータ処理
         if isinstance(value, dict):
             lines.append(f"{prefix}{key}:")
             lines.append(_format_metadata(value, indent + 1))
