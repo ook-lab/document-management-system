@@ -19,6 +19,7 @@ from core.processors.office import OfficeProcessor
 from core.ai.stage1_classifier import Stage1Classifier
 from core.ai.stage2_extractor import Stage2Extractor
 from core.ai.confidence_calculator import calculate_total_confidence
+from core.ai.json_validator import validate_metadata
 # from core.ai.embeddings import EmbeddingClient  # 768次元 - 使用しない
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
@@ -217,7 +218,37 @@ class TwoStageIngestionPipeline:
                         stage2_model = 'claude-sonnet-4-20250514'
                         
                         logger.info(f"[Stage 2] 完了: confidence={stage2_confidence:.2f}, metadata_fields={len(stage2_metadata)}")
-                        
+
+                        # ============================================
+                        # JSON Schema検証（Phase 2 - Track 1）
+                        # ============================================
+                        logger.info("[JSON検証] メタデータ検証開始...")
+                        is_valid, validation_error = validate_metadata(
+                            metadata=stage2_metadata,
+                            doc_type=doc_type
+                        )
+
+                        if not is_valid:
+                            # 検証失敗時の処理
+                            logger.error(f"[JSON検証] 検証失敗: {validation_error}")
+
+                            # metadataに検証失敗情報を記録
+                            metadata['schema_validation'] = {
+                                'is_valid': False,
+                                'error_message': validation_error,
+                                'validated_at': datetime.now().isoformat()
+                            }
+
+                            # 信頼度を減点（検証失敗は重大な品質問題）
+                            confidence = confidence * 0.8  # 20%減点
+                            logger.warning(f"[JSON検証] 信頼度を減点: {confidence:.2f} (検証失敗のため)")
+                        else:
+                            logger.info("[JSON検証] ✅ 検証成功")
+                            metadata['schema_validation'] = {
+                                'is_valid': True,
+                                'validated_at': datetime.now().isoformat()
+                            }
+
                     except Exception as e:
                         logger.error(f"[Stage 2] 処理エラー: {e}", exc_info=True)
 
