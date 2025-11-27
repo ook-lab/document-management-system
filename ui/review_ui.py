@@ -1,6 +1,12 @@
 """
-Document Review UI
+Document Review UI (v2.0 - Tab Edition)
 人間がAIの抽出結果を確認・修正するための管理画面
+
+新機能:
+- タブベースUI (フォーム編集 / 表エディタ / JSONプレビュー)
+- スキーマベースのフォーム編集
+- データフレームによる表形式編集
+- JSON差分表示
 """
 import sys
 from pathlib import Path
@@ -17,6 +23,12 @@ import pandas as pd
 
 from core.database.client import DatabaseClient
 from core.connectors.google_drive import GoogleDriveConnector
+
+# 新しいコンポーネントとユーティリティをインポート
+from ui.utils.schema_detector import SchemaDetector
+from ui.components.form_editor import render_form_editor
+from ui.components.table_editor import render_table_editor
+from ui.components.json_preview import render_json_preview, render_json_diff
 
 
 def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
@@ -40,80 +52,64 @@ def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
         return None
 
 
-def format_metadata_json(metadata: Dict[str, Any]) -> str:
-    """
-    メタデータをきれいに整形されたJSONに変換
-
-    Args:
-        metadata: メタデータ辞書
-
-    Returns:
-        整形されたJSON文字列
-    """
-    return json.dumps(metadata, ensure_ascii=False, indent=2)
-
-
-def parse_metadata_json(json_str: str) -> Optional[Dict[str, Any]]:
-    """
-    JSON文字列をメタデータ辞書に変換
-
-    Args:
-        json_str: JSON文字列
-
-    Returns:
-        メタデータ辞書、パースエラー時はNone
-    """
-    try:
-        return json.loads(json_str)
-    except json.JSONDecodeError as e:
-        st.error(f"JSON形式エラー: {e}")
-        return None
-
-
 def main():
     """メインUIロジック"""
-    st.set_page_config(page_title="Document Review UI", layout="wide")
-    st.title("📋 Document Review UI")
-    st.markdown("AIが抽出したメタデータを確認・修正できます")
+    st.set_page_config(
+        page_title="Document Review UI v2.0",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
 
-    # データベースクライアントの初期化
+    st.title("📋 Document Review UI v2.0")
+    st.markdown("AIが抽出したメタデータを**3つのタブ**で確認・修正できます")
+
+    # データベースクライアントとスキーマ検出器の初期化
     try:
         db_client = DatabaseClient()
+        schema_detector = SchemaDetector()
     except Exception as e:
-        st.error(f"データベース接続エラー: {e}")
+        st.error(f"初期化エラー: {e}")
         st.stop()
 
     # サイドバー: フィルタ設定
-    st.sidebar.header("フィルタ設定")
+    st.sidebar.header("🔧 フィルタ設定")
     max_confidence = st.sidebar.slider(
         "信頼度の上限",
         min_value=0.0,
         max_value=1.0,
         value=0.9,
-        step=0.05
+        step=0.05,
+        help="この信頼度以下のドキュメントを表示"
     )
-    limit = st.sidebar.number_input("取得件数", min_value=10, max_value=500, value=100, step=10)
+    limit = st.sidebar.number_input(
+        "取得件数",
+        min_value=10,
+        max_value=500,
+        value=100,
+        step=10
+    )
 
     # レビュー対象ドキュメントを取得
-    if st.sidebar.button("🔄 リストを更新"):
+    if st.sidebar.button("🔄 リストを更新", use_container_width=True):
         st.rerun()
 
-    documents = db_client.get_documents_for_review(
-        status='completed',
-        max_confidence=max_confidence,
-        limit=limit
-    )
+    with st.spinner("ドキュメントを取得中..."):
+        documents = db_client.get_documents_for_review(
+            status='completed',
+            max_confidence=max_confidence,
+            limit=limit
+        )
 
     if not documents:
         st.info("レビュー対象のドキュメントがありません")
         return
 
-    st.sidebar.success(f"{len(documents)}件のドキュメントが見つかりました")
+    st.sidebar.success(f"✅ {len(documents)}件のドキュメント")
 
     # ドキュメントリストをDataFrameで表示
     df = pd.DataFrame([
         {
-            'ID': doc.get('id', '')[:8],  # IDの最初の8文字
+            'ID': doc.get('id', '')[:8],
             'ファイル名': doc.get('file_name', ''),
             '文書タイプ': doc.get('doc_type', ''),
             '信頼度': round(doc.get('confidence', 0), 3),
@@ -123,7 +119,7 @@ def main():
     ])
 
     st.subheader("📁 レビュー対象ドキュメント一覧")
-    st.dataframe(df, use_container_width=True)
+    st.dataframe(df, use_container_width=True, height=200)
 
     # ドキュメント選択
     st.subheader("🔍 ドキュメント詳細")
@@ -143,10 +139,21 @@ def main():
     metadata = selected_doc.get('metadata', {})
     confidence = selected_doc.get('confidence', 0)
 
-    # 2カラムレイアウト
-    col1, col2 = st.columns([1, 1])
-
+    # 基本情報表示
+    col1, col2, col3 = st.columns([2, 1, 1])
     with col1:
+        st.markdown(f"**ファイル名**: {file_name}")
+    with col2:
+        st.markdown(f"**文書タイプ**: {doc_type}")
+    with col3:
+        st.markdown(f"**信頼度**: {confidence:.3f}")
+
+    st.markdown("---")
+
+    # レイアウト: 左にPDFプレビュー、右に編集タブ
+    col_left, col_right = st.columns([1, 1.2])
+
+    with col_left:
         st.markdown("### 📄 PDFプレビュー")
 
         # PDFのダウンロードと表示
@@ -155,82 +162,99 @@ def main():
                 file_path = download_file_from_drive(file_id, file_name)
 
             if file_path and Path(file_path).exists():
-                # PDFをバイナリとして読み込み
                 with open(file_path, 'rb') as f:
                     pdf_bytes = f.read()
 
-                # streamlit-pdf-viewerでプレビュー表示
+                # PDFプレビュー表示
                 try:
                     from streamlit_pdf_viewer import pdf_viewer
-                    pdf_viewer(pdf_bytes, height=800)
+                    pdf_viewer(pdf_bytes, height=700)
                 except ImportError:
                     st.warning("PDFビューアーライブラリがインストールされていません")
-                    st.info("ダウンロードボタンからPDFを確認してください")
+                    st.download_button(
+                        label="📥 PDFをダウンロード",
+                        data=pdf_bytes,
+                        file_name=file_name,
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
                 except Exception as e:
                     st.warning(f"PDFプレビュー表示エラー: {e}")
-                    st.info("ダウンロードボタンからPDFを確認してください")
-
-                # ダウンロードボタンも残す
-                st.download_button(
-                    label="📥 PDFをダウンロード",
-                    data=pdf_bytes,
-                    file_name=file_name,
-                    mime="application/pdf"
-                )
+                    st.download_button(
+                        label="📥 PDFをダウンロード",
+                        data=pdf_bytes,
+                        file_name=file_name,
+                        mime="application/pdf",
+                        use_container_width=True
+                    )
             else:
                 st.warning("PDFファイルを読み込めませんでした")
         else:
             st.info("PDFファイル以外はプレビューできません")
 
-    with col2:
+    with col_right:
         st.markdown("### ✏️ メタデータ編集")
 
-        # ドキュメント基本情報
-        st.markdown(f"**ファイル名**: {file_name}")
-        st.markdown(f"**信頼度**: {confidence:.3f}")
-        st.markdown(f"**ドキュメントID**: `{doc_id}`")
+        # スキーマを検出
+        detected_schema = schema_detector.detect_schema(doc_type, metadata)
 
+        if detected_schema:
+            st.info(f"🎯 検出されたスキーマ: **{detected_schema}**")
+            editable_fields = schema_detector.get_editable_fields(detected_schema)
+        else:
+            st.warning("⚠️ スキーマが検出されませんでした。JSON編集モードを使用してください。")
+            editable_fields = []
+
+        # タブUI: 3つの編集モード
+        tab1, tab2, tab3 = st.tabs(["📝 フォーム編集", "📊 表エディタ", "🔍 JSONプレビュー"])
+
+        edited_metadata = None
+
+        with tab1:
+            # フォーム編集タブ
+            if editable_fields:
+                edited_metadata = render_form_editor(metadata, editable_fields)
+            else:
+                st.info("フォーム編集には対応するスキーマが必要です")
+                st.markdown("JSONプレビュータブで直接編集してください")
+
+        with tab2:
+            # 表エディタタブ
+            edited_metadata = render_table_editor(metadata)
+
+        with tab3:
+            # JSONプレビュータブ
+            edited_metadata = render_json_preview(metadata, editable=True)
+
+        # 保存ボタンエリア
         st.markdown("---")
+        col_save, col_validate, col_cancel = st.columns([1, 1, 1])
 
-        # 文書タイプ編集
-        doc_type_options = [
-            "school_notice",
-            "classroom_letter",
-            "event_schedule",
-            "newsletter",
-            "other"
-        ]
-        new_doc_type = st.selectbox(
-            "文書タイプ",
-            options=doc_type_options,
-            index=doc_type_options.index(doc_type) if doc_type in doc_type_options else 0
-        )
-
-        # メタデータ編集(JSON形式)
-        st.markdown("#### メタデータ (JSON)")
-        metadata_json = format_metadata_json(metadata)
-        edited_metadata_json = st.text_area(
-            "メタデータを編集",
-            value=metadata_json,
-            height=400,
-            help="JSON形式で編集してください"
-        )
-
-        # 保存ボタン
-        st.markdown("---")
-        col_save, col_cancel = st.columns([1, 1])
+        with col_validate:
+            if st.button("🔍 変更を確認", use_container_width=True):
+                if edited_metadata:
+                    with st.expander("変更内容の詳細", expanded=True):
+                        render_json_diff(metadata, edited_metadata)
 
         with col_save:
             if st.button("💾 保存", type="primary", use_container_width=True):
-                # JSONパース
-                new_metadata = parse_metadata_json(edited_metadata_json)
+                if edited_metadata is None:
+                    st.error("編集されたデータがありません")
+                else:
+                    # スキーマ検証
+                    if detected_schema:
+                        is_valid, errors = schema_detector.validate_metadata(detected_schema, edited_metadata)
+                        if not is_valid:
+                            st.error("❌ スキーマ検証エラー:")
+                            for error in errors:
+                                st.error(f"  - {error}")
+                            st.stop()
 
-                if new_metadata is not None:
                     # データベース更新
                     success = db_client.update_document_metadata(
                         doc_id=doc_id,
-                        new_metadata=new_metadata,
-                        new_doc_type=new_doc_type
+                        new_metadata=edited_metadata,
+                        new_doc_type=doc_type
                     )
 
                     if success:
@@ -247,7 +271,11 @@ def main():
 
     # フッター
     st.markdown("---")
-    st.caption("Document Management System - Review UI v1.0")
+    col_footer1, col_footer2 = st.columns([3, 1])
+    with col_footer1:
+        st.caption("Document Management System - Review UI v2.0 (Tab Edition)")
+    with col_footer2:
+        st.caption(f"🎨 検出スキーマ: {detected_schema or 'N/A'}")
 
 
 if __name__ == "__main__":
