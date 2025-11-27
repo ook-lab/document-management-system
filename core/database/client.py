@@ -203,3 +203,39 @@ class DatabaseClient:
         except Exception as e:
             print(f"Error getting processed file IDs: {e}")
             return []
+
+    def check_duplicate_hash(self, content_hash: str) -> bool:
+        """
+        content_hashが既にデータベースに存在するかチェック
+
+        Args:
+            content_hash: SHA256ハッシュ値
+
+        Returns:
+            True: 重複あり（既に存在する）
+            False: 重複なし（新規）
+        """
+        try:
+            # content_hashが一致するドキュメントを検索
+            response = (
+                self.client.table('documents')
+                .select('id, file_name, content_hash')
+                .eq('content_hash', content_hash)
+                .limit(1)
+                .execute()
+            )
+
+            if response.data and len(response.data) > 0:
+                # 重複が見つかった
+                existing_doc = response.data[0]
+                print(f"⚠️  重複検知: content_hash={content_hash[:16]}... は既に存在します")
+                print(f"   既存ファイル: {existing_doc.get('file_name', 'Unknown')}")
+                return True
+
+            # 重複なし
+            return False
+
+        except Exception as e:
+            print(f"Error checking duplicate hash: {e}")
+            # エラー時は安全側に倒して重複なしとして扱う
+            return False

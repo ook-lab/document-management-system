@@ -13,6 +13,7 @@ from pathlib import Path
 import os
 import io
 import logging
+import hashlib
 
 # pypdf は requirements.txt で定義されているが、pdfplumber がより表構造抽出に優れるため、
 # ここでは一旦 pypdf でシンプルなテキスト抽出を実装する。
@@ -77,3 +78,36 @@ class PDFProcessor:
         except Exception as e:
             # logger.error(f"PDFテキスト抽出エラー ({file_path}): {e}")
             return {"content": "", "metadata": {"error": str(e)}, "success": False, "error_message": str(e)}
+
+
+def calculate_content_hash(pdf_path: str) -> str:
+    """
+    PDFファイルの内容全体からSHA256ハッシュを計算する
+
+    Args:
+        pdf_path: PDFファイルのローカルパス
+
+    Returns:
+        SHA256ハッシュ値（16進数文字列）
+
+    Raises:
+        FileNotFoundError: ファイルが存在しない場合
+        IOError: ファイル読み込みエラー
+    """
+    file_path = Path(pdf_path)
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"ファイルが見つかりません: {pdf_path}")
+
+    # SHA256ハッシュオブジェクトを作成
+    sha256_hash = hashlib.sha256()
+
+    # ファイルをバイナリモードで読み込み、チャンクごとにハッシュを更新
+    # 大きなファイルでもメモリ効率的に処理
+    with open(file_path, 'rb') as f:
+        # 64KBずつ読み込む
+        for byte_block in iter(lambda: f.read(65536), b""):
+            sha256_hash.update(byte_block)
+
+    # 16進数文字列として返す
+    return sha256_hash.hexdigest()

@@ -13,9 +13,10 @@ InBox自動監視スクリプト (v1.0)
 import os
 import sys
 import asyncio
+import tempfile
 from pathlib import Path
 from datetime import datetime
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
 from loguru import logger
 import traceback
 
@@ -25,6 +26,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from core.connectors.google_drive import GoogleDriveConnector
 from core.database.client import DatabaseClient
 from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
+from core.processors.pdf import calculate_content_hash
 
 # ログ設定
 log_dir = Path('logs')
@@ -91,6 +93,53 @@ class InBoxMonitor:
             logger.info("新規ファイルは見つかりませんでした")
 
         return new_files
+
+    def check_duplicate_by_hash(self, file_meta: Dict[str, Any]) -> Optional[str]:
+        """
+        ファイルのcontent_hashを計算し、重複をチェック
+
+        Args:
+            file_meta: ファイルメタデータ
+
+        Returns:
+            content_hash: 重複していない場合はハッシュ値を返す
+            None: 重複している場合はNoneを返す
+        """
+        file_id = file_meta['id']
+        file_name = file_meta['name']
+
+        try:
+            # 一時ディレクトリにファイルをダウンロード
+            temp_dir = tempfile.gettempdir()
+            logger.info(f"🔍 重複チェック: {file_name} をダウンロード中...")
+
+            file_path = self.drive.download_file(file_id, file_name, temp_dir)
+
+            # content_hashを計算
+            content_hash = calculate_content_hash(file_path)
+            logger.info(f"   計算されたハッシュ: {content_hash[:16]}...")
+
+            # 重複チェック
+            is_duplicate = self.db.check_duplicate_hash(content_hash)
+
+            # 一時ファイルを削除
+            try:
+                Path(file_path).unlink()
+            except Exception:
+                pass
+
+            if is_duplicate:
+                logger.warning(f"⚠️  重複検知: {file_name} は既に処理済みです（AI処理スキップ）")
+                return None
+
+            logger.info(f"✅ 重複なし: {file_name} は新規ファイルです")
+            return content_hash
+
+        except Exception as e:
+            logger.error(f"❌ 重複チェックエラー: {file_name} - {e}")
+            logger.error(traceback.format_exc())
+            # エラー時は処理を続行（安全側に倒す）
+            return "error_skip_hash_check"
 
     async def process_file(self, file_meta: Dict[str, Any]) -> bool:
         """
@@ -159,6 +208,7 @@ class InBoxMonitor:
 
         stats = {
             'new_files_detected': 0,
+            'duplicates_skipped': 0,
             'processed_success': 0,
             'processed_failed': 0,
             'archived_success': 0,
@@ -178,7 +228,24 @@ class InBoxMonitor:
                 file_id = file_meta['id']
                 file_name = file_meta['name']
 
-                # ファイルを処理
+                # Step 3-1: 重複チェック（content_hash）
+                content_hash = self.check_duplicate_by_hash(file_meta)
+
+                if content_hash is None:
+                    # 重複ファイル：AI処理をスキップ
+                    stats['duplicates_skipped'] += 1
+                    logger.info(f"💰 コスト削減: {file_name} のAI処理をスキップしました")
+
+                    # 重複ファイルもArchiveに移動
+                    if self.archive_folder_id:
+                        archive_success = self.move_to_archive(file_id, file_name)
+                        if archive_success:
+                            stats['archived_success'] += 1
+                        else:
+                            stats['archived_failed'] += 1
+                    continue
+
+                # Step 3-2: ファイルを処理（重複なしの場合）
                 success = await self.process_file(file_meta)
 
                 if success:
@@ -203,8 +270,9 @@ class InBoxMonitor:
         logger.info("=" * 70)
         logger.info("📊 InBox自動監視システム 完了サマリー")
         logger.info(f"新規ファイル検出数: {stats['new_files_detected']}")
-        logger.info(f"処理成功数: {stats['processed_success']}")
-        logger.info(f"処理失敗数: {stats['processed_failed']}")
+        logger.info(f"重複によりスキップ: {stats['duplicates_skipped']} 件 💰")
+        logger.info(f"AI処理成功数: {stats['processed_success']}")
+        logger.info(f"AI処理失敗数: {stats['processed_failed']}")
         logger.info(f"アーカイブ成功数: {stats['archived_success']}")
         logger.info(f"アーカイブ失敗数: {stats['archived_failed']}")
         logger.info("=" * 70)
