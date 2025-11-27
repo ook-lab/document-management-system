@@ -18,6 +18,7 @@ from core.processors.pdf import PDFProcessor
 from core.processors.office import OfficeProcessor
 from core.ai.stage1_classifier import Stage1Classifier
 from core.ai.stage2_extractor import Stage2Extractor
+from core.ai.confidence_calculator import calculate_total_confidence
 # from core.ai.embeddings import EmbeddingClient  # 768次元 - 使用しない
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
@@ -238,7 +239,32 @@ class TwoStageIngestionPipeline:
                     processing_stage = 'stage1_only'
                     metadata = {**base_metadata, 'stage2_attempted': False}
                     stage2_model = None
-            
+
+            # ============================================
+            # 複合信頼度計算（Phase 2 - Track 1）
+            # ============================================
+            logger.info("[複合信頼度] 総合スコア計算開始...")
+            confidence_scores = calculate_total_confidence(
+                model_confidence=confidence,
+                text=extracted_text,
+                metadata=metadata,
+                doc_type=doc_type
+            )
+
+            total_confidence = confidence_scores['total_confidence']
+            keyword_match_score = confidence_scores['keyword_match_score']
+            metadata_completeness = confidence_scores['metadata_completeness']
+            data_consistency = confidence_scores['data_consistency']
+
+            # メタデータに各スコアを追加（分析用）
+            metadata['quality_scores'] = {
+                'keyword_match': keyword_match_score,
+                'metadata_completeness': metadata_completeness,
+                'data_consistency': data_consistency
+            }
+
+            logger.info(f"[複合信頼度] 完了: total_confidence={total_confidence:.3f}")
+
             # ============================================
             # Embedding生成（OpenAI text-embedding-3-small、1536次元）
             # ============================================
@@ -269,7 +295,8 @@ class TwoStageIngestionPipeline:
                 "embedding": embedding,
                 "metadata": metadata,
                 "content_hash": content_hash,
-                "confidence": confidence,
+                "confidence": confidence,  # AIモデルの確信度
+                "total_confidence": total_confidence,  # 複合信頼度スコア
                 "processing_status": PROCESSING_STATUS["COMPLETED"],
                 "processing_stage": processing_stage,
                 "stage1_model": "gemini-2.5-flash",
