@@ -109,6 +109,17 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
     # データフレームに変換
     try:
         df = pd.DataFrame(array_value)
+
+        # PyArrow エラー対策: 型強制とデータクリーニング
+        # すべての列を文字列型に変換して混合型を解消
+        df = df.astype(str)
+
+        # NaN, None を空文字列に置き換え
+        df = df.fillna("")
+
+        # 文字列化された "None", "nan", "NaN" も空文字列に置き換え
+        df = df.replace(["None", "nan", "NaN", "null"], "")
+
     except Exception as e:
         st.error(f"データフレーム変換エラー: {e}")
         st.json(array_value)
@@ -129,7 +140,17 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
     # データフレームを辞書のリストに戻す
     try:
         edited_array = edited_df.to_dict('records')
-        return edited_array
+
+        # データクリーニング: 空文字列を削除（オプショナルなフィールド用）
+        cleaned_array = []
+        for record in edited_array:
+            cleaned_record = {k: v for k, v in record.items() if v != ""}
+            # 空のレコードは除外
+            if cleaned_record:
+                cleaned_array.append(cleaned_record)
+
+        return cleaned_array
+
     except Exception as e:
         st.error(f"データ変換エラー: {e}")
         return array_value
