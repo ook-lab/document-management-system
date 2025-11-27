@@ -160,6 +160,13 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
     if not current_value:
         current_value = []
 
+    # 型チェック: 配列の要素が辞書（オブジェクト）である場合は編集をスキップ
+    if isinstance(current_value, list) and len(current_value) > 0 and isinstance(current_value[0], dict):
+        # 構造化データは表エディタで編集
+        st.info("📊 このフィールドは構造化データ（表）のため、**[表エディタ]** タブで編集してください")
+        st.json(current_value, expanded=False)
+        return current_value  # 元の値をそのまま返す
+
     # 配列の型に応じた処理
     if items_def and items_def.get("type") == "string":
         # 文字列配列: テキストエリアで改行区切り入力
