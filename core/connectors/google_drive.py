@@ -14,7 +14,7 @@ from pathlib import Path
 
 # 認証情報ファイルのパス (環境変数から取得)
 CREDENTIALS_PATH = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
-SCOPES = ['https://www.googleapis.com/auth/drive.readonly']
+SCOPES = ['https://www.googleapis.com/auth/drive']
 
 class GoogleDriveConnector:
     """Google Drive APIクライアント"""
@@ -130,10 +130,104 @@ class GoogleDriveConnector:
                 while done is False:
                     status, done = downloader.next_chunk()
                     # print(f"Download progress: {int(status.progress() * 100)}%")
-            
+
             # logger.info(f"ファイルダウンロード完了: {dest_path}")
             return str(dest_path)
-            
+
         except Exception as e:
             # logger.error(f"ファイルダウンロードエラー ({file_name}): {e}")
             raise RuntimeError(f"ファイルダウンロードに失敗しました: {e}")
+
+    def get_inbox_folder_id(self) -> Optional[str]:
+        """
+        環境変数からInBoxフォルダIDを取得
+
+        Returns:
+            InBoxフォルダID、設定されていない場合はNone
+        """
+        inbox_folder_id = os.getenv("INBOX_FOLDER_ID")
+        if not inbox_folder_id:
+            logger.warning("INBOX_FOLDER_ID が環境変数に設定されていません")
+        return inbox_folder_id
+
+    def get_archive_folder_id(self) -> Optional[str]:
+        """
+        環境変数からArchiveフォルダIDを取得
+
+        Returns:
+            ArchiveフォルダID、設定されていない場合はNone
+        """
+        archive_folder_id = os.getenv("ARCHIVE_FOLDER_ID")
+        if not archive_folder_id:
+            logger.warning("ARCHIVE_FOLDER_ID が環境変数に設定されていません")
+        return archive_folder_id
+
+    def list_inbox_files(
+        self,
+        folder_id: str,
+        processed_file_ids: List[str]
+    ) -> List[Dict[str, Any]]:
+        """
+        InBoxフォルダ内の新規ファイルを取得
+
+        Args:
+            folder_id: InBoxフォルダのID
+            processed_file_ids: 既に処理済みのファイルIDリスト
+
+        Returns:
+            未処理のファイルメタデータリスト
+        """
+        try:
+            # フォルダ内の全ファイルを取得（PDFのみ）
+            all_files = self.list_files_in_folder(
+                folder_id,
+                mime_type_filter="mimeType='application/pdf'"
+            )
+
+            # 未処理のファイルのみをフィルタリング
+            new_files = [
+                file for file in all_files
+                if file['id'] not in processed_file_ids
+            ]
+
+            logger.info(f"InBox内の全ファイル数: {len(all_files)}, 新規ファイル数: {len(new_files)}")
+            return new_files
+
+        except Exception as e:
+            logger.error(f"InBoxファイルリスト取得エラー: {e}")
+            return []
+
+    def move_file(self, file_id: str, new_folder_id: str) -> bool:
+        """
+        ファイルを別のフォルダに移動
+
+        Args:
+            file_id: 移動するファイルのID
+            new_folder_id: 移動先フォルダのID
+
+        Returns:
+            成功した場合True、失敗した場合False
+        """
+        try:
+            # 現在の親フォルダを取得
+            file = self.service.files().get(
+                fileId=file_id,
+                fields='parents'
+            ).execute()
+
+            previous_parents = ",".join(file.get('parents', []))
+
+            # ファイルを新しいフォルダに移動（古い親を削除し、新しい親を追加）
+            self.service.files().update(
+                fileId=file_id,
+                addParents=new_folder_id,
+                removeParents=previous_parents,
+                fields='id, parents'
+            ).execute()
+
+            logger.info(f"ファイル移動成功: {file_id} -> {new_folder_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"ファイル移動エラー ({file_id}): {e}")
+            return False

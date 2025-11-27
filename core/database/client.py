@@ -176,3 +176,30 @@ class DatabaseClient:
         except Exception as e:
             print(f"Error updating document metadata: {e}")
             return False
+
+    def get_processed_file_ids(self) -> List[str]:
+        """
+        既に処理済みのファイルIDリストを取得
+
+        Returns:
+            処理済みファイルのsource_id（Google Drive file ID）のリスト
+        """
+        try:
+            # source_idが存在するすべてのドキュメントを取得
+            response = (
+                self.client.table('documents')
+                .select('source_id')
+                .not_.is_('source_id', 'null')
+                .execute()
+            )
+
+            # source_idのリストを抽出
+            if response.data:
+                file_ids = [doc['source_id'] for doc in response.data if doc.get('source_id')]
+                print(f"Supabaseから {len(file_ids)} 件の処理済みファイルIDを取得しました")
+                return file_ids
+            return []
+
+        except Exception as e:
+            print(f"Error getting processed file IDs: {e}")
+            return []

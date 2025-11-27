@@ -27,6 +27,10 @@ class Settings:
     PERSONAL_FOLDER_ID: str = os.getenv("PERSONAL_FOLDER_ID", "")
     FAMILY_FOLDER_ID: str = os.getenv("FAMILY_FOLDER_ID", "")
     WORK_FOLDER_ID: str = os.getenv("WORK_FOLDER_ID", "")
+
+    # Google Drive InBox監視システム用
+    INBOX_FOLDER_ID: str = os.getenv("INBOX_FOLDER_ID", "")
+    ARCHIVE_FOLDER_ID: str = os.getenv("ARCHIVE_FOLDER_ID", "")
     
     # プロジェクトルート
     PROJECT_ROOT: Path = Path(__file__).parent.parent
