@@ -150,6 +150,57 @@ def main():
 
     st.markdown("---")
 
+    # 修正履歴とロールバック機能（Phase 2）
+    latest_correction_id = selected_doc.get('latest_correction_id')
+    if latest_correction_id:
+        with st.expander("📜 修正履歴とロールバック", expanded=False):
+            correction_history = db_client.get_correction_history(doc_id, limit=5)
+
+            if correction_history:
+                st.markdown(f"**修正回数**: {len(correction_history)}回")
+
+                # 最新の修正情報
+                latest_correction = correction_history[0]
+                st.markdown(f"**最新の修正日時**: {latest_correction.get('corrected_at')}")
+                if latest_correction.get('corrector_email'):
+                    st.markdown(f"**修正者**: {latest_correction.get('corrector_email')}")
+
+                # ロールバックボタン
+                col_rollback, col_spacer = st.columns([1, 2])
+                with col_rollback:
+                    if st.button("⏮️ ロールバック（元に戻す）", use_container_width=True, type="secondary"):
+                        with st.spinner("ロールバック中..."):
+                            rollback_success = db_client.rollback_document(doc_id)
+
+                        if rollback_success:
+                            st.success("✅ ロールバックに成功しました！前の状態に戻りました。")
+                            st.rerun()
+                        else:
+                            st.error("❌ ロールバックに失敗しました")
+
+                # 修正履歴の詳細表示
+                with st.expander("修正履歴の詳細を表示", expanded=False):
+                    for idx, correction in enumerate(correction_history):
+                        st.markdown(f"### 修正 #{idx + 1}")
+                        st.markdown(f"**日時**: {correction.get('corrected_at')}")
+                        if correction.get('notes'):
+                            st.markdown(f"**メモ**: {correction.get('notes')}")
+
+                        # 修正前後の差分を表示
+                        col_before, col_after = st.columns(2)
+                        with col_before:
+                            st.markdown("**修正前**")
+                            st.json(correction.get('old_metadata', {}), expanded=False)
+                        with col_after:
+                            st.markdown("**修正後**")
+                            st.json(correction.get('new_metadata', {}), expanded=False)
+
+                        st.markdown("---")
+            else:
+                st.info("修正履歴がありません")
+
+    st.markdown("---")
+
     # レイアウト: 左にPDFプレビュー、右に編集タブ
     col_left, col_right = st.columns([1, 1.2])
 
@@ -250,15 +301,17 @@ def main():
                                 st.error(f"  - {error}")
                             st.stop()
 
-                    # データベース更新
-                    success = db_client.update_document_metadata(
+                    # データベース更新（修正履歴を記録）
+                    success = db_client.record_correction(
                         doc_id=doc_id,
                         new_metadata=edited_metadata,
-                        new_doc_type=doc_type
+                        new_doc_type=doc_type,
+                        corrector_email=None,  # 将来的に認証情報から取得
+                        notes="Review UIからの手動修正"
                     )
 
                     if success:
-                        st.success("✅ 保存に成功しました！")
+                        st.success("✅ 保存に成功しました！修正履歴が記録されました。")
                         st.balloons()
                         # ページをリロード
                         st.rerun()

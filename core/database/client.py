@@ -153,6 +153,9 @@ class DatabaseClient:
         """
         ドキュメントのメタデータと文書タイプを更新
 
+        注意: この関数は修正履歴を記録しません。
+        修正履歴を記録する場合は record_correction() を使用してください。
+
         Args:
             doc_id: ドキュメントID
             new_metadata: 新しいメタデータ
@@ -176,6 +179,186 @@ class DatabaseClient:
         except Exception as e:
             print(f"Error updating document metadata: {e}")
             return False
+
+    def record_correction(
+        self,
+        doc_id: str,
+        new_metadata: Dict[str, Any],
+        new_doc_type: Optional[str] = None,
+        corrector_email: Optional[str] = None,
+        notes: Optional[str] = None
+    ) -> bool:
+        """
+        ドキュメントのメタデータを更新し、修正履歴を記録
+
+        Phase 2: トランザクション管理・ロールバック機能
+
+        Args:
+            doc_id: ドキュメントID
+            new_metadata: 新しいメタデータ
+            new_doc_type: 新しい文書タイプ（オプション）
+            corrector_email: 修正者のメールアドレス（オプション）
+            notes: 修正に関するメモ（オプション）
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            # Step 1: 現在のドキュメントを取得
+            current_doc = self.get_document_by_id(doc_id)
+            if not current_doc:
+                print(f"Error: Document not found: {doc_id}")
+                return False
+
+            old_metadata = current_doc.get('metadata', {})
+            old_doc_type = current_doc.get('doc_type')
+
+            # Step 2: correction_history に修正履歴を記録
+            correction_data = {
+                'document_id': doc_id,
+                'old_metadata': old_metadata,
+                'new_metadata': new_metadata,
+                'corrector_email': corrector_email,
+                'correction_type': 'manual',
+                'notes': notes
+            }
+
+            correction_response = (
+                self.client.table('correction_history')
+                .insert(correction_data)
+                .execute()
+            )
+
+            if not correction_response.data:
+                print("Error: Failed to insert correction history")
+                return False
+
+            correction_id = correction_response.data[0]['id']
+            print(f"✅ 修正履歴を記録: correction_id={correction_id}")
+
+            # Step 3: documents テーブルを更新
+            update_data = {
+                'metadata': new_metadata,
+                'latest_correction_id': correction_id
+            }
+            if new_doc_type and new_doc_type != old_doc_type:
+                update_data['doc_type'] = new_doc_type
+
+            document_response = (
+                self.client.table('documents')
+                .update(update_data)
+                .eq('id', doc_id)
+                .execute()
+            )
+
+            if not document_response.data:
+                print("Error: Failed to update document")
+                return False
+
+            print(f"✅ ドキュメント更新成功: doc_id={doc_id}")
+            return True
+
+        except Exception as e:
+            print(f"Error recording correction: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def rollback_document(self, doc_id: str) -> bool:
+        """
+        ドキュメントのメタデータを最新の修正前の状態にロールバック
+
+        Phase 2: トランザクション管理・ロールバック機能
+
+        Args:
+            doc_id: ドキュメントID
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            # Step 1: 現在のドキュメントを取得
+            current_doc = self.get_document_by_id(doc_id)
+            if not current_doc:
+                print(f"Error: Document not found: {doc_id}")
+                return False
+
+            latest_correction_id = current_doc.get('latest_correction_id')
+            if not latest_correction_id:
+                print(f"Error: No correction history found for document: {doc_id}")
+                return False
+
+            # Step 2: 最新の修正履歴を取得
+            correction_response = (
+                self.client.table('correction_history')
+                .select('*')
+                .eq('id', latest_correction_id)
+                .execute()
+            )
+
+            if not correction_response.data:
+                print(f"Error: Correction history not found: {latest_correction_id}")
+                return False
+
+            correction = correction_response.data[0]
+            old_metadata = correction['old_metadata']
+
+            # Step 3: documentsテーブルを修正前の状態に戻す
+            update_data = {
+                'metadata': old_metadata,
+                'latest_correction_id': None  # ロールバック後は修正履歴をクリア
+            }
+
+            document_response = (
+                self.client.table('documents')
+                .update(update_data)
+                .eq('id', doc_id)
+                .execute()
+            )
+
+            if not document_response.data:
+                print("Error: Failed to rollback document")
+                return False
+
+            print(f"✅ ロールバック成功: doc_id={doc_id}, correction_id={latest_correction_id}")
+            return True
+
+        except Exception as e:
+            print(f"Error rolling back document: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def get_correction_history(
+        self,
+        doc_id: str,
+        limit: int = 10
+    ) -> List[Dict[str, Any]]:
+        """
+        ドキュメントの修正履歴を取得
+
+        Phase 2: トランザクション管理・ロールバック機能
+
+        Args:
+            doc_id: ドキュメントID
+            limit: 取得する最大件数
+
+        Returns:
+            修正履歴のリスト（新しい順）
+        """
+        try:
+            response = (
+                self.client.table('correction_history')
+                .select('*')
+                .eq('document_id', doc_id)
+                .order('corrected_at', desc=True)
+                .limit(limit)
+                .execute()
+            )
+            return response.data if response.data else []
+        except Exception as e:
+            print(f"Error getting correction history: {e}")
+            return []
 
     def get_processed_file_ids(self) -> List[str]:
         """
