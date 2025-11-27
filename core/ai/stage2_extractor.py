@@ -6,6 +6,7 @@ Stage 1で分類された文書から、詳細な構造化データを抽出し�
 import json
 from typing import Dict, Optional
 from datetime import datetime
+from pathlib import Path
 from loguru import logger
 
 from config.model_tiers import ModelTier
@@ -18,7 +19,35 @@ class Stage2Extractor:
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self.llm = llm_client if llm_client else LLMClient()
         self.confidence_threshold = 0.7
-    
+        self._table_extraction_template = None
+
+    def _load_table_extraction_template(self) -> str:
+        """
+        表構造抽出プロンプトテンプレートをロード
+
+        Returns:
+            table_extraction_v1.mdの内容
+        """
+        if self._table_extraction_template is not None:
+            return self._table_extraction_template
+
+        try:
+            template_path = Path(__file__).parent / "prompts" / "table_extraction_v1.md"
+
+            if not template_path.exists():
+                logger.warning(f"表抽出テンプレートが見つかりません: {template_path}")
+                return ""
+
+            with open(template_path, 'r', encoding='utf-8') as f:
+                self._table_extraction_template = f.read()
+
+            logger.info(f"[Stage 2] 表抽出テンプレートをロード: {len(self._table_extraction_template)} 文字")
+            return self._table_extraction_template
+
+        except Exception as e:
+            logger.error(f"表抽出テンプレートの読み込みエラー: {e}", exc_info=True)
+            return ""
+
     def extract_metadata(
         self,
         full_text: str,
@@ -100,13 +129,16 @@ class Stage2Extractor:
         
         # doc_typeに応じたカスタムフィールド定義
         custom_fields = self._get_custom_fields(doc_type)
-        
+
+        # 表構造抽出テンプレートをロード (Phase 2.2.2)
+        table_extraction_guidelines = self._load_table_extraction_template()
+
         # テキストを適切な長さに切り詰め (Claudeのコンテキスト制限を考慮)
         max_text_length = 8000
         truncated_text = full_text[:max_text_length]
         if len(full_text) > max_text_length:
             truncated_text += "\n\n...(以下省略)..."
-        
+
         prompt = f"""あなたは文書分析の専門家です。以下の文書から詳細な情報を抽出し、JSON形式で回答してください。
 
 # ファイル名
@@ -129,7 +161,10 @@ class Stage2Extractor:
 3. **tags**: 関連するタグのリスト (3-5個、検索に有用なキーワード)
 4. **metadata**: 文書タイプに応じた構造化データ
 {custom_fields}
-5. **extraction_confidence**: 抽出の信頼度 (0.0-1.0)
+5. **tables**: 文書内の表構造（該当する場合のみ）
+   - 文書に表形式のデータがある場合、以下のガイドラインに従って抽出してください
+   - 表が存在しない場合は空のリスト [] を設定してください
+6. **extraction_confidence**: 抽出の信頼度 (0.0-1.0)
 
 # 重要な注意事項
 - 文書に記載されている情報のみを抽出してください（推測や補完は不要）
@@ -139,6 +174,9 @@ class Stage2Extractor:
 - **【特に重要】学年通信などで「5A」「5B」のようなクラス名が列見出しにある表形式の時間割を見つけた場合、
   必ずweekly_scheduleの各日にclass_schedulesフィールドを追加し、クラスごとの科目を抽出してください。
   例: "class_schedules": [{{"class": "5A", "subjects": ["1限:家庭", "2限:家庭", "3限:算数"]}}, {{"class": "5B", "subjects": ["1限:算数", "2限:国語", "3限:家庭"]}}]**
+
+# 表構造抽出ガイドライン (Phase 2.2.2)
+{table_extraction_guidelines}
 
 # 出力形式
 以下のJSON形式**のみ**で回答してください（他の説明やマークダウンは不要）:
@@ -152,6 +190,14 @@ class Stage2Extractor:
   "metadata": {{
     // doc_typeに応じたカスタムフィールド
   }},
+  "tables": [
+    {{
+      "table_type": "daily_schedule",
+      "headers": ["日付", "曜日", "1限", "2限"],
+      "rows": [...]
+      // 表構造抽出ガイドラインに従った構造
+    }}
+  ],
   "extraction_confidence": 0.95
 }}
 ```
@@ -369,10 +415,14 @@ class Stage2Extractor:
             
             if "tags" not in result:
                 result["tags"] = []
-            
+
             if "metadata" not in result:
                 result["metadata"] = {}
-            
+
+            # Phase 2.2.2: 表構造対応
+            if "tables" not in result:
+                result["tables"] = []
+
             return result
             
         except json.JSONDecodeError as e:
@@ -386,13 +436,14 @@ class Stage2Extractor:
     def _get_fallback_result(self, full_text: str, doc_type: str, stage1_result: Dict) -> Dict:
         """フォールバック結果"""
         summary = full_text[:200] + "..." if len(full_text) > 200 else full_text
-        
+
         return {
             "doc_type": doc_type,
             "summary": summary,
             "document_date": None,
             "tags": [],
             "metadata": {},
+            "tables": [],  # Phase 2.2.2
             "extraction_confidence": 0.2,
             "stage1_doc_type": stage1_result.get("doc_type"),
             "stage1_confidence": stage1_result.get("confidence"),
