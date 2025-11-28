@@ -230,7 +230,9 @@ class TwoStageIngestionPipeline:
 
                         if not is_valid:
                             # 検証失敗時の処理
-                            logger.error(f"[JSON検証] 検証失敗: {validation_error}")
+                            # KeyError回避: エラーメッセージを安全に文字列化
+                            safe_validation_error = str(validation_error).replace('{', '{{').replace('}', '}}')
+                            logger.error(f"[JSON検証] 検証失敗: {safe_validation_error}")
 
                             # metadataに検証失敗情報を記録
                             metadata['schema_validation'] = {
@@ -252,7 +254,10 @@ class TwoStageIngestionPipeline:
                     except Exception as e:
                         error_msg = str(e)
                         error_traceback = traceback.format_exc()
-                        logger.error(f"[Stage 2] 処理エラー: {error_msg}\n{error_traceback}")
+                        # KeyError回避: エラーメッセージを安全に文字列化
+                        safe_error_msg = error_msg.replace('{', '{{').replace('}', '}}')
+                        safe_traceback = error_traceback.replace('{', '{{').replace('}', '}}')
+                        logger.error(f"[Stage 2] 処理エラー: {safe_error_msg}\n{safe_traceback}")
 
                         # エラー情報をmetadataに記録
                         metadata = {
@@ -344,7 +349,10 @@ class TwoStageIngestionPipeline:
         except Exception as e:
             error_msg = str(e)
             error_traceback = traceback.format_exc()
-            logger.error(f"処理エラー: {file_name} - {error_msg}\n{error_traceback}")
+            # KeyError回避: エラーメッセージを安全に文字列化
+            safe_error_msg = error_msg.replace('{', '{{').replace('}', '}}')
+            safe_traceback = error_traceback.replace('{', '{{').replace('}', '}}')
+            logger.error(f"処理エラー: {file_name} - {safe_error_msg}\n{safe_traceback}")
             
             error_data = {
                 "source_type": "drive",
@@ -360,7 +368,10 @@ class TwoStageIngestionPipeline:
                 await self.db.insert_document('documents', error_data)
             except Exception as db_error:
                 db_error_traceback = traceback.format_exc()
-                logger.critical(f"DB保存失敗（エラーレコード）: {file_name} - DB Error: {db_error}\n{db_error_traceback}")
+                # KeyError回避: エラーメッセージを安全に文字列化
+                safe_db_error = str(db_error).replace('{', '{{').replace('}', '}}')
+                safe_db_traceback = db_error_traceback.replace('{', '{{').replace('}', '}}')
+                logger.critical(f"DB保存失敗（エラーレコード）: {file_name} - DB Error: {safe_db_error}\n{safe_db_traceback}")
 
                 # ファイルシステムフォールバック
                 fallback_dir = Path('logs/db_errors')
@@ -378,7 +389,9 @@ class TwoStageIngestionPipeline:
                         }, f, ensure_ascii=False, indent=2)
                     logger.warning(f"エラー情報をファイルに保存: {fallback_file}")
                 except Exception as file_error:
-                    logger.critical(f"ファイルシステムへの保存も失敗: {file_error}") 
+                    # KeyError回避: エラーメッセージを安全に文字列化
+                    safe_file_error = str(file_error).replace('{', '{{').replace('}', '}}')
+                    logger.critical(f"ファイルシステムへの保存も失敗: {safe_file_error}") 
                 
             return None
             
