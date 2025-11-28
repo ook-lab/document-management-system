@@ -36,14 +36,14 @@ IKUYA_SCHOOL_TYPES = [
 # Folder 2: 仕事 (Work) - ビジネス関連書類
 # ============================================================================
 WORK_TYPES = [
-    "meeting_minutes",              # 議事録
+    #"meeting_minutes",              # 議事録
     "proposal",                     # 提案書
     "business_report",              # 報告書
-    "contract",                     # 契約書
+    #"contract",                     # 契約書
     "invoice",                      # 請求書
     "receipt",                      # 領収書
     "business_card",                # 名刺
-    "presentation",                 # プレゼン資料
+    #"presentation",                 # プレゼン資料
     "memo",                         # 業務メモ
 ]
 
