@@ -1,44 +1,39 @@
-# Google API関連
 google-api-python-client==2.108.0
 google-auth==2.25.2
 google-auth-oauthlib==1.2.0
 google-auth-httplib2==0.2.0
 google-generativeai==0.3.0
 
-# AI API関連
 anthropic==0.39.0
 
-# OpenAI
 openai==1.54.0
 
-# データベース
 supabase==2.10.0
 
-# ドキュメント処理
 pdfplumber==0.10.3
 python-docx==1.1.0
+python-pptx==0.6.21
 openpyxl==3.1.2
 Pillow
 pytesseract==0.3.10
+pypdf==3.17.4
 
-# 数値計算・データ処理
 numpy>=1.26.2,<2.0.0
+pyarrow==22.0.0
 pgvector==0.2.4
 
-# 設定・ログ
 python-dotenv==1.0.0
 loguru==0.7.2
 pydantic
 pydantic-settings
 tenacity>=8.2.0
 jsonschema>=4.20.0
+pyyaml>=6.0
 
-# Streamlit
 streamlit>=1.29.0,<2.0.0
 pandas>=2.1.4,<3.0.0
 streamlit-pdf-viewer
 
-# Webサーバー
 gunicorn==23.0.0
 Flask==3.1.0
 Flask-CORS==5.0.0

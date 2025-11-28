@@ -565,5 +565,5 @@ assert len(ALL_DOC_TYPES) == len(set(ALL_DOC_TYPES)), "Duplicate doc types found
 for doc_type in ALL_DOC_TYPES:
     assert doc_type in DOC_TYPE_METADATA, f"Metadata missing for {doc_type}"
 
-print(f"✅ 文書タイプ定数: {len(ALL_DOC_TYPES)}種類のdoc_typeを定義しました")
-print(f"✅ フォルダ: {len(FOLDER_MAPPINGS)}個のフォルダに分類されています")
+print(f"[OK] 文書タイプ定数: {len(ALL_DOC_TYPES)}種類のdoc_typeを定義しました")
+print(f"[OK] フォルダ: {len(FOLDER_MAPPINGS)}個のフォルダに分類されています")

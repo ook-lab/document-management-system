@@ -14,6 +14,10 @@ from typing import List, Dict, Any
 from loguru import logger
 import argparse
 import traceback
+from dotenv import load_dotenv
+
+# .envファイルを読み込む
+load_dotenv()
 
 # パス設定
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -44,7 +48,7 @@ class DailySyncProcessor:
         
         Phase 1Aでは、InBox方式ではなく特定のフォルダをスキャンすることを想定する。
         """
-        logger.info(f"📁 フォルダID [{folder_id}] からファイルをスキャン中...")
+        logger.info(f"[SCAN] フォルダID [{folder_id}] からファイルをスキャン中...")
         
         # Google Drive Connectorを使用してファイルリストを取得
         # 現状は、単純にフォルダ内の全ファイルを取得する
@@ -52,7 +56,7 @@ class DailySyncProcessor:
         
         # 実際にはここで DB をチェックし、既に処理済みの source_id を持つファイルをフィルタする
         
-        logger.info(f"✅ {len(files)} 件のファイルを検出しました。")
+        logger.info(f"[OK] {len(files)} 件のファイルを検出しました。")
         return files
 
     async def run_sync(self):

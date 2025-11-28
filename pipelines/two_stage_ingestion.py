@@ -243,14 +243,15 @@ class TwoStageIngestionPipeline:
                             confidence = confidence * 0.8  # 20%減点
                             logger.warning(f"[JSON検証] 信頼度を減点: {confidence:.2f} (検証失敗のため)")
                         else:
-                            logger.info("[JSON検証] ✅ 検証成功")
+                            logger.info("[JSON検証] [OK] 検証成功")
                             metadata['schema_validation'] = {
                                 'is_valid': True,
                                 'validated_at': datetime.now().isoformat()
                             }
 
                     except Exception as e:
-                        logger.error(f"[Stage 2] 処理エラー: {e}", exc_info=True)
+                        error_msg = str(e)
+                        logger.error(f"[Stage 2] 処理エラー: {error_msg}", exc_info=True)
 
                         # エラー情報をmetadataに記録
                         metadata = {
@@ -340,7 +341,8 @@ class TwoStageIngestionPipeline:
             return result
             
         except Exception as e:
-            logger.error(f"処理エラー: {file_name} - {e}", exc_info=True)
+            error_msg = str(e)
+            logger.error(f"処理エラー: {file_name} - {error_msg}", exc_info=True)
             
             error_data = {
                 "source_type": "drive",
