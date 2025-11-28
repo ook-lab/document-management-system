@@ -251,7 +251,8 @@ class TwoStageIngestionPipeline:
 
                     except Exception as e:
                         error_msg = str(e)
-                        logger.error(f"[Stage 2] 処理エラー: {error_msg}", exc_info=True)
+                        error_traceback = traceback.format_exc()
+                        logger.error(f"[Stage 2] 処理エラー: {error_msg}\n{error_traceback}")
 
                         # エラー情報をmetadataに記録
                         metadata = {
@@ -342,7 +343,8 @@ class TwoStageIngestionPipeline:
             
         except Exception as e:
             error_msg = str(e)
-            logger.error(f"処理エラー: {file_name} - {error_msg}", exc_info=True)
+            error_traceback = traceback.format_exc()
+            logger.error(f"処理エラー: {file_name} - {error_msg}\n{error_traceback}")
             
             error_data = {
                 "source_type": "drive",
