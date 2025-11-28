@@ -359,7 +359,8 @@ class TwoStageIngestionPipeline:
             try:
                 await self.db.insert_document('documents', error_data)
             except Exception as db_error:
-                logger.critical(f"DB保存失敗（エラーレコード）: {file_name} - DB Error: {db_error}", exc_info=True)
+                db_error_traceback = traceback.format_exc()
+                logger.critical(f"DB保存失敗（エラーレコード）: {file_name} - DB Error: {db_error}\n{db_error_traceback}")
 
                 # ファイルシステムフォールバック
                 fallback_dir = Path('logs/db_errors')
