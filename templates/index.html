@@ -419,9 +419,11 @@
                 documentList.innerHTML = '<div class="empty-state">関連する文書が見つかりませんでした</div>';
             } else {
                 documentList.innerHTML = documents.map(doc => {
-                    const sourceType = doc.source_type || '';
-                    const fileName = doc.file_name || '';
-                    const source = (sourceType && fileName) ? `${sourceType}: ${fileName}` : (sourceType || fileName || '不明');
+                    // ✅ タイトルはfile_nameを優先的に使用
+                    const title = doc.file_name || doc.title || '無題';
+
+                    // ✅ 要約があればそれを優先、なければ本文をトリミング
+                    const displayText = doc.summary || truncateText(doc.content || '', 200);
 
                     // ✅ source_urlがあればリンクボタンを表示
                     const sourceUrl = doc.source_url || '';
@@ -431,13 +433,12 @@
 
                     return `
                         <div class="document-card">
-                            <div class="document-title">${escapeHtml(doc.title || '無題')}</div>
+                            <div class="document-title">${escapeHtml(title)}</div>
                             <div class="document-meta">
-                                <span>出典: ${escapeHtml(source)}</span>
                                 <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
                             </div>
                             <div class="document-content">
-                                ${escapeHtml(truncateText(doc.content || '', 200))}
+                                ${escapeHtml(displayText)}
                             </div>
                             ${linkButton}
                         </div>
