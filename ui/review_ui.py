@@ -219,9 +219,18 @@ def main():
                 with open(file_path, 'rb') as f:
                     pdf_bytes = f.read()
 
+                # デバッグログ: PDFバイトデータの確認
+                logger.info(f"PDFバイトデータ読み込み完了。バイト数: {len(pdf_bytes)} bytes")
+
+                # Base64エンコードして確認（デバッグ用）
+                import base64
+                base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
+                logger.info(f"Base64エンコード完了。文字列の長さ: {len(base64_pdf)}文字")
+
                 # PDFプレビュー表示
                 try:
                     from streamlit_pdf_viewer import pdf_viewer
+                    logger.info("streamlit_pdf_viewer を使用してPDF表示")
                     pdf_viewer(pdf_bytes, height=700)
                 except ImportError:
                     st.warning("PDFビューアーライブラリがインストールされていません")
