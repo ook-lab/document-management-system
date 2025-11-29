@@ -5,7 +5,7 @@
 
 CREATE OR REPLACE FUNCTION match_documents(
     query_embedding vector(1536),
-    match_threshold float DEFAULT 0.7,
+    match_threshold float DEFAULT 0.2,
     match_count int DEFAULT 10,
     filter_workspace text DEFAULT NULL
 )
