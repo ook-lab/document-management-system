@@ -44,7 +44,7 @@ class ModelTier:
         "model": "gpt-5.1",  # ✅ gpt-4o → gpt-5.1 に変更
         "description": "自然で流暢な対話応答",
         "temperature": 0.7,
-        "max_tokens": 2048,
+        "max_completion_tokens": 2048,  # ✅ GPT-5.1の新しいパラメータ名
         "cost_per_1k_tokens": 0.01
     }
     

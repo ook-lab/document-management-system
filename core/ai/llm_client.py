@@ -253,16 +253,26 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """OpenAI API呼び出し"""
         try:
+            # ✅ GPT-5.1では max_completion_tokens を使用、旧モデルでは max_tokens（後方互換性）
+            max_completion_tokens = config.get("max_completion_tokens")
             max_tokens = config.get("max_tokens", 2048)
-            
-            response = self.openai_client.chat.completions.create(
-                model=model_name,
-                messages=[
+
+            # パラメータを動的に構築
+            api_params = {
+                "model": model_name,
+                "messages": [
                     {"role": "user", "content": prompt}
                 ],
-                max_tokens=max_tokens,
-                temperature=config.get("temperature", 0.7)
-            )
+                "temperature": config.get("temperature", 0.7)
+            }
+
+            # max_completion_tokens が設定されていればそれを使用、なければ max_tokens
+            if max_completion_tokens:
+                api_params["max_completion_tokens"] = max_completion_tokens
+            else:
+                api_params["max_tokens"] = max_tokens
+
+            response = self.openai_client.chat.completions.create(**api_params)
             
             return {
                 "success": True,
