@@ -103,7 +103,7 @@ def main():
             'ID': doc.get('id', '')[:8],
             'ファイル名': doc.get('file_name', ''),
             '文書タイプ': doc.get('doc_type', ''),
-            '信頼度': round(doc.get('confidence', 0), 3),
+            '信頼度': round(doc.get('confidence') or 0, 3),
             '作成日時': doc.get('created_at', '')[:10]
         }
         for doc in documents
@@ -117,7 +117,7 @@ def main():
     selected_index = st.selectbox(
         "編集するドキュメントを選択",
         range(len(documents)),
-        format_func=lambda i: f"{documents[i].get('file_name', 'Unknown')} (信頼度: {documents[i].get('confidence', 0):.3f})"
+        format_func=lambda i: f"{documents[i].get('file_name', 'Unknown')} (信頼度: {documents[i].get('confidence') or 0:.3f})"
     )
 
     selected_doc = documents[selected_index]
@@ -128,7 +128,7 @@ def main():
     file_name = selected_doc.get('file_name', 'unknown')
     doc_type = selected_doc.get('doc_type', '')
     metadata = selected_doc.get('metadata', {})
-    confidence = selected_doc.get('confidence', 0)
+    confidence = selected_doc.get('confidence') or 0
 
     # 基本情報表示
     col1, col2, col3 = st.columns([2, 1, 1])
