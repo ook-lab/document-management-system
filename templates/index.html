@@ -107,6 +107,25 @@
             background: #e0e0e0;
         }
 
+        .btn-link {
+            display: inline-block;
+            padding: 8px 16px;
+            background: #667eea;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            margin-top: 10px;
+            transition: all 0.3s;
+        }
+
+        .btn-link:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 10px rgba(102, 126, 234, 0.3);
+        }
+
         .options {
             display: flex;
             gap: 15px;
@@ -404,6 +423,12 @@
                     const fileName = doc.file_name || '';
                     const source = (sourceType && fileName) ? `${sourceType}: ${fileName}` : (sourceType || fileName || '不明');
 
+                    // ✅ source_urlがあればリンクボタンを表示
+                    const sourceUrl = doc.source_url || '';
+                    const linkButton = sourceUrl ?
+                        `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 元ファイルを開く</a>` :
+                        '';
+
                     return `
                         <div class="document-card">
                             <div class="document-title">${escapeHtml(doc.title || '無題')}</div>
@@ -414,6 +439,7 @@
                             <div class="document-content">
                                 ${escapeHtml(truncateText(doc.content || '', 200))}
                             </div>
+                            ${linkButton}
                         </div>
                     `;
                 }).join('');
