@@ -216,24 +216,18 @@ def main():
                 logger.info(f"PDFプレビュー開始。ローカルパス: {file_path}")
                 logger.info(f"ファイルサイズ: {os.path.getsize(file_path)} bytes")
 
-                with open(file_path, 'rb') as f:
-                    pdf_bytes = f.read()
-
-                # デバッグログ: PDFバイトデータの確認
-                logger.info(f"PDFバイトデータ読み込み完了。バイト数: {len(pdf_bytes)} bytes")
-
-                # Base64エンコードして確認（デバッグ用）
-                import base64
-                base64_pdf = base64.b64encode(pdf_bytes).decode('utf-8')
-                logger.info(f"Base64エンコード完了。文字列の長さ: {len(base64_pdf)}文字")
-
-                # PDFプレビュー表示
+                # PDFプレビュー表示（ファイルパスを直接渡す）
                 try:
                     from streamlit_pdf_viewer import pdf_viewer
-                    logger.info("streamlit_pdf_viewer を使用してPDF表示")
-                    pdf_viewer(pdf_bytes, height=700)
+                    logger.info("streamlit_pdf_viewer を使用してPDF表示（ファイルパス直接渡し）")
+                    # ファイルパスを直接渡すことで、巨大なBase64文字列の生成を回避
+                    pdf_viewer(file_path, height=700)
                 except ImportError:
+                    logger.warning("streamlit_pdf_viewer がインストールされていません。ダウンロードボタンを表示します")
                     st.warning("PDFビューアーライブラリがインストールされていません")
+                    # ダウンロードボタン用にバイトデータを読み込む
+                    with open(file_path, 'rb') as f:
+                        pdf_bytes = f.read()
                     st.download_button(
                         label="📥 PDFをダウンロード",
                         data=pdf_bytes,
@@ -244,13 +238,20 @@ def main():
                 except Exception as e:
                     logger.error(f"PDFプレビュー表示エラー: {e}", exc_info=True)
                     st.warning(f"PDFプレビュー表示エラー: {e}")
-                    st.download_button(
-                        label="📥 PDFをダウンロード",
-                        data=pdf_bytes,
-                        file_name=file_name,
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
+                    # エラー時のダウンロードボタン用にバイトデータを読み込む
+                    try:
+                        with open(file_path, 'rb') as f:
+                            pdf_bytes = f.read()
+                        st.download_button(
+                            label="📥 PDFをダウンロード",
+                            data=pdf_bytes,
+                            file_name=file_name,
+                            mime="application/pdf",
+                            use_container_width=True
+                        )
+                    except Exception as read_error:
+                        logger.error(f"PDFファイル読み込みエラー: {read_error}", exc_info=True)
+                        st.error("PDFファイルの読み込みに失敗しました")
             else:
                 logger.warning(f"PDFファイルを読み込めませんでした。file_path={file_path}, exists={Path(file_path).exists() if file_path else False}")
                 st.warning("PDFファイルを読み込めませんでした")
