@@ -283,7 +283,8 @@ def _build_context(documents: List[Dict[str, Any]]) -> str:
     for idx, doc in enumerate(documents, 1):
         file_name = doc.get('file_name', '無題')
         doc_type = doc.get('doc_type', '不明')
-        summary = doc.get('summary', '')
+        # ✅ contentを優先的に使用、フォールバックとしてsummary, full_textをチェック
+        content = doc.get('content') or doc.get('summary') or doc.get('full_text', '')
         similarity = doc.get('similarity', 0)
         metadata = doc.get('metadata', {})
 
@@ -294,9 +295,9 @@ def _build_context(documents: List[Dict[str, Any]]) -> str:
 文書タイプ: {doc_type}
 類似度: {similarity:.2f}"""
 
-        # サマリー追加
-        if summary:
-            context_part += f"\n要約: {summary}"
+        # コンテンツ追加（contentが空でない場合）
+        if content:
+            context_part += f"\n内容: {content}"
 
         # メタデータを整形して追加
         if metadata:
@@ -306,7 +307,12 @@ def _build_context(documents: List[Dict[str, Any]]) -> str:
 
         context_parts.append(context_part)
 
-    return "\n".join(context_parts)
+    # ✅ デバッグ用: コンテキストの文字数をログ出力
+    final_context = "\n".join(context_parts)
+    print(f"[DEBUG] コンテキスト文字数: {len(final_context)} 文字")
+    print(f"[DEBUG] 文書数: {len(documents)} 件")
+
+    return final_context
 
 
 @app.route('/api/health', methods=['GET'])
