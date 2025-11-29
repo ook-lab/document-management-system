@@ -297,3 +297,32 @@ class LLMClient:
         )
 
         return response.data[0].embedding
+
+    def transcribe_image(
+        self,
+        image_path: Path,
+        prompt: str = "この画像内の表組みやリストを、Markdown形式で正確に書き起こしてください。"
+    ) -> Dict[str, Any]:
+        """
+        画像ファイルをGemini Visionで文字起こし
+
+        Args:
+            image_path: 画像ファイルのパス（PNG, JPEG等）
+            prompt: Geminiに送るプロンプト
+
+        Returns:
+            {"success": bool, "content": str, "model": str, "provider": str}
+        """
+        if not self.gemini_api_key:
+            return {"success": False, "error": "Gemini API key is missing", "model": "gemini-2.5-flash"}
+
+        # Gemini Flash を使用（画像処理に最適）
+        return self._call_gemini(
+            model_name="gemini-2.5-flash",
+            prompt=prompt,
+            file_path=image_path,
+            config={
+                "max_tokens": 4096,
+                "temperature": 0.0
+            }
+        )

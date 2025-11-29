@@ -42,7 +42,7 @@ python app.py
 
 サーバーが起動したら、ブラウザで以下のURLにアクセス:
 ```
-http://localhost:5000
+http://localhost:5001
 ```
 
 ### 本番モード（推奨）
@@ -54,7 +54,7 @@ Gunicornを使用する場合:
 pip install gunicorn
 
 # サーバー起動
-gunicorn -w 4 -b 0.0.0.0:5000 app:app
+gunicorn -w 4 -b 0.0.0.0:5001 app:app
 ```
 
 ## APIエンドポイント
@@ -129,7 +129,7 @@ gunicorn -w 4 -b 0.0.0.0:5000 app:app
 
 ## トラブルシューティング
 
-### ポート5000が既に使用されている
+### ポート5001が既に使用されている
 
 別のポートを使用する場合は、`app.py`の最終行を編集:
 ```python

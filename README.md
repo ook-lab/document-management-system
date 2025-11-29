@@ -77,7 +77,7 @@ python app.py
 サーバーが起動したら、ブラウザで以下のURLにアクセス：
 
 ```
-http://localhost:5000
+http://localhost:5001
 ```
 
 ### 本番モード（推奨）
@@ -89,13 +89,13 @@ Gunicornを使用する場合：
 pip install gunicorn
 
 # サーバー起動
-gunicorn -w 4 -b localhost:5000 app:app
+gunicorn -w 4 -b localhost:5001 app:app
 ```
 
 ## 使い方
 
 1. **ブラウザでアクセス**
-   - http://localhost:5000 を開く
+   - http://localhost:5001 を開く
 
 2. **質問を入力**
    - テキストボックスに質問を入力（例: 「プロジェクトの納期はいつですか？」）
@@ -211,7 +211,7 @@ GPT-4で回答を生成
 
 ## トラブルシューティング
 
-### ポート5000が既に使用されている
+### ポート5001が既に使用されている
 
 `app.py`の最終行を編集してポート番号を変更：
 

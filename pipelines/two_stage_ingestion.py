@@ -42,7 +42,7 @@ class TwoStageIngestionPipeline:
         self.db = DatabaseClient()
         self.yaml_string = get_classification_yaml_string()
 
-        self.pdf_processor = PDFProcessor()
+        self.pdf_processor = PDFProcessor(llm_client=self.llm_client)
         self.office_processor = OfficeProcessor()
 
         self.stage1_classifier = Stage1Classifier(llm_client=self.llm_client)

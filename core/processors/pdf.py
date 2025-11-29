@@ -1,83 +1,383 @@
-#【実行場所】: ターミナルまたはVS Code
-#【対象ファイル】: 新規作成
-#【ファイルパス】: core/processors/pdf.py
-#【実行方法】: 以下のコードをファイルにコピー＆ペーストして保存してください。
-
 """
-PDF プロセッサ (テキスト抽出)
+PDF プロセッサ (総力戦アーキテクチャ: pdfplumber + Table + Vision)
 
 設計書: COMPLETE_IMPLEMENTATION_GUIDE_v3.md の 1.4節に基づき、PDFファイルからテキストを抽出する。
+v3.0: 「テキスト解析（pdfplumber）」で基礎を固め、「表構造解析」で論理を通し、
+      最後に「Vision」で視覚情報を補完する総力戦アーキテクチャ。
 """
-from typing import Dict, Any
+from typing import Dict, Any, List, Optional
 from pathlib import Path
 import os
-import io
-import logging
+import tempfile
 import hashlib
+from loguru import logger
 
-# pypdf は requirements.txt で定義されているが、pdfplumber がより表構造抽出に優れるため、
-# ここでは一旦 pypdf でシンプルなテキスト抽出を実装する。
-from pypdf import PdfReader
-# logger は loguru を想定
+import pdfplumber
+
+# pdf2image は poppler が必要（macOS: brew install poppler）
+try:
+    from pdf2image import convert_from_path
+    PDF2IMAGE_AVAILABLE = True
+except ImportError:
+    PDF2IMAGE_AVAILABLE = False
+    logger.warning("pdf2image が利用できません。Gemini Vision補完機能は無効化されます。")
+
 
 class PDFProcessor:
-    """PDFファイルからテキストを抽出するプロセッサ"""
-    
-    def __init__(self):
-        # logger.info("PDFプロセッサ初期化完了")
-        pass
+    """PDFファイルからテキストを抽出するプロセッサ（総力戦方式）"""
+
+    # 構造化キーワード（これらが含まれるページはVision解析候補）
+    STRUCTURED_KEYWORDS = [
+        "表", "課題", "時間割", "宿題", "テスト", "予定", "スケジュール",
+        "リスト", "一覧", "名簿", "メニュー", "議題", "会議"
+    ]
+
+    def __init__(self, llm_client=None):
+        """
+        Args:
+            llm_client: LLMClient インスタンス（Vision補完用）
+        """
+        self.llm_client = llm_client
+        logger.info("PDFプロセッサ初期化完了 (総力戦アーキテクチャ)")
 
     def extract_text(self, file_path: str) -> Dict[str, Any]:
         """
-        PDFファイルから全文を抽出する
-        
+        PDFファイルからテキストを抽出（総力戦方式）
+
+        処理フロー:
+        Layer 1: pdfplumber でテキスト + 表を抽出
+        Layer 2: 構造化キーワードがあり、かつ表抽出が不十分な場合にVision補完
+        Layer 3: 統合（pdfplumber + Vision）
+
         Args:
             file_path: PDFファイルのローカルパス
-            
+
         Returns:
             抽出結果 (content, metadata, success)
         """
         file_path = Path(file_path)
-        
+
         if not file_path.exists():
-            # logger.error(f"ファイルが見つかりません: {file_path}")
-            return {"content": "", "metadata": {"error": "File not found"}, "success": False}
+            logger.error(f"ファイルが見つかりません: {file_path}")
+            return {
+                "content": "",
+                "metadata": {"error": "File not found"},
+                "success": False,
+                "error_message": "File not found"
+            }
 
         if file_path.suffix.lower() not in ['.pdf']:
-            # logger.warning(f"PDFファイルではありません: {file_path}")
-            return {"content": "", "metadata": {"error": "Not a PDF file"}, "success": False}
+            logger.warning(f"PDFファイルではありません: {file_path}")
+            return {
+                "content": "",
+                "metadata": {"error": "Not a PDF file"},
+                "success": False,
+                "error_message": "Not a PDF file"
+            }
 
-        full_text = []
-        metadata = {}
-        
         try:
-            # Stage 1 (Gemini) でOCR不要だが、テキスト抽出自体は必要 (FINAL_UNIFIED_COMPLETE_v4.md の 4.3節)
-            # Stage 2 (Claude) が利用できるテキストを準備する
-            
-            with open(file_path, 'rb') as f:
-                reader = PdfReader(f)
-                num_pages = len(reader.pages)
-                
-                for i in range(num_pages):
-                    page = reader.pages[i]
-                    text = page.extract_text()
-                    if text:
-                        full_text.append(text)
-                
-                metadata['num_pages'] = num_pages
-                
-            content = "\n\n---PAGE BREAK---\n\n".join(full_text)
-            
-            if not content.strip():
-                # テキストが抽出できなかった場合（スキャンPDFなど）
-                # OCR フォールバック機能が必要だが、Phase 1Aでは Gemni が代替するため、一旦失敗とする
-                return {"content": "", "metadata": metadata, "success": False, "error_message": "No text extracted (Scanned PDF or OCR required)"}
-            
-            return {"content": content, "metadata": metadata, "success": True}
-            
+            # ============================================
+            # Layer 1: pdfplumber でテキスト + 表を抽出
+            # ============================================
+            pdfplumber_result = self._extract_with_pdfplumber(file_path)
+
+            if not pdfplumber_result["success"]:
+                logger.error(f"pdfplumber完全失敗: {file_path.name}")
+                return pdfplumber_result
+
+            page_texts = pdfplumber_result["page_texts"]
+            page_tables = pdfplumber_result["page_tables"]
+            metadata = pdfplumber_result["metadata"]
+
+            logger.info(f"pdfplumber抽出完了: {len(page_texts)} ページ, {sum(len(t) for t in page_tables)} 表")
+
+            # ============================================
+            # Layer 2: Vision戦略の判定
+            # ============================================
+            vision_target_pages = self._detect_vision_target_pages(page_texts, page_tables)
+
+            logger.info(f"Vision補完対象: {len(vision_target_pages)}/{len(page_texts)} ページ")
+
+            # ============================================
+            # Layer 2.5: Gemini Vision 補完（対象ページのみ）
+            # ============================================
+            vision_supplements = {}
+
+            if vision_target_pages and self.llm_client and PDF2IMAGE_AVAILABLE:
+                logger.info(f"Gemini Vision補完開始: {len(vision_target_pages)} ページ")
+                vision_supplements = self._extract_with_gemini_vision(
+                    file_path,
+                    vision_target_pages
+                )
+            elif vision_target_pages and not PDF2IMAGE_AVAILABLE:
+                logger.warning("pdf2image が利用できないため、Vision補完をスキップします")
+            elif vision_target_pages and not self.llm_client:
+                logger.warning("LLMClient が未指定のため、Vision補完をスキップします")
+
+            # ============================================
+            # Layer 3: 統合（pdfplumber + Vision）
+            # ============================================
+            full_text_parts = []
+
+            for i, (text, tables) in enumerate(zip(page_texts, page_tables)):
+                page_num = i + 1
+
+                # ページヘッダー
+                full_text_parts.append(f"\n\n--- Page {page_num} ---\n\n")
+
+                # pdfplumberテキスト
+                if text.strip():
+                    full_text_parts.append(text)
+
+                # pdfplumber表（Markdown形式）
+                if tables:
+                    full_text_parts.append("\n\n[Tables from pdfplumber]\n")
+                    for table_idx, table_md in enumerate(tables, 1):
+                        full_text_parts.append(f"\n**Table {table_idx}**\n{table_md}\n")
+
+                # Vision補完（該当ページのみ）
+                if i in vision_supplements:
+                    full_text_parts.append("\n\n--- Vision Supplement ---\n")
+                    full_text_parts.append(vision_supplements[i])
+
+            final_content = "".join(full_text_parts)
+
+            # メタデータ更新
+            metadata['vision_supplemented'] = len(vision_supplements) > 0
+            metadata['vision_pages'] = len(vision_supplements)
+            metadata['pdfplumber_tables'] = sum(len(t) for t in page_tables)
+
+            return {
+                "content": final_content,
+                "metadata": metadata,
+                "success": True
+            }
+
         except Exception as e:
-            # logger.error(f"PDFテキスト抽出エラー ({file_path}): {e}")
-            return {"content": "", "metadata": {"error": str(e)}, "success": False, "error_message": str(e)}
+            logger.error(f"PDFテキスト抽出エラー ({file_path}): {e}")
+            import traceback
+            traceback.print_exc()
+            return {
+                "content": "",
+                "metadata": {"error": str(e)},
+                "success": False,
+                "error_message": str(e)
+            }
+
+    def _extract_with_pdfplumber(self, file_path: Path) -> Dict[str, Any]:
+        """
+        pdfplumber でテキスト + 表を抽出
+
+        Returns:
+            {
+                "success": bool,
+                "page_texts": List[str],
+                "page_tables": List[List[str]],  # ページごとのMarkdown表リスト
+                "metadata": dict
+            }
+        """
+        try:
+            with pdfplumber.open(file_path) as pdf:
+                num_pages = len(pdf.pages)
+                page_texts = []
+                page_tables = []
+
+                for i, page in enumerate(pdf.pages):
+                    # テキスト抽出
+                    text = page.extract_text() or ""
+                    page_texts.append(text)
+
+                    # 表抽出
+                    tables = page.extract_tables()
+                    tables_md = []
+
+                    if tables:
+                        for table in tables:
+                            # 表をMarkdown形式に変換
+                            table_md = self._table_to_markdown(table)
+                            if table_md:
+                                tables_md.append(table_md)
+
+                    page_tables.append(tables_md)
+
+                metadata = {
+                    'num_pages': num_pages,
+                    'extractor': 'pdfplumber'
+                }
+
+                # 全ページが空テキストの場合
+                if not any(page_texts) and not any(page_tables):
+                    logger.warning(f"pdfplumber: テキストも表も抽出できませんでした ({file_path})")
+                    return {
+                        "success": False,
+                        "page_texts": [],
+                        "page_tables": [],
+                        "metadata": metadata,
+                        "error_message": "No text or tables extracted"
+                    }
+
+                return {
+                    "success": True,
+                    "page_texts": page_texts,
+                    "page_tables": page_tables,
+                    "metadata": metadata
+                }
+
+        except Exception as e:
+            logger.error(f"pdfplumber抽出エラー: {e}")
+            return {
+                "success": False,
+                "page_texts": [],
+                "page_tables": [],
+                "metadata": {"error": str(e)},
+                "error_message": str(e)
+            }
+
+    def _table_to_markdown(self, table: List[List]) -> str:
+        """
+        pdfplumberの表データをMarkdown形式に変換
+
+        Args:
+            table: pdfplumberのextract_tables()が返す2次元リスト
+
+        Returns:
+            Markdown形式の表文字列
+        """
+        if not table or len(table) == 0:
+            return ""
+
+        # None を空文字列に変換
+        cleaned_table = []
+        for row in table:
+            cleaned_row = [str(cell).strip() if cell is not None else "" for cell in row]
+            cleaned_table.append(cleaned_row)
+
+        if not cleaned_table:
+            return ""
+
+        # Markdownテーブル生成
+        md_lines = []
+
+        # ヘッダー行
+        header = cleaned_table[0]
+        md_lines.append("| " + " | ".join(header) + " |")
+
+        # セパレーター
+        md_lines.append("| " + " | ".join(["---"] * len(header)) + " |")
+
+        # データ行
+        for row in cleaned_table[1:]:
+            # ヘッダーと列数を合わせる
+            if len(row) < len(header):
+                row.extend([""] * (len(header) - len(row)))
+            elif len(row) > len(header):
+                row = row[:len(header)]
+
+            md_lines.append("| " + " | ".join(row) + " |")
+
+        return "\n".join(md_lines)
+
+    def _detect_vision_target_pages(
+        self,
+        page_texts: List[str],
+        page_tables: List[List[str]]
+    ) -> List[int]:
+        """
+        Vision補完が必要なページを検出
+
+        判定基準:
+        1. 構造化キーワードを含む
+        2. かつ、pdfplumberの表抽出が空または不十分（1個以下）
+
+        Args:
+            page_texts: 各ページのテキストリスト
+            page_tables: 各ページの表リスト（Markdown形式）
+
+        Returns:
+            Vision補完対象のページ番号リスト（0-indexed）
+        """
+        target_pages = []
+
+        for i, (text, tables) in enumerate(zip(page_texts, page_tables)):
+            # キーワード検出
+            has_keyword = any(keyword in text for keyword in self.STRUCTURED_KEYWORDS)
+
+            # 表抽出が不十分か判定
+            table_insufficient = len(tables) <= 1  # 0個または1個の場合は不十分
+
+            # 両方の条件を満たす場合
+            if has_keyword and table_insufficient:
+                target_pages.append(i)
+                logger.debug(f"ページ {i+1}: キーワード検出 + 表抽出不十分 → Vision対象")
+
+        return target_pages
+
+    def _extract_with_gemini_vision(
+        self,
+        pdf_path: Path,
+        page_numbers: List[int]
+    ) -> Dict[int, str]:
+        """
+        指定されたページをGemini Visionで解析
+
+        Args:
+            pdf_path: PDFファイルパス
+            page_numbers: 解析対象のページ番号リスト（0-indexed）
+
+        Returns:
+            {ページ番号: Vision解析結果} の辞書
+        """
+        vision_results = {}
+
+        # PDFを画像に変換
+        try:
+            logger.info(f"PDF→画像変換開始: {pdf_path}")
+            images = convert_from_path(
+                pdf_path,
+                dpi=200,  # 表組み認識に十分な解像度
+                fmt='png'
+            )
+
+            # 該当ページのみ処理
+            for page_num in page_numbers:
+                if page_num >= len(images):
+                    logger.warning(f"ページ {page_num} は範囲外です")
+                    continue
+
+                image = images[page_num]
+
+                # 一時ファイルに保存
+                with tempfile.NamedTemporaryFile(suffix='.png', delete=False) as tmp_file:
+                    tmp_path = Path(tmp_file.name)
+                    image.save(tmp_path, 'PNG')
+
+                try:
+                    # Gemini Vision で解析
+                    logger.info(f"Gemini Vision解析: ページ {page_num + 1}")
+                    result = self.llm_client.transcribe_image(
+                        image_path=tmp_path,
+                        prompt="この画像内の表組み、リスト、構造化されたデータを、Markdown形式で正確に書き起こしてください。テキスト部分も含めて、見たままを忠実に再現してください。"
+                    )
+
+                    if result.get("success"):
+                        content = result.get("content", "")
+                        vision_results[page_num] = content
+                        logger.info(f"Vision解析成功: ページ {page_num + 1}")
+                    else:
+                        logger.warning(f"Vision解析失敗: ページ {page_num + 1}, エラー: {result.get('error')}")
+
+                finally:
+                    # 一時ファイル削除
+                    if tmp_path.exists():
+                        os.unlink(tmp_path)
+
+            return vision_results
+
+        except Exception as e:
+            logger.error(f"Gemini Vision補完エラー: {e}")
+            import traceback
+            traceback.print_exc()
+            return {}
 
 
 def calculate_content_hash(pdf_path: str) -> str:
