@@ -38,10 +38,10 @@ class ModelTier:
     }
     
     # UI回答生成（対話品質重視）
-    # GPT-5.1 -> gpt-4oに修正 (ご提示いただいた情報に基づく)
+    # ✅ GPT-5.1に変更（コスト削減と性能向上）
     UI_RESPONSE_GENERATOR = {
         "provider": AIProvider.OPENAI,
-        "model": "gpt-4o",  # <-- 修正
+        "model": "gpt-5.1",  # ✅ gpt-4o → gpt-5.1 に変更
         "description": "自然で流暢な対話応答",
         "temperature": 0.7,
         "max_tokens": 2048,
