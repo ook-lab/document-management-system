@@ -95,7 +95,6 @@ def main():
 
     with st.spinner("ドキュメントを取得中..."):
         documents = db_client.get_documents_for_review(
-            status='completed',
             max_confidence=max_confidence,
             limit=limit
         )

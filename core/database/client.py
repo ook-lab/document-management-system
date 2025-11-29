@@ -96,28 +96,25 @@ class DatabaseClient:
 
     def get_documents_for_review(
         self,
-        status: str = 'completed',
         max_confidence: float = 0.9,
         limit: int = 100
     ) -> List[Dict[str, Any]]:
         """
-        レビュー対象のドキュメントを取得
+        レビュー対象のドキュメントを取得（全ステータス）
 
         Args:
-            status: 処理ステータス（デフォルト: 'completed'）
             max_confidence: 信頼度の上限（デフォルト: 0.9）
             limit: 取得する最大件数
 
         Returns:
-            ドキュメントのリスト
+            ドキュメントのリスト（更新日時降順）
         """
         try:
             response = (
                 self.client.table('documents')
                 .select('*')
-                .eq('processing_status', status)
                 .lt('confidence', max_confidence)
-                .order('created_at', desc=True)
+                .order('updated_at', desc=True)
                 .limit(limit)
                 .execute()
             )
