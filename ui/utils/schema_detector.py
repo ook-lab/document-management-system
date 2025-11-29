@@ -40,6 +40,10 @@ class SchemaDetector:
         Returns:
             スキーマ名（例: "timetable"）、判定できない場合はNone
         """
+        # メタデータがNoneの場合、安全のために空の辞書に変換
+        if metadata is None:
+            metadata = {}
+
         # doc_typeベースの直接マッピング
         doc_type_to_schema = {
             "timetable": "timetable",
@@ -138,6 +142,10 @@ class SchemaDetector:
         Returns:
             (検証結果, エラーメッセージリスト)
         """
+        # メタデータがNoneの場合、安全のために空の辞書に変換
+        if metadata is None:
+            metadata = {}
+
         schema = self.get_schema(schema_name)
         if not schema:
             return False, [f"スキーマ '{schema_name}' が見つかりません"]

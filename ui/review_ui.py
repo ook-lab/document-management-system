@@ -127,7 +127,7 @@ def main():
     file_id = drive_file_id or source_id
     file_name = selected_doc.get('file_name', 'unknown')
     doc_type = selected_doc.get('doc_type', '')
-    metadata = selected_doc.get('metadata', {})
+    metadata = selected_doc.get('metadata') or {}
     confidence = selected_doc.get('confidence') or 0
 
     # 基本情報表示
