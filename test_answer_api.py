@@ -19,7 +19,7 @@ def test_search_and_answer():
     print("\n[ステップ1] 検索実行...")
     search_response = requests.post(
         f"{BASE_URL}/api/search",
-        json={"query": query, "limit": 3}
+        json={"query": query, "limit": 5}  # ✅ デフォルトの5件でテスト
     )
 
     search_data = search_response.json()

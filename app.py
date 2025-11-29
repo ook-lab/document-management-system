@@ -34,7 +34,7 @@ def search_documents():
     try:
         data = request.get_json()
         query = data.get('query', '')
-        limit = data.get('limit', 50)  # デフォルトを50に設定して検索精度を向上
+        limit = data.get('limit', 5)  # ✅ トークンリミット回避のため、デフォルトを5に制限
         workspace = data.get('workspace')
 
         if not query:
@@ -80,6 +80,12 @@ def generate_answer():
 
         # ドキュメントコンテキストを構築
         context = _build_context(documents)
+
+        # ✅ コンテキストの文字数制限（トークンリミット回避）
+        MAX_CONTEXT_LENGTH = 15000  # 約15,000文字まで（安全マージン込み）
+        if len(context) > MAX_CONTEXT_LENGTH:
+            context = context[:MAX_CONTEXT_LENGTH] + "\n\n[... 以降は省略されました ...]"
+            print(f"[WARNING] コンテキストを切り詰めました: {len(context)} → {MAX_CONTEXT_LENGTH} 文字")
 
         # プロンプトを作成（Phase 2.2.3: 構造的クエリ対応）
         prompt = f"""以下の文書情報を参考に、ユーザーの質問に日本語で回答してください。
