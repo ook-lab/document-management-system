@@ -73,20 +73,13 @@ def main():
 
     # サイドバー: フィルタ設定
     st.sidebar.header("🔧 フィルタ設定")
-    max_confidence = st.sidebar.slider(
-        "信頼度の上限",
-        min_value=0.0,
-        max_value=1.0,
-        value=0.9,
-        step=0.05,
-        help="この信頼度以下のドキュメントを表示"
-    )
     limit = st.sidebar.number_input(
         "取得件数",
         min_value=10,
         max_value=500,
         value=100,
-        step=10
+        step=10,
+        help="表示するドキュメントの最大件数"
     )
 
     # レビュー対象ドキュメントを取得
@@ -95,7 +88,6 @@ def main():
 
     with st.spinner("ドキュメントを取得中..."):
         documents = db_client.get_documents_for_review(
-            max_confidence=max_confidence,
             limit=limit
         )
 
