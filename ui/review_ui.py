@@ -20,6 +20,7 @@ import json
 import tempfile
 from typing import Dict, Any, Optional
 import pandas as pd
+from loguru import logger
 
 from core.database.client import DatabaseClient
 from core.connectors.google_drive import GoogleDriveConnector
@@ -91,6 +92,9 @@ def main():
             limit=limit
         )
 
+    # デバッグログ: 取得後の確認
+    logger.info(f"DBから取得したドキュメント数: {len(documents)}件")
+
     if not documents:
         st.info("レビュー対象のドキュメントがありません")
         return
@@ -108,6 +112,9 @@ def main():
         }
         for doc in documents
     ])
+
+    # デバッグログ: DataFrame作成後の確認
+    logger.info(f"表示用DataFrameの行数: {len(df)}件")
 
     st.subheader("📁 レビュー対象ドキュメント一覧")
     st.dataframe(df, use_container_width=True, height=200)
