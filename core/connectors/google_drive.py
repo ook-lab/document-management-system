@@ -24,36 +24,40 @@ class GoogleDriveConnector:
         # logger.info("Google Driveコネクタ初期化完了")
     
     def _authenticate(self):
-        """サービスアカウント認証の実行（Streamlit Secrets対応）"""
+        """サービスアカウント認証の実行（環境変数を優先、Streamlit Secretsは補助）"""
+        # 優先順位1: 環境変数 GOOGLE_APPLICATION_CREDENTIALS
+        if CREDENTIALS_PATH and os.path.exists(CREDENTIALS_PATH):
+            try:
+                creds = service_account.Credentials.from_service_account_file(
+                    CREDENTIALS_PATH, scopes=SCOPES
+                )
+                logger.info(f"環境変数から認証成功: {CREDENTIALS_PATH}")
+                return build('drive', 'v3', credentials=creds)
+            except Exception as e:
+                logger.warning(f"環境変数からの認証失敗、Streamlit Secretsにフォールバック: {e}")
+
+        # 優先順位2: Streamlit Secrets (デプロイ環境用)
         try:
-            # Streamlit環境の場合: Secretsから読み込み
             import streamlit as st
             if hasattr(st, 'secrets') and 'gcp_service_account' in st.secrets:
                 creds_dict = dict(st.secrets["gcp_service_account"])
                 creds = service_account.Credentials.from_service_account_info(
                     creds_dict, scopes=SCOPES
                 )
+                logger.info("Streamlit Secretsから認証成功")
                 return build('drive', 'v3', credentials=creds)
         except ImportError:
             # Streamlitがインストールされていない場合はスキップ
             pass
         except Exception as e:
-            logger.warning(f"Streamlit Secretsからの認証失敗、環境変数にフォールバック: {e}")
-        
-        # ローカル環境の場合: 環境変数から読み込み
-        if not CREDENTIALS_PATH or not os.path.exists(CREDENTIALS_PATH):
-            raise FileNotFoundError(
-                f"認証情報ファイルが見つかりません: {CREDENTIALS_PATH}. 環境変数 GOOGLE_APPLICATION_CREDENTIALS を確認してください。"
-            )
-            
-        try:
-            creds = service_account.Credentials.from_service_account_file(
-                CREDENTIALS_PATH, scopes=SCOPES
-            )
-            return build('drive', 'v3', credentials=creds)
-        except Exception as e:
-            # logger.error(f"Google Drive認証エラー: {e}")
-            raise ConnectionError(f"Google Drive認証に失敗しました: {e}")
+            logger.warning(f"Streamlit Secretsからの認証失敗: {e}")
+
+        # どちらも失敗した場合
+        raise FileNotFoundError(
+            f"認証情報が見つかりません。以下のいずれかを設定してください:\n"
+            f"1. 環境変数 GOOGLE_APPLICATION_CREDENTIALS (現在: {CREDENTIALS_PATH})\n"
+            f"2. Streamlit Secrets の gcp_service_account"
+        )
 
     def list_files_in_folder(self, folder_id: str, mime_type_filter: str = None) -> List[Dict[str, Any]]:
         """
