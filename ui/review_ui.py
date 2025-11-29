@@ -211,6 +211,11 @@ def main():
                 file_path = download_file_from_drive(file_id, file_name)
 
             if file_path and Path(file_path).exists():
+                # デバッグログ: PDFプレビュー前の確認
+                import os
+                logger.info(f"PDFプレビュー開始。ローカルパス: {file_path}")
+                logger.info(f"ファイルサイズ: {os.path.getsize(file_path)} bytes")
+
                 with open(file_path, 'rb') as f:
                     pdf_bytes = f.read()
 
@@ -228,6 +233,7 @@ def main():
                         use_container_width=True
                     )
                 except Exception as e:
+                    logger.error(f"PDFプレビュー表示エラー: {e}", exc_info=True)
                     st.warning(f"PDFプレビュー表示エラー: {e}")
                     st.download_button(
                         label="📥 PDFをダウンロード",
@@ -237,6 +243,7 @@ def main():
                         use_container_width=True
                     )
             else:
+                logger.warning(f"PDFファイルを読み込めませんでした。file_path={file_path}, exists={Path(file_path).exists() if file_path else False}")
                 st.warning("PDFファイルを読み込めませんでした")
         else:
             st.info("PDFファイル以外はプレビューできません")

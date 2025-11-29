@@ -91,56 +91,60 @@ class GoogleDriveConnector:
             print(f"Error listing files: {e}")
             return []
 
-    def download_file(self, file_id: str, file_name: str, dest_dir: Union[str, Path]) -> str:
+    def download_file(self, file_id: str, file_name: str, dest_dir: Union[str, Path]) -> Optional[str]:
         """
         Google Driveからファイルをダウンロードし、一時パスを返す
-        
+
         Args:
             file_id: ファイルのID
             file_name: ファイル名
             dest_dir: 保存先ディレクトリ
-            
-        Returns:
-            ダウンロードされたファイルへのローカルパス
-        """
-        dest_path = Path(dest_dir) / file_name
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # DriveのMIMEタイプをチェックし、Google Docs形式の場合はエクスポート
-        file_metadata = self.service.files().get(fileId=file_id, fields='mimeType').execute()
-        mime_type = file_metadata['mimeType']
-        
-        request = None
-        if mime_type == 'application/vnd.google-apps.document':
-            # Google Docs -> DOCXとしてエクスポート
-            request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
-            dest_path = dest_path.with_suffix('.docx')
-        elif mime_type == 'application/vnd.google-apps.spreadsheet':
-            # Google Sheets -> XLSXとしてエクスポート
-            request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
-            dest_path = dest_path.with_suffix('.xlsx')
-        elif mime_type == 'application/vnd.google-apps.presentation':
-            # Google Slides -> PPTXとしてエクスポート
-            request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation')
-            dest_path = dest_path.with_suffix('.pptx')
-        else:
-            # 通常のファイル (PDF, DOCXなど) はダウンロード
-            request = self.service.files().get_media(fileId=file_id)
 
+        Returns:
+            ダウンロードされたファイルへのローカルパス（失敗時はNone）
+        """
         try:
+            logger.info(f"ファイルダウンロード開始: {file_name} (ID: {file_id})")
+
+            dest_path = Path(dest_dir) / file_name
+            dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+            # DriveのMIMEタイプをチェックし、Google Docs形式の場合はエクスポート
+            file_metadata = self.service.files().get(fileId=file_id, fields='mimeType').execute()
+            mime_type = file_metadata['mimeType']
+            logger.info(f"ファイルMIMEタイプ: {mime_type}")
+
+            request = None
+            if mime_type == 'application/vnd.google-apps.document':
+                # Google Docs -> DOCXとしてエクスポート
+                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                dest_path = dest_path.with_suffix('.docx')
+            elif mime_type == 'application/vnd.google-apps.spreadsheet':
+                # Google Sheets -> XLSXとしてエクスポート
+                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                dest_path = dest_path.with_suffix('.xlsx')
+            elif mime_type == 'application/vnd.google-apps.presentation':
+                # Google Slides -> PPTXとしてエクスポート
+                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+                dest_path = dest_path.with_suffix('.pptx')
+            else:
+                # 通常のファイル (PDF, DOCXなど) はダウンロード
+                request = self.service.files().get_media(fileId=file_id)
+
             with open(dest_path, 'wb') as fh:
                 downloader = MediaIoBaseDownload(fh, request)
                 done = False
                 while done is False:
                     status, done = downloader.next_chunk()
-                    # print(f"Download progress: {int(status.progress() * 100)}%")
+                    if status:
+                        logger.debug(f"ダウンロード進捗: {int(status.progress() * 100)}%")
 
-            # logger.info(f"ファイルダウンロード完了: {dest_path}")
+            logger.info(f"ファイルダウンロード完了: {dest_path} ({dest_path.stat().st_size} bytes)")
             return str(dest_path)
 
         except Exception as e:
-            # logger.error(f"ファイルダウンロードエラー ({file_name}): {e}")
-            raise RuntimeError(f"ファイルダウンロードに失敗しました: {e}")
+            logger.error(f"ファイルダウンロードエラー ({file_name}): {e}", exc_info=True)
+            return None
 
     def get_inbox_folder_id(self) -> Optional[str]:
         """
