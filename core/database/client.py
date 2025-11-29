@@ -86,10 +86,11 @@ class DatabaseClient:
             "match_threshold": 0.0,  # 類似度の下限を0.0に設定（すべての結果を返す）
             "match_count": limit
         }
-        
-        if workspace:
-            rpc_params["filter_workspace"] = workspace
-        
+
+        # ワークスペースフィルタを無効化（常に全件検索）
+        # if workspace:
+        #     rpc_params["filter_workspace"] = workspace
+
         response = self.client.rpc("match_documents", rpc_params).execute()
         return response.data if response.data else []
 
