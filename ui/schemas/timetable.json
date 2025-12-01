@@ -73,6 +73,14 @@
       "items": {
         "type": "string"
       }
+    },
+    "important_notes": {
+      "type": "array",
+      "title": "連絡事項・メモ",
+      "description": "時間割表の外に記載されている連絡事項、注意事項、持ち物、行事の詳細など",
+      "items": {
+        "type": "string"
+      }
     }
   },
   "required": ["school_name", "grade", "daily_schedule"]

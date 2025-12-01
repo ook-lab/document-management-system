@@ -74,6 +74,7 @@ def generate_answer():
         data = request.get_json()
         query = data.get('query', '')
         documents = data.get('documents', [])
+        model = data.get('model')  # ユーザーが選択したモデル
 
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
@@ -109,10 +110,11 @@ def generate_answer():
 【回答】
 """
 
-        # GPT-4で回答生成
+        # GPT で回答生成（モデル選択対応）
         response = llm_client.call_model(
             tier="ui_response",
-            prompt=prompt
+            prompt=prompt,
+            model_name=model  # ユーザーが選択したモデルを渡す
         )
 
         if not response.get('success'):

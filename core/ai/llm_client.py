@@ -22,22 +22,16 @@ class LLMClient:
     def __init__(self):
         """環境変数からAPIキーを取得し、各プロバイダーを初期化"""
 
-        self.gemini_api_key = os.getenv("GOOGLE_AI_API_KEY")
+        # Gemini APIキーは GOOGLE_AI_API_KEY または GOOGLE_API_KEY から取得
+        self.gemini_api_key = os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
         self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
 
-        # Gemini設定 (最新SDK対応)
+        # Gemini設定 (トップレベル関数のみ使用)
         if self.gemini_api_key:
-            # 旧方式の設定も維持（GenerativeModel用）
             genai.configure(api_key=self.gemini_api_key)
-            # 最新のClientインスタンスを作成（ファイル操作用）
-            try:
-                self.gemini_client = genai.Client(api_key=self.gemini_api_key)
-            except AttributeError:
-                # genai.Clientが存在しない場合はNone
-                self.gemini_client = None
         else:
-            self.gemini_client = None
+            pass
 
         # Claude設定
         if self.anthropic_api_key:
@@ -72,7 +66,8 @@ class LLMClient:
         """
         config = get_model_config(tier)
         provider = config["provider"]
-        model_name = config["model"]
+        # kwargsからmodel_nameが渡されていればそれを優先、なければconfigから取得
+        model_name = kwargs.get('model_name') or config["model"]
         
         if provider == AIProvider.GEMINI:
             if not self.gemini_api_key:
@@ -105,7 +100,7 @@ class LLMClient:
         config: Dict,
         **kwargs
     ) -> Dict[str, Any]:
-        """Gemini API呼び出し（最新SDK対応）"""
+        """Gemini API呼び出し（トップレベル関数のみ使用）"""
         uploaded_file = None
         try:
             model = genai.GenerativeModel(model_name)
@@ -118,27 +113,8 @@ class LLMClient:
                 if not mime_type:
                     mime_type = "application/pdf"  # デフォルト
 
-                # ファイルをアップロード（最新API使用）
-                if self.gemini_client:
-                    # 最新のClient APIを使用
-                    uploaded_file = self.gemini_client.files.upload(
-                        path=str(file_path),
-                        config={
-                            "mime_type": mime_type
-                        }
-                    )
-                else:
-                    # フォールバック: 旧APIを試行
-                    try:
-                        uploaded_file = genai.upload_file(path=str(file_path), mime_type=mime_type)
-                    except AttributeError as e:
-                        return {
-                            "success": False,
-                            "error": f"Gemini file upload API not available: {str(e)}",
-                            "model": model_name,
-                            "provider": "gemini"
-                        }
-
+                # ファイルをアップロード（トップレベル関数のみ使用）
+                uploaded_file = genai.upload_file(path=str(file_path), mime_type=mime_type)
                 content_parts.append(uploaded_file)
 
             response = model.generate_content(
@@ -185,7 +161,7 @@ class LLMClient:
 
     def _cleanup_uploaded_file(self, uploaded_file) -> None:
         """
-        アップロードされたファイルを削除（最新SDK対応）
+        アップロードされたファイルを削除（トップレベル関数のみ使用）
 
         Args:
             uploaded_file: アップロードされたファイルオブジェクト
@@ -194,16 +170,7 @@ class LLMClient:
             return
 
         try:
-            if self.gemini_client:
-                # 最新のClient APIを使用
-                self.gemini_client.files.delete(name=uploaded_file.name)
-            else:
-                # フォールバック: 旧APIを試行
-                try:
-                    genai.delete_file(name=uploaded_file.name)
-                except AttributeError:
-                    # どちらのAPIも利用できない場合は警告のみ
-                    pass
+            genai.delete_file(name=uploaded_file.name)
         except Exception:
             # 削除に失敗しても処理は継続
             pass

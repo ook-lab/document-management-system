@@ -119,20 +119,32 @@ class Stage1Classifier:
         self,
         file_path: Path,
         doc_types_yaml: str,
-        mime_type: Optional[str] = None
+        mime_type: Optional[str] = None,
+        text_content: Optional[str] = None
     ) -> Dict[str, Any]:
-        """ファイルを分類"""
+        """ファイルを分類（PDF以外はテキストを埋め込み）"""
         prompt = self.generate_classification_prompt(doc_types_yaml)
-        
-        response = self.client.call_model(
-            tier=self.tier,
-            prompt=prompt,
-            file_path=file_path
-        )
-        
+
+        # PDF以外の場合（Excel、Word等）はテキストをプロンプトに埋め込む
+        if mime_type and mime_type != "application/pdf" and text_content:
+            # テキスト内容をプロンプトに追加
+            prompt += f"\n\n**ファイル内容:**\n{text_content[:5000]}"  # 最大5000文字
+            response = self.client.call_model(
+                tier=self.tier,
+                prompt=prompt,
+                file_path=None  # ファイルアップロードをスキップ
+            )
+        else:
+            # PDFの場合はファイルをアップロード
+            response = self.client.call_model(
+                tier=self.tier,
+                prompt=prompt,
+                file_path=file_path
+            )
+
         if not response.get("success"):
             raise ValueError(f"Stage1分類に失敗: {response.get('error')}")
-        
+
         # JSON応答をパース
         try:
             # マークダウンのコードブロックを除去
@@ -141,7 +153,7 @@ class Stage1Classifier:
                 content = content.split("```json")[1].split("```")[0].strip()
             elif "```" in content:
                 content = content.split("```")[1].split("```")[0].strip()
-            
+
             result = json.loads(content)
             return result
         except json.JSONDecodeError as e:

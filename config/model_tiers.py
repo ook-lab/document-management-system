@@ -26,26 +26,26 @@ class ModelTier:
         "cost_per_1k_tokens": 0.00015
     }
     
-    # Stage 2: 詳細抽出（精度重視）
-    # Claude 4.5 Sonnetの利用可能モデル名に修正 (ご提示いただいた情報に基づく)
+    # Stage 2: 詳細抽出（速度・コスト重視）
+    # Claude 4.5 Haikuに変更（コスト効率と速度向上）
     STAGE2_EXTRACTOR = {
         "provider": AIProvider.CLAUDE,
-        "model": "claude-sonnet-4-5-20250929",  # <-- 修正
-        "description": "高精度な情報抽出・構造化",
+        "model": "claude-haiku-4-5-20250929",  # コスト効率と速度重視
+        "description": "高速な情報抽出・構造化",
         "temperature": 0.0,
         "max_tokens": 4096,
-        "cost_per_1k_tokens": 0.003
+        "cost_per_1k_tokens": 0.0008  # Haikuは低コスト
     }
     
-    # UI回答生成（対話品質重視）
-    # ✅ GPT-5.1に変更（コスト削減と性能向上）
+    # UI回答生成（速度・コスト重視）
+    # ✅ GPT-5-miniに変更（コスト効率と速度向上）
     UI_RESPONSE_GENERATOR = {
         "provider": AIProvider.OPENAI,
-        "model": "gpt-5.1",  # ✅ gpt-4o → gpt-5.1 に変更
-        "description": "自然で流暢な対話応答",
+        "model": "gpt-5-mini",  # ✅ コスト効率と速度重視
+        "description": "高速で効率的な対話応答",
         "temperature": 0.7,
-        "max_completion_tokens": 2048,  # ✅ GPT-5.1の新しいパラメータ名
-        "cost_per_1k_tokens": 0.01
+        "max_completion_tokens": 2048,
+        "cost_per_1k_tokens": 0.003  # GPT-5-miniは低コスト
     }
     
     # Embedding生成

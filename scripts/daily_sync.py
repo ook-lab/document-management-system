@@ -35,10 +35,11 @@ logger.add(sys.stdout, level="INFO")
 
 class DailySyncProcessor:
     """日次同期処理クラス"""
-    
-    def __init__(self, workspace_folders: Dict[str, str]):
-        
+
+    def __init__(self, workspace_folders: Dict[str, str], full_sync: bool = False):
+
         self.workspace_folders = workspace_folders
+        self.full_sync = full_sync
         self.drive = GoogleDriveConnector()
         self.pipeline = TwoStageIngestionPipeline()
         
@@ -68,7 +69,8 @@ class DailySyncProcessor:
         stats = {
             'total_files': 0,
             'processed_success': 0,
-            'processed_failed': 0
+            'processed_failed': 0,
+            'skipped': 0
         }
         
         for workspace, folder_id in self.workspace_folders.items():
@@ -83,8 +85,10 @@ class DailySyncProcessor:
                 try:
                     # メインパイプラインを実行
                     result = await self.pipeline.process_file(file_meta, workspace=workspace)
-                    
-                    if result:
+
+                    if result and result.get('status') == 'skipped':
+                        stats['skipped'] += 1
+                    elif result:
                         stats['processed_success'] += 1
                     else:
                         stats['processed_failed'] += 1
@@ -98,6 +102,7 @@ class DailySyncProcessor:
         logger.info("自動日次同期処理 完了サマリー")
         logger.info(f"総検出ファイル数: {stats['total_files']}")
         logger.info(f"処理成功数: {stats['processed_success']}")
+        logger.info(f"スキップ数: {stats['skipped']}")
         logger.info(f"処理失敗数: {stats['processed_failed']}")
         logger.info("=" * 60)
         
@@ -108,22 +113,30 @@ async def main():
     parser = argparse.ArgumentParser(description='自動日次同期スクリプト v4.0')
     parser.add_argument('--business-id', type=str, default=os.getenv('BUSINESS_FOLDER_ID'), help='ビジネス用フォルダID')
     parser.add_argument('--personal-id', type=str, default=os.getenv('PERSONAL_FOLDER_ID'), help='個人用フォルダID')
-    
+    parser.add_argument('--full-sync', action='store_true', help='フルスキャンモード（既存ファイルも再処理）')
+    parser.add_argument('--folder-id', type=str, help='指定されたフォルダのみ処理')
+
     args = parser.parse_args()
 
-    # 処理対象フォルダの定義 (Phase 1Aでは、PROGRESS_TRACKER.mdに基づき、ユーザーが設定した特定のフォルダを使用)
-    # ユーザーが Phase 1A で使用する特定のフォルダIDを環境変数または引数で渡すことを想定
-    workspace_folders = {
-        'personal': args.personal_id,
-        'business': args.business_id 
-    }
-    
-    # フォルダIDが設定されていない場合はエラー終了
-    if not args.personal_id and not args.business_id:
-        logger.error("処理対象のフォルダID (PERSONAL_FOLDER_ID または BUSINESS_FOLDER_ID) が設定されていません。")
-        sys.exit(1)
+    # --folder-id が指定された場合は、そのフォルダのみ処理
+    if args.folder_id:
+        workspace_folders = {
+            'specified': args.folder_id
+        }
+    else:
+        # 処理対象フォルダの定義 (Phase 1Aでは、PROGRESS_TRACKER.mdに基づき、ユーザーが設定した特定のフォルダを使用)
+        # ユーザーが Phase 1A で使用する特定のフォルダIDを環境変数または引数で渡すことを想定
+        workspace_folders = {
+            'personal': args.personal_id,
+            'business': args.business_id
+        }
 
-    processor = DailySyncProcessor(workspace_folders)
+        # フォルダIDが設定されていない場合はエラー終了
+        if not args.personal_id and not args.business_id:
+            logger.error("処理対象のフォルダID (PERSONAL_FOLDER_ID または BUSINESS_FOLDER_ID) が設定されていません。")
+            sys.exit(1)
+
+    processor = DailySyncProcessor(workspace_folders, full_sync=args.full_sync)
     stats = await processor.run_sync()
 
     # 終了コード決定

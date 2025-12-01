@@ -5,7 +5,7 @@ Table Editor Component
 import streamlit as st
 import pandas as pd
 from typing import Dict, Any, List
-
+import re  # 追加: ソート用
 
 def render_table_editor(metadata: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -90,6 +90,118 @@ def _format_field_name(field_name: str) -> str:
     return name_map.get(field_name, field_name)
 
 
+# --- 追加機能: スケジュールデータのフラット化とソート ---
+def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    スケジュールデータをクラス単位・日付順にフラット化してソート
+    Example:
+      In: [{'date': '12/1', 'class_schedules': [{'class': '5A', ...}, {'class': '5B', ...}]}]
+      Out: [{'date': '12/1', 'class': '5A', ...}, {'date': '12/1', 'class': '5B', ...}]
+    """
+    if not data:
+        return data
+
+    # class_schedulesが含まれているかチェック
+    has_class_schedule = False
+    for item in data:
+        if "class_schedules" in item and isinstance(item["class_schedules"], list):
+            has_class_schedule = True
+            break
+    
+    if not has_class_schedule:
+        return data
+
+    flattened_data = []
+
+    for item in data:
+        if "class_schedules" in item and isinstance(item["class_schedules"], list):
+            # class_schedules以外の基本情報を取得（日付や曜日など）
+            base_info = {k: v for k, v in item.items() if k != "class_schedules"}
+            
+            for class_sched in item["class_schedules"]:
+                row = base_info.copy()
+                
+                # クラス名を追加
+                if "class" in class_sched:
+                    row["class"] = str(class_sched["class"])
+                
+                # periods（辞書リスト）または subjects（文字列リスト）を展開して列にする
+                if "periods" in class_sched and isinstance(class_sched["periods"], list):
+                    for p in class_sched["periods"]:
+                        if isinstance(p, dict):
+                            period_key = str(p.get("period", ""))
+                            subject = str(p.get("subject", ""))
+                            if period_key:
+                                row[period_key] = subject
+                elif "subjects" in class_sched and isinstance(class_sched["subjects"], list):
+                    for i, subject in enumerate(class_sched["subjects"], 1):
+                        row[str(i)] = str(subject)
+                        
+                flattened_data.append(row)
+        else:
+            # class_schedulesがない行も一応そのまま保持
+            flattened_data.append(item)
+
+    # ソート: 第一キー=class, 第二キー=date
+    def sort_key(row):
+        c = row.get("class", "")
+        d = row.get("date", "")
+        return (str(c), str(d))
+    
+    try:
+        flattened_data.sort(key=sort_key)
+    except:
+        pass # ソートに失敗した場合はそのまま
+
+    return flattened_data
+
+
+# --- 追加機能: 列の並び替え ---
+def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
+    """
+    データフレームの列を見やすく並び替え
+    並び順: class -> date -> day -> 朝 -> 1, 2, 3... -> その他
+    """
+    if df.empty:
+        return df
+        
+    cols = df.columns.tolist()
+    
+    # 固定列（左側に表示したい列）
+    fixed_start = []
+    target_cols = ["class", "date", "day", "day_of_week"]
+    for c in target_cols:
+        if c in cols:
+            fixed_start.append(c)
+            cols.remove(c)
+            
+    # 時限列（数字 または "朝"）
+    period_cols = []
+    other_cols = []
+    
+    for c in cols:
+        # "1", "2" などの数字、または "朝"
+        if c == "朝" or c.isdigit():
+            period_cols.append(c)
+        else:
+            other_cols.append(c)
+            
+    # 時限列のソートロジック（朝を先頭、あとは数字順）
+    def period_sort_key(k):
+        if k == "朝":
+            return -1
+        if k.isdigit():
+            return int(k)
+        return 999
+        
+    period_cols.sort(key=period_sort_key)
+    
+    # 最終的な列順を結合
+    new_order = fixed_start + period_cols + other_cols
+    
+    return df[new_order]
+
+
 def _render_array_table(field_name: str, array_value: List[Dict], label: str) -> List[Dict]:
     """
     配列データを表形式で編集
@@ -105,10 +217,13 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
     if not array_value:
         st.info(f"{label}のデータがありません")
         return []
+    
+    # --- 変更点1: ここでデータをフラット化・ソートする ---
+    processed_value = _flatten_and_sort_schedule(array_value)
 
     # データフレームに変換
     try:
-        df = pd.DataFrame(array_value)
+        df = pd.DataFrame(processed_value)
 
         # PyArrow エラー対策: 型強制とデータクリーニング
         # すべての列を文字列型に変換して混合型を解消
@@ -119,6 +234,9 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
 
         # 文字列化された "None", "nan", "NaN" も空文字列に置き換え
         df = df.replace(["None", "nan", "NaN", "null"], "")
+        
+        # --- 変更点2: ここで列を並び替える ---
+        df = _reorder_columns(df)
 
     except Exception as e:
         st.error(f"データフレーム変換エラー: {e}")
@@ -148,7 +266,9 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
             # 空のレコードは除外
             if cleaned_record:
                 cleaned_array.append(cleaned_record)
-
+        
+        # 注意: ネスト構造には戻さず、フラット化された状態のまま返します
+        # (ユーザーが編集しやすくするため)
         return cleaned_array
 
     except Exception as e:

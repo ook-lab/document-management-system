@@ -146,39 +146,50 @@ class TwoStageIngestionPipeline:
             # ============================================
             local_path = self.drive.download_file(file_id, file_name, self.temp_dir)
             logger.debug(f"ダウンロード完了: {local_path}")
-            
+
             # ============================================
-            # Stage 1: Gemini分類
+            # テキスト抽出（Stage 1の前に実行）
+            # ============================================
+            extraction_result = self._extract_text(local_path, mime_type)
+
+            if not extraction_result["success"]:
+                logger.warning(f"テキスト抽出失敗: {file_name}")
+                logger.warning(f"エラー詳細: {extraction_result.get('error_message')}")
+                extracted_text = ""
+            else:
+                extracted_text = extraction_result["content"]
+
+            base_metadata = extraction_result.get("metadata", {})
+
+            # ============================================
+            # Stage 1: Gemini分類（テキストを渡す）
             # ============================================
             logger.info("[Stage 1] Gemini分類開始...")
             stage1_result = await self.stage1_classifier.classify(
                 file_path=Path(local_path),
-                doc_types_yaml=self.yaml_string
+                doc_types_yaml=self.yaml_string,
+                mime_type=mime_type,
+                text_content=extracted_text
             )
-            
+
             doc_type = stage1_result.get('doc_type', 'other')
             workspace_detected = stage1_result.get('workspace', workspace)
             summary = stage1_result.get('summary', '')
             relevant_date = stage1_result.get('relevant_date')
             stage1_confidence = stage1_result.get('confidence', 0.0)
-            
+
             logger.info(f"[Stage 1] 完了: doc_type={doc_type}, workspace={workspace_detected}, confidence={stage1_confidence:.2f}")
-            
+
             # ============================================
-            # テキスト抽出
+            # テキスト抽出が失敗した場合の処理
             # ============================================
-            extraction_result = self._extract_text(local_path, mime_type)
             if not extraction_result["success"]:
-                logger.warning(f"テキスト抽出失敗: {file_name}")
-                logger.warning(f"エラー詳細: {extraction_result.get('error_message')}")
                 extracted_text = summary
                 confidence = stage1_confidence
                 processing_stage = 'stage1_only'
                 metadata = {}
                 stage2_model = None
             else:
-                extracted_text = extraction_result["content"]
-                base_metadata = extraction_result.get("metadata", {})
                 
                 # ============================================
                 # Stage 2判定・実行
@@ -215,8 +226,8 @@ class TwoStageIngestionPipeline:
                         # 最終的な信頼度（Stage 1とStage 2の加重平均）
                         confidence = (stage1_confidence * 0.3 + stage2_confidence * 0.7)
                         processing_stage = 'stage1_and_stage2'
-                        stage2_model = 'claude-sonnet-4-20250514'
-                        
+                        stage2_model = 'claude-haiku-4-5-20250929'  # コスト効率と速度重視
+
                         logger.info(f"[Stage 2] 完了: confidence={stage2_confidence:.2f}, metadata_fields={len(stage2_metadata)}")
 
                         # ============================================
@@ -317,13 +328,19 @@ class TwoStageIngestionPipeline:
             content_hash = hashlib.sha256(extracted_text.encode('utf-8')).hexdigest() if extracted_text else None
             
             # ============================================
-            # データベース保存
+            # データベース保存（Null文字除去 + 重複エラーハンドリング）
             # ============================================
+            # Null文字を除去
+            if extracted_text:
+                extracted_text = extracted_text.replace('\x00', '')
+            if summary:
+                summary = summary.replace('\x00', '')
+
             document_data = {
                 "source_type": "drive",
                 "source_id": file_id,
                 "source_url": f"https://drive.google.com/file/d/{file_id}/view",
-                "drive_file_id": file_id,  # ← この1行を追加
+                "drive_file_id": file_id,
                 "file_name": file_name,
                 "file_type": self._get_file_type(mime_type),
                 "doc_type": doc_type,
@@ -341,10 +358,20 @@ class TwoStageIngestionPipeline:
                 "stage2_model": stage2_model,
                 "relevant_date": relevant_date,
             }
-            
-            result = await self.db.insert_document('documents', document_data)
-            logger.info(f"=== 処理完了: {file_name} ({doc_type}, {processing_stage}) ===")
-            return result
+
+            try:
+                result = await self.db.insert_document('documents', document_data)
+                logger.info(f"=== 処理完了: {file_name} ({doc_type}, {processing_stage}) ===")
+                return result
+            except Exception as db_error:
+                # 重複エラー（23505）の場合はスキップ
+                error_str = str(db_error)
+                if '23505' in error_str or 'duplicate' in error_str.lower():
+                    logger.warning(f"重複エラー検出（スキップ）: {file_name} - {error_str}")
+                    return {"status": "skipped", "reason": "duplicate"}
+                else:
+                    # その他のDBエラーは再スロー
+                    raise
             
         except Exception as e:
             error_msg = str(e)

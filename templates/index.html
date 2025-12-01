@@ -297,6 +297,13 @@
                         検索件数:
                         <input type="number" id="limitInput" value="5" min="1" max="20">
                     </label>
+                    <label>
+                        AIモデル:
+                        <select id="model-select" style="padding: 5px; border: 1px solid #e0e0e0; border-radius: 4px;">
+                            <option value="gpt-5-mini" selected>GPT-5-mini (高速)</option>
+                            <option value="gpt-5.1">GPT-5.1 (高品質)</option>
+                        </select>
+                    </label>
                 </div>
             </div>
 
@@ -368,6 +375,7 @@
                 currentDocuments = searchData.results;
 
                 // ステップ2: 回答生成
+                const selectedModel = document.getElementById('model-select').value;
                 const answerResponse = await fetch('/api/answer', {
                     method: 'POST',
                     headers: {
@@ -375,7 +383,8 @@
                     },
                     body: JSON.stringify({
                         query,
-                        documents: currentDocuments
+                        documents: currentDocuments,
+                        model: selectedModel
                     })
                 });
 
