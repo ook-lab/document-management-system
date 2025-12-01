@@ -13,7 +13,7 @@ class SchemaDetector:
     def __init__(self):
         """スキーマファイルをロード"""
         self.schemas = {}
-        self.schema_dir = Path(__file__).parent.parent / "schemas"
+        self.schema_dir = Path(__file__).parent / "schemas"
         self._load_schemas()
 
     def _load_schemas(self):
@@ -45,30 +45,68 @@ class SchemaDetector:
             metadata = {}
 
         # doc_typeベースの直接マッピング
-        doc_type_to_schema = {
-            "timetable": "timetable",
-            "school_notice": "school_notice",
-            "notice": "school_notice",
-            "classroom_letter": "school_notice",
-            "event_schedule": "school_notice"
-        }
+        # 学校関連文書はすべて ikuya_school スキーマに統合
+        # 新タイプ: ikuya_school（推奨）
+        # 旧タイプ: timetable, school_notice等（互換性のため一時的にサポート）
+        school_related_types = [
+            "ikuya_school",  # 新統合型（推奨）
+            # 旧タイプ（後方互換性のため一時的にサポート）
+            "timetable", "school_notice", "class_newsletter",
+            "homework", "test_exam", "report_card",
+            "school_event", "parent_teacher_meeting",
+            "notice", "classroom_letter", "event_schedule"
+        ]
 
-        if doc_type in doc_type_to_schema:
-            schema_name = doc_type_to_schema[doc_type]
-            if schema_name in self.schemas:
-                return schema_name
+        if doc_type in school_related_types:
+            # 全て ikuya_school スキーマに統合
+            if "ikuya_school" in self.schemas:
+                return "ikuya_school"
 
         # メタデータの構造から推測
+        # 全ての学校関連構造は ikuya_school に統合
+        if self._is_school_general_structure(metadata):
+            if "ikuya_school" in self.schemas:
+                return "ikuya_school"
+
         if self._is_timetable_structure(metadata):
-            return "timetable"
+            if "ikuya_school" in self.schemas:
+                return "ikuya_school"
 
         if self._is_school_notice_structure(metadata):
-            return "school_notice"
+            if "ikuya_school" in self.schemas:
+                return "ikuya_school"
 
         return None
 
+    def _is_school_general_structure(self, metadata: Dict[str, Any]) -> bool:
+        """school_general の構造かどうか判定"""
+        # Noneの場合に空の辞書に置き換える
+        metadata = metadata or {}
+
+        # basic_info フィールドの存在をチェック
+        if "basic_info" in metadata and isinstance(metadata["basic_info"], dict):
+            return True
+
+        # weekly_schedule with class_schedules の存在をチェック
+        if "weekly_schedule" in metadata:
+            weekly_schedule = metadata["weekly_schedule"]
+            if isinstance(weekly_schedule, list) and len(weekly_schedule) > 0:
+                first_day = weekly_schedule[0]
+                # class_schedules フィールドがあれば school_general
+                if "class_schedules" in first_day:
+                    return True
+
+        # text_blocks と structured_tables の両方があれば school_general の可能性が高い
+        if "text_blocks" in metadata and "structured_tables" in metadata:
+            return True
+
+        return False
+
     def _is_timetable_structure(self, metadata: Dict[str, Any]) -> bool:
         """時間割の構造かどうか判定"""
+        # Noneの場合に空の辞書に置き換える
+        metadata = metadata or {}
+
         # daily_scheduleフィールドの存在をチェック
         if "daily_schedule" in metadata:
             daily_schedule = metadata["daily_schedule"]
@@ -80,6 +118,9 @@ class SchemaDetector:
 
     def _is_school_notice_structure(self, metadata: Dict[str, Any]) -> bool:
         """学校通知の構造かどうか判定"""
+        # Noneの場合に空の辞書に置き換える
+        metadata = metadata or {}
+
         # notice_typeまたはweekly_scheduleフィールドの存在をチェック
         if "notice_type" in metadata:
             return True

@@ -22,13 +22,24 @@ from jsonschema import validate, ValidationError, Draft7Validator
 
 
 # doc_typeとスキーマファイル名のマッピング
+# ✅ 全ての文書はikuya_school.json スキーマに統一 (Phase 4)
 DOC_TYPE_SCHEMA_MAPPING = {
-    'timetable': 'timetable.json',
-    'notice': 'school_notice.json',
-    'school_notice': 'school_notice.json',
-    # 必要に応じて追加
-    # 'homework': 'homework.json',
-    # 'test_exam': 'test_exam.json',
+    # Phase 4: 単一スキーマ統合 - すべて ikuya_school.json を使用
+    'ikuya_school': 'ikuya_school.json',
+    # 後方互換性のため旧タイプも ikuya_school.json にマッピング
+    'timetable': 'ikuya_school.json',
+    'school_notice': 'ikuya_school.json',
+    'class_newsletter': 'ikuya_school.json',
+    'homework': 'ikuya_school.json',
+    'test_exam': 'ikuya_school.json',
+    'report_card': 'ikuya_school.json',
+    'school_event': 'ikuya_school.json',
+    'parent_teacher_meeting': 'ikuya_school.json',
+    'notice': 'ikuya_school.json',
+    # Phase 3 doc types (すべて ikuya_school.json に統一)
+    'gakunen_dayori_monthly': 'ikuya_school.json',
+    'gakunen_tsushin_weekly': 'ikuya_school.json',
+    'masumi': 'ikuya_school.json',
 }
 
 
@@ -44,9 +55,9 @@ def get_schema_path(doc_type: str, schema_dir: Optional[Path] = None) -> Optiona
         スキーマファイルのPath、または存在しない場合はNone
     """
     if schema_dir is None:
-        # デフォルトパス: プロジェクトルート/ui/schemas/
+        # デフォルトパス: プロジェクトルート/ui/utils/schemas/
         project_root = Path(__file__).parent.parent.parent
-        schema_dir = project_root / 'ui' / 'schemas'
+        schema_dir = project_root / 'ui' / 'utils' / 'schemas'
 
     # doc_typeに対応するスキーマファイル名を取得
     schema_filename = DOC_TYPE_SCHEMA_MAPPING.get(doc_type)

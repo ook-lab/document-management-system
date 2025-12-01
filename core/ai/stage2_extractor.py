@@ -211,9 +211,149 @@ class Stage2Extractor:
     
     def _get_custom_fields(self, doc_type: str) -> str:
         """doc_typeに応じたカスタムフィールド定義"""
-        
+
+        # 学校関連文書は ikuya_school スキーマに統合
+        ikuya_school_fields = """
+   【重要】学校関連文書は ikuya_school スキーマに統合されています。
+
+   metadataフィールドの構造:
+   {
+     "basic_info": {
+       "school_name": "学校名",
+       "grade": "学年（例: 5年生）",
+       "issue_date": "発行日（YYYY-MM-DD）",
+       "period": "対象期間（例: 2024年11月18日-21日）",
+       "document_title": "文書タイトル",
+       "document_number": "文書番号（例: 第12号）"
+     },
+     "text_blocks": [
+       {
+         "title": "見出し（例: 朝会「マナーとルールについて」）",
+         "content": "本文（原文そのまま、一切省略せず）"
+       }
+     ],
+     "weekly_schedule": [
+       {
+         "date": "MM-DD または YYYY-MM-DD",
+         "day": "曜日（月、火など）",
+         "day_of_week": "曜日フル（月曜日など）",
+         "events": ["行事1", "行事2"],
+         "class_schedules": [
+           {
+             "class": "5A",
+             "subjects": ["1限:国語", "2限:算数", "3限:理科"],
+             "periods": [
+               {"period": 1, "subject": "国語", "time": "8:45-9:30"},
+               {"period": 2, "subject": "算数", "time": "9:40-10:25"}
+             ]
+           },
+           {
+             "class": "5B",
+             "subjects": ["1限:算数", "2限:国語", "3限:社会"]
+           }
+         ],
+         "note": "持ち物や連絡事項（原文そのまま）"
+       }
+     ],
+     "monthly_schedule_blocks": [
+       {
+         "date": "MM-DD または YYYY-MM-DD",
+         "day_of_week": "曜日（月、火など）",
+         "event": "イベント・行事の内容",
+         "time": "時刻（例: 7:45 集合、11:30 下校）",
+         "notes": "持ち物、場所などの補足情報"
+       }
+     ],
+     "learning_content_blocks": [
+       {
+         "subject": "教科名（国語、算数など）",
+         "teacher": "担当教員名",
+         "content": "学習内容の詳細（原文そのまま）",
+         "materials": "持ち物・準備物"
+       }
+     ],
+     "structured_tables": [
+       {
+         "table_title": "表のタイトル",
+         "table_type": "requirements/events/scores など",
+         "headers": ["列1", "列2", "列3"],
+         "rows": [
+           {"列1": "値1", "列2": "値2", "列3": "値3"},
+           {"列1": "値4", "列2": "値5", "列3": "値6"}
+         ]
+       }
+     ],
+     "important_notes": [
+       "短い箇条書きの連絡事項1（原文そのまま）",
+       "短い箇条書きの連絡事項2（原文そのまま）"
+     ],
+     "special_events": [
+       "特別イベント1",
+       "特別イベント2"
+     ]
+   }
+
+   【データ振り分けルール - 必ず守ること】:
+
+   1. **basic_info**: 学校名、学年、発行日、対象期間などの基本情報
+      - 文書の一番上に記載されている学校名や学年、日付を抽出
+
+   2. **weekly_schedule**: 時間割表（曜日・時限・クラスで構成される表）
+      ★これが最も重要★ 以下の条件に当てはまる表は必ず weekly_schedule に構造化してください:
+      - 横軸に「月・火・水・木・金」などの曜日がある
+      - 縦軸に「1限・2限・3限」などの時限がある
+      - 「5A」「5B」などのクラス名が列見出しにある
+      - 各セルに科目名（国語、算数、理科など）が入っている
+
+      抽出方法:
+      - 各日付について、class_schedules フィールドを作成
+      - クラスごとに subjects 配列を作成（時限順に「1限:国語」形式で記録）
+      - periods フィールドには {period, subject, time} の詳細情報を記録
+      - 科目名に括弧書きの説明がある場合もそのまま含める（例: 「算数（持ち物:定規）」）
+      - 朝の時間は period を "朝" または 0 として記録
+
+   3. **structured_tables**: その他の表データ（weekly_schedule 以外）
+      - 持ち物リスト、イベント一覧、成績表、提出物リストなど
+      - table_title（表のタイトル）、table_type（種類）、headers（列名）、rows（行データ）で構造化
+      - rows は配列形式で、各行をオブジェクトとして記録
+
+   4. **text_blocks**: まとまった文章セクション（見出し+本文）
+      - 朝会の話、今日のふりかえり、道徳の内容、先生からのメッセージなど
+      - 見出しが明確にあり、その後に長めの文章が続く場合
+      - title（見出し）と content（本文全文）のペアで記録
+      - content は一切省略せず、原文そのまま全文を記録
+
+   5. **important_notes**: 短い箇条書きの連絡事項
+      - 「11月20日(水)は遠足のため弁当を持参してください」のような短い文
+      - 原文そのまま配列に格納（要約・言い換え厳禁）
+
+   6. **special_events**: 特別イベント・行事
+      - 通常授業以外の特別な予定
+
+   【絶対原則】:
+   - 情報の欠損・省略は一切禁止
+   - 原文の全量を構造化データに落とし込む
+   - 要約・言い換えは厳禁（特に text_blocks の content、important_notes、note フィールド）
+   - 日付は必ず YYYY-MM-DD 形式で統一
+   - 見つからない情報は null または空のリスト [] を設定
+        """
+
         fields_map = {
-            "timetable": """
+            # 学校関連文書 - 全て ikuya_school に統合
+            "ikuya_school": ikuya_school_fields,
+            # 旧タイプ（後方互換性のため一時的にサポート）
+            "timetable": ikuya_school_fields,
+            "school_notice": ikuya_school_fields,
+            "class_newsletter": ikuya_school_fields,
+            "homework": ikuya_school_fields,
+            "test_exam": ikuya_school_fields,
+            "report_card": ikuya_school_fields,
+            "school_event": ikuya_school_fields,
+            "parent_teacher_meeting": ikuya_school_fields,
+            "notice": ikuya_school_fields,
+
+            # 以下は既存の定義を保持
+            "timetable_old": """
    - school_name: 学校名
    - grade: 学年 (例: "5年生")
    - period: 対象期間 (例: "2024年11月18日-21日")

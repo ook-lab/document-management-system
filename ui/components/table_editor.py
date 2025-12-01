@@ -85,7 +85,12 @@ def _format_field_name(field_name: str) -> str:
         "class_schedules": "クラス別時間割",
         "requirements": "持ち物・準備",
         "important_points": "重要事項",
-        "special_events": "特別イベント"
+        "special_events": "特別イベント",
+        "text_blocks": "文章セクション",
+        "structured_tables": "その他の表データ",
+        "important_notes": "連絡事項",
+        "monthly_schedule_blocks": "📅 月間予定表",
+        "learning_content_blocks": "📚 教科別学習予定"
     }
     return name_map.get(field_name, field_name)
 
@@ -157,6 +162,76 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
 
 
 # --- 追加機能: 列の並び替え ---
+def _render_single_structured_table(field_key: str, table_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    structured_tables の1つのテーブルをレンダリング
+
+    Args:
+        field_key: 一意なキー (st.data_editor用)
+        table_data: {table_title, table_type, headers, rows} 形式のデータ
+
+    Returns:
+        編集後のテーブルデータ
+    """
+    table_title = table_data.get("table_title", "表")
+    table_type = table_data.get("table_type", "")
+    rows = table_data.get("rows", [])
+
+    if not rows:
+        st.info(f"{table_title}: データがありません")
+        return table_data
+
+    # データフレームに変換
+    try:
+        df = pd.DataFrame(rows)
+
+        # PyArrow エラー対策: 型強制とデータクリーニング
+        df = df.astype(str)
+        df = df.fillna("")
+        df = df.replace(["None", "nan", "NaN", "null"], "")
+
+    except Exception as e:
+        st.error(f"データフレーム変換エラー: {e}")
+        st.json(rows)
+        return table_data
+
+    # 表のメタ情報を表示
+    st.markdown(f"#### {table_title}")
+    if table_type:
+        st.caption(f"種類: {table_type} | 全 {len(df)} 行")
+    else:
+        st.caption(f"全 {len(df)} 行")
+
+    # 編集可能な表を表示
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        num_rows="dynamic",
+        key=f"table_{field_key}",
+        height=400
+    )
+
+    # データフレームを辞書のリストに戻す
+    try:
+        edited_rows = edited_df.to_dict('records')
+
+        # データクリーニング: 空文字列を削除
+        cleaned_rows = []
+        for record in edited_rows:
+            cleaned_record = {k: v for k, v in record.items() if v != ""}
+            if cleaned_record:
+                cleaned_rows.append(cleaned_record)
+
+        # 編集後のデータで table_data を更新
+        edited_table_data = table_data.copy()
+        edited_table_data["rows"] = cleaned_rows
+        return edited_table_data
+
+    except Exception as e:
+        st.error(f"データ変換エラー: {e}")
+        return table_data
+
+
 def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     データフレームの列を見やすく並び替え
@@ -217,7 +292,34 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
     if not array_value:
         st.info(f"{label}のデータがありません")
         return []
-    
+
+    # --- structured_tables の特別処理 ---
+    # structured_tables は {table_title, table_type, headers, rows} の形式
+    # rows フィールドを直接表示する
+    if "structured_tables" in field_name and isinstance(array_value, list):
+        # 複数の表がある場合、それぞれを個別のタブで表示
+        if len(array_value) > 1:
+            table_tabs = st.tabs([
+                table.get("table_title", f"表{i+1}")
+                for i, table in enumerate(array_value)
+            ])
+            edited_tables = []
+            for i, (tab, table_data) in enumerate(zip(table_tabs, array_value)):
+                with tab:
+                    edited_table = _render_single_structured_table(
+                        f"{field_name}_{i}",
+                        table_data
+                    )
+                    edited_tables.append(edited_table)
+            return edited_tables
+        elif len(array_value) == 1:
+            # 1つの表のみの場合はタブなしで表示
+            edited_table = _render_single_structured_table(
+                field_name,
+                array_value[0]
+            )
+            return [edited_table]
+
     # --- 変更点1: ここでデータをフラット化・ソートする ---
     processed_value = _flatten_and_sort_schedule(array_value)
 
