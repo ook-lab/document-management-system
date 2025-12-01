@@ -117,12 +117,21 @@ class LLMClient:
                 uploaded_file = genai.upload_file(path=str(file_path), mime_type=mime_type)
                 content_parts.append(uploaded_file)
 
+            # 安全フィルター設定（finish_reason: 2 対策）
+            safety_settings = [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ]
+
             response = model.generate_content(
                 content_parts,
                 generation_config=genai.GenerationConfig(
                     max_output_tokens=config.get("max_tokens", 2000),
                     temperature=config.get("temperature", 0.1)
-                )
+                ),
+                safety_settings=safety_settings
             )
 
             # レスポンスの検証

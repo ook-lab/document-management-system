@@ -27,10 +27,10 @@ class ModelTier:
     }
     
     # Stage 2: 詳細抽出（速度・コスト重視）
-    # Claude 4.5 Haikuに変更（コスト効率と速度向上）
+    # Claude Haiku 4.5に変更（コスト効率と速度向上）
     STAGE2_EXTRACTOR = {
         "provider": AIProvider.CLAUDE,
-        "model": "claude-haiku-4-5-20250929",  # コスト効率と速度重視
+        "model": "claude-haiku-4-5-20251001",  # 最新のHaiku 4.5モデル
         "description": "高速な情報抽出・構造化",
         "temperature": 0.0,
         "max_tokens": 4096,
@@ -38,14 +38,14 @@ class ModelTier:
     }
     
     # UI回答生成（速度・コスト重視）
-    # ✅ GPT-5-miniに変更（コスト効率と速度向上）
+    # ✅ GPT-4o-miniに変更（コスト効率と速度向上）
     UI_RESPONSE_GENERATOR = {
         "provider": AIProvider.OPENAI,
-        "model": "gpt-5-mini",  # ✅ コスト効率と速度重視
+        "model": "gpt-4o-mini",  # ✅ コスト効率と速度重視
         "description": "高速で効率的な対話応答",
         "temperature": 0.7,
         "max_completion_tokens": 2048,
-        "cost_per_1k_tokens": 0.003  # GPT-5-miniは低コスト
+        "cost_per_1k_tokens": 0.00015  # GPT-4o-miniは低コスト
     }
     
     # Embedding生成

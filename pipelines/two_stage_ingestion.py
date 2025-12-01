@@ -52,11 +52,10 @@ class TwoStageIngestionPipeline:
         
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
-        
-        # Stage 2を実行するかどうかの信頼度閾値
-        self.stage2_confidence_threshold = 0.85
-        
-        logger.info("TwoStageIngestionPipeline初期化完了 (Stage 2有効)")
+
+        # Stage 2は完全リレー方式（判定なし、Stage 1の結果を必ずStage 2へ）
+
+        logger.info("TwoStageIngestionPipeline初期化完了 (完全リレー方式: Gemini→Haiku)")
     
     def _extract_text(self, local_path: str, mime_type: str) -> Dict[str, Any]:
         """ファイルタイプに応じてテキスト抽出をルーティング"""
@@ -91,36 +90,26 @@ class TwoStageIngestionPipeline:
         return mapping.get(mime_type, "other")
     
     def _should_run_stage2(self, stage1_result: Dict[str, Any], extracted_text: str) -> bool:
-        """Stage 2を実行すべきかどうか判定"""
-        
-        # Stage 1の信頼度が低い場合はStage 2実行
-        stage1_confidence = stage1_result.get('confidence', 0.0)
-        if stage1_confidence < self.stage2_confidence_threshold:
-            logger.info(f"[Stage 2判定] 信頼度が閾値未満 ({stage1_confidence:.2f} < {self.stage2_confidence_threshold})")
-            return True
-        
-        # doc_typeが'other'または'unknown'の場合はStage 2実行
-        doc_type = stage1_result.get('doc_type', 'other')
-        if doc_type in ['other', 'unknown']:
-            logger.info(f"[Stage 2判定] doc_type={doc_type}のため実行")
-            return True
-        
-        # 抽出テキストが空の場合はスキップ
+        """
+        Stage 2を実行すべきかどうか判定（完全リレー方式）
+
+        【アーキテクチャ】
+        - Stage 1 (Gemini): 文書の分類と基本情報の抽出
+        - Stage 2 (Haiku): Stage 1の結果を受けて構造化・意味付け
+
+        テキストが存在する限り、Stage 1の結果は必ずStage 2（Haiku）に渡して構造化する。
+        信頼度に関係なく、判定なしの完全リレー方式で動作する。
+        """
+
+        # 抽出テキストが空の場合、または極端に短い場合のみスキップ
         if not extracted_text or len(extracted_text.strip()) < 50:
-            logger.info("[Stage 2判定] テキストが短すぎるためスキップ")
+            logger.info("[Stage 2] テキストが短すぎるためスキップ")
             return False
-        
-        # 重要な文書タイプは必ずStage 2実行
-        important_types = [
-            'timetable', 'notice', 'homework', 'test', 'report_card',
-            'invoice', 'contract', 'meeting_minutes'
-        ]
-        if doc_type in important_types:
-            logger.info(f"[Stage 2判定] 重要文書タイプ ({doc_type}) のため実行")
-            return True
-        
-        logger.info(f"[Stage 2判定] Stage 1のみで十分 (confidence={stage1_confidence:.2f})")
-        return False
+
+        # テキストがある限り、無条件でStage 2（構造化プロセス）へ
+        doc_type = stage1_result.get('doc_type', 'other')
+        logger.info(f"[Stage 2] 構造化プロセスへ移行 ({doc_type})")
+        return True
 
     async def process_file(
         self,
@@ -140,6 +129,9 @@ class TwoStageIngestionPipeline:
             return existing
         
         local_path = None
+        # extraction_resultを初期化（NameError回避）
+        extraction_result = {"success": False, "content": "", "metadata": {}, "error_message": "未実行"}
+
         try:
             # ============================================
             # ファイルダウンロード
@@ -226,7 +218,7 @@ class TwoStageIngestionPipeline:
                         # 最終的な信頼度（Stage 1とStage 2の加重平均）
                         confidence = (stage1_confidence * 0.3 + stage2_confidence * 0.7)
                         processing_stage = 'stage1_and_stage2'
-                        stage2_model = 'claude-haiku-4-5-20250929'  # コスト効率と速度重視
+                        stage2_model = 'claude-haiku-4-5-20251001'  # 最新のHaiku 4.5モデル
 
                         logger.info(f"[Stage 2] 完了: confidence={stage2_confidence:.2f}, metadata_fields={len(stage2_metadata)}")
 

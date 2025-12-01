@@ -81,6 +81,27 @@
       "items": {
         "type": "string"
       }
+    },
+    "text_blocks": {
+      "type": "array",
+      "title": "文章セクション（記事ブロック）",
+      "description": "表以外の場所にある、まとまった文章セクション（朝会の話、振り返り、道徳の内容など）",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "見出し",
+            "description": "セクションのタイトル（例: 朝会「マナーとルールについて」、今日のふりかえり）"
+          },
+          "content": {
+            "type": "string",
+            "title": "本文",
+            "description": "セクションの本文（長文可、原文そのまま）"
+          }
+        },
+        "required": ["title", "content"]
+      }
     }
   },
   "required": ["school_name", "grade", "daily_schedule"]
