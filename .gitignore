@@ -6,3 +6,6 @@ venv/
 logs/
 credentials/google_credentials.json
 .env.bak
+
+__pycache__/
+*.pyc

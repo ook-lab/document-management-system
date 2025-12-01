@@ -160,13 +160,6 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
     if not current_value:
         current_value = []
 
-    # 型チェック: 配列の要素が辞書（オブジェクト）である場合は編集をスキップ
-    if isinstance(current_value, list) and len(current_value) > 0 and isinstance(current_value[0], dict):
-        # 構造化データは表エディタで編集
-        st.info("📊 このフィールドは構造化データ（表）のため、**[表エディタ]** タブで編集してください")
-        st.json(current_value, expanded=False)
-        return current_value  # 元の値をそのまま返す
-
     # 配列の型に応じた処理
     if items_def and items_def.get("type") == "string":
         # 文字列配列: テキストエリアで改行区切り入力
@@ -181,18 +174,8 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         return [line.strip() for line in edited_text.split("\n") if line.strip()]
 
     elif items_def and items_def.get("type") == "object":
-        # オブジェクト配列: 展開可能なリストとして表示
-        edited_array = []
-        for idx, item in enumerate(current_value):
-            with st.expander(f"項目 {idx + 1}", expanded=False):
-                edited_item = _render_object_input(f"{field_name}_{idx}", item)
-                edited_array.append(edited_item)
-
-        # 新規追加ボタン
-        if st.button(f"➕ {label}に項目を追加", key=f"add_{field_name}"):
-            st.info("保存後、新しい項目が追加されます")
-
-        return edited_array
+        # オブジェクト配列: スキーマ定義に基づいて個別フィールドとして表示
+        return _render_object_array_input(field_name, label, current_value, items_def)
 
     else:
         # デフォルト: JSON文字列として表示
@@ -210,6 +193,129 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         except:
             st.error("JSON形式が不正です")
             return current_value
+
+
+def _render_object_array_input(field_name: str, label: str, current_value: List[Dict], items_def: Dict) -> List[Dict]:
+    """
+    オブジェクト配列入力フィールド（スキーマ定義に基づく）
+
+    Args:
+        field_name: フィールド名
+        label: ラベル
+        current_value: 現在の値（オブジェクトの配列）
+        items_def: スキーマのitems定義
+
+    Returns:
+        編集後のオブジェクト配列
+    """
+    if not current_value:
+        current_value = []
+
+    # スキーマからプロパティ定義を取得
+    properties = items_def.get("properties", {})
+    required_fields = items_def.get("required", [])
+
+    # プロパティ定義がない場合は、フォールバックとしてJSON編集
+    if not properties:
+        st.info("📝 このフィールドはJSON形式で編集してください")
+        edited_array = []
+        for idx, item in enumerate(current_value):
+            with st.expander(f"項目 {idx + 1}", expanded=False):
+                edited_item = _render_object_input(f"{field_name}_{idx}", item)
+                edited_array.append(edited_item)
+        return edited_array
+
+    # 各アイテムをアコーディオンで表示
+    edited_array = []
+    for idx, item in enumerate(current_value):
+        # アイテムのタイトルを生成（titleフィールドがあれば使用）
+        item_title = item.get("title", f"項目 {idx + 1}")
+
+        with st.expander(f"📄 {item_title}", expanded=False):
+            edited_item = {}
+
+            # 各プロパティを個別の入力フィールドとして表示
+            for prop_name, prop_def in properties.items():
+                prop_type = prop_def.get("type", "string")
+                prop_title = prop_def.get("title", prop_name)
+                prop_description = prop_def.get("description", "")
+                is_required = prop_name in required_fields
+
+                prop_value = item.get(prop_name, "")
+
+                # フィールドラベル
+                prop_label = f"{'🔴 ' if is_required else ''}{prop_title}"
+
+                # 型に応じた入力ウィジェット
+                if prop_type == "string":
+                    # contentフィールドは大きなテキストエリアで表示
+                    if prop_name == "content" or len(str(prop_value)) > 100:
+                        edited_item[prop_name] = st.text_area(
+                            prop_label,
+                            value=str(prop_value) if prop_value else "",
+                            height=200,
+                            help=prop_description,
+                            key=f"form_{field_name}_{idx}_{prop_name}"
+                        )
+                    else:
+                        edited_item[prop_name] = st.text_input(
+                            prop_label,
+                            value=str(prop_value) if prop_value else "",
+                            help=prop_description,
+                            key=f"form_{field_name}_{idx}_{prop_name}"
+                        )
+
+                elif prop_type == "integer":
+                    edited_item[prop_name] = st.number_input(
+                        prop_label,
+                        value=int(prop_value) if prop_value is not None else 0,
+                        step=1,
+                        help=prop_description,
+                        key=f"form_{field_name}_{idx}_{prop_name}"
+                    )
+
+                elif prop_type == "number":
+                    edited_item[prop_name] = st.number_input(
+                        prop_label,
+                        value=float(prop_value) if prop_value is not None else 0.0,
+                        help=prop_description,
+                        key=f"form_{field_name}_{idx}_{prop_name}"
+                    )
+
+                elif prop_type == "boolean":
+                    edited_item[prop_name] = st.checkbox(
+                        prop_label,
+                        value=bool(prop_value) if prop_value is not None else False,
+                        help=prop_description,
+                        key=f"form_{field_name}_{idx}_{prop_name}"
+                    )
+
+                else:
+                    # その他の型はテキスト入力
+                    edited_item[prop_name] = st.text_input(
+                        prop_label,
+                        value=str(prop_value) if prop_value else "",
+                        help=prop_description,
+                        key=f"form_{field_name}_{idx}_{prop_name}"
+                    )
+
+            edited_array.append(edited_item)
+
+    # 削除と追加のコントロール
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button(f"➕ 新しい項目を追加", key=f"add_{field_name}"):
+            st.info("💡 保存後、新しい項目が追加されます")
+
+    with col2:
+        if len(edited_array) > 0:
+            if st.button(f"🗑️ 最後の項目を削除", key=f"remove_{field_name}"):
+                edited_array = edited_array[:-1]
+                st.success("最後の項目を削除しました")
+
+    return edited_array
 
 
 def _render_object_input(field_name: str, current_value: Any) -> Dict:
