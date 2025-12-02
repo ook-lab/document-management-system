@@ -99,7 +99,15 @@ def _format_field_name(field_name: str) -> str:
         "important_notes": "📌 連絡事項",
         "special_events": "🎉 特別イベント",
         "requirements": "📦 持ち物・準備",
-        "important_points": "⚠️ 重要事項"
+        "important_points": "⚠️ 重要事項",
+        # その他の既存フィールド
+        "daily_schedule": "日別時間割",
+        "weekly_schedule": "週間予定",
+        "periods": "時限別科目",
+        "class_schedules": "クラス別時間割",
+        "structured_tables": "📋 その他リスト",
+        "monthly_schedule_blocks": "📅 月間予定表",
+        "learning_content_blocks": "📚 教科別学習予定"
     }
 
     # マッピングに存在する場合はそれを返す
