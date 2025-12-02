@@ -29,7 +29,7 @@ class PDFProcessor:
     # 構造化キーワード（これらが含まれるページはVision解析候補）
     STRUCTURED_KEYWORDS = [
         "表", "課題", "時間割", "宿題", "テスト", "予定", "スケジュール",
-        "リスト", "一覧", "名簿", "メニュー", "議題", "会議"
+        "リスト", "一覧", "名簿", "メニュー", "議題", "会議", "学習"
     ]
 
     def __init__(self, llm_client=None):
@@ -287,7 +287,8 @@ class PDFProcessor:
 
         判定基準:
         1. 構造化キーワードを含む
-        2. かつ、pdfplumberの表抽出が空または不十分（1個以下）
+        2. かつ、pdfplumberの表抽出が空または不十分（2個以下）
+        3. または、「学習」と「予定」の両方を含む場合は常にVision対象
 
         Args:
             page_texts: 各ページのテキストリスト
@@ -302,13 +303,19 @@ class PDFProcessor:
             # キーワード検出
             has_keyword = any(keyword in text for keyword in self.STRUCTURED_KEYWORDS)
 
-            # 表抽出が不十分か判定
-            table_insufficient = len(tables) <= 1  # 0個または1個の場合は不十分
+            # 表抽出が不十分か判定（2個以下の場合は不十分）
+            table_insufficient = len(tables) <= 2
 
-            # 両方の条件を満たす場合
-            if has_keyword and table_insufficient:
+            # 特別な強制条件: 学習予定の重要性を考慮
+            has_learning_schedule = "学習" in text and "予定" in text
+
+            # 条件判定
+            if has_learning_schedule:
                 target_pages.append(i)
-                logger.debug(f"ページ {i+1}: キーワード検出 + 表抽出不十分 → Vision対象")
+                logger.debug(f"ページ {i+1}: 学習予定検出 (tables={len(tables)}) → Vision対象（強制）")
+            elif has_keyword and table_insufficient:
+                target_pages.append(i)
+                logger.debug(f"ページ {i+1}: キーワード検出 + 表抽出不十分 (tables={len(tables)}) → Vision対象")
 
         return target_pages
 
