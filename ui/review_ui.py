@@ -53,9 +53,11 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
         # デバッグログ: 全てのキーと値の型を出力
         logger.debug(f"Key: {key}, Type: {type(value)}, Value start: {str(value)[:50]}")
 
-        # _list, _blocks, または _matrix で終わるキーを構造化データとして認識
-        if key.endswith("_list") or key.endswith("_blocks") or key.endswith("_matrix"):
-            logger.info(f"✓ '{key}' は _list/_blocks/_matrix で終わるキー")
+        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables を構造化データとして認識
+        if (key.endswith("_list") or key.endswith("_blocks") or
+            key.endswith("_matrix") or key.endswith("_tables") or
+            key == "structured_tables"):
+            logger.info(f"✓ '{key}' は構造化データフィールドとして検出")
 
             if not isinstance(value, list):
                 logger.warning(f"  ⚠️ '{key}' はリストではありません。Type: {type(value)}")
