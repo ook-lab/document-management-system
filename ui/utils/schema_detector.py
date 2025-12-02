@@ -87,7 +87,11 @@ class SchemaDetector:
         if "basic_info" in metadata and isinstance(metadata["basic_info"], dict):
             return True
 
-        # weekly_schedule with class_schedules の存在をチェック
+        # 新しい構造化フィールドの存在をチェック（優先）
+        if "monthly_schedule_list" in metadata or "learning_content_list" in metadata:
+            return True
+
+        # weekly_schedule with class_schedules の存在をチェック（後方互換性）
         if "weekly_schedule" in metadata:
             weekly_schedule = metadata["weekly_schedule"]
             if isinstance(weekly_schedule, list) and len(weekly_schedule) > 0:

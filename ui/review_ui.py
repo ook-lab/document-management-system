@@ -18,7 +18,7 @@ sys.path.insert(0, str(root_dir))
 import streamlit as st
 import json
 import tempfile
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import pandas as pd
 from loguru import logger
 
