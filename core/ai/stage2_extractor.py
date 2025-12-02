@@ -268,9 +268,9 @@ class Stage2Extractor:
     def _get_custom_fields(self, doc_type: str) -> str:
         """doc_typeに応じたカスタムフィールド定義"""
 
-        # 学校関連文書は school_general スキーマを使用
-        school_general_fields = """
-   【重要】学校関連文書は school_general 汎用スキーマを使用します。
+        # 育哉-学校関連文書は ikuya_school スキーマを使用
+        ikuya_school_fields = """
+   【重要】育哉-学校関連文書は ikuya_school スキーマを使用します。
 
    ★★★ データ振り分けの基本原則 ★★★
    **文章は text_blocks へ、時間割は weekly_schedule へ振り分けてください。**
@@ -390,18 +390,18 @@ class Stage2Extractor:
         """
 
         fields_map = {
-            # 学校関連文書 - 全て school_general に統合
-            "ikuya_school": school_general_fields,
+            # 育哉-学校関連文書 - 全て ikuya_school に統合
+            "ikuya_school": ikuya_school_fields,
             # 旧タイプ（後方互換性のため一時的にサポート）
-            "timetable": school_general_fields,
-            "school_notice": school_general_fields,
-            "class_newsletter": school_general_fields,
-            "homework": school_general_fields,
-            "test_exam": school_general_fields,
-            "report_card": school_general_fields,
-            "school_event": school_general_fields,
-            "parent_teacher_meeting": school_general_fields,
-            "notice": school_general_fields,
+            "timetable": ikuya_school_fields,
+            "school_notice": ikuya_school_fields,
+            "class_newsletter": ikuya_school_fields,
+            "homework": ikuya_school_fields,
+            "test_exam": ikuya_school_fields,
+            "report_card": ikuya_school_fields,
+            "school_event": ikuya_school_fields,
+            "parent_teacher_meeting": ikuya_school_fields,
+            "notice": ikuya_school_fields,
 
             # 以下は既存の定義を保持
             "timetable_old": """

@@ -64,7 +64,7 @@ class SchemaDetector:
 
         # メタデータの構造から推測
         # 全ての学校関連構造は ikuya_school に統合
-        if self._is_school_general_structure(metadata):
+        if self._is_ikuya_school_structure(metadata):
             if "ikuya_school" in self.schemas:
                 return "ikuya_school"
 
@@ -78,8 +78,8 @@ class SchemaDetector:
 
         return None
 
-    def _is_school_general_structure(self, metadata: Dict[str, Any]) -> bool:
-        """school_general の構造かどうか判定"""
+    def _is_ikuya_school_structure(self, metadata: Dict[str, Any]) -> bool:
+        """ikuya_school の構造かどうか判定"""
         # Noneの場合に空の辞書に置き換える
         metadata = metadata or {}
 
@@ -96,11 +96,11 @@ class SchemaDetector:
             weekly_schedule = metadata["weekly_schedule"]
             if isinstance(weekly_schedule, list) and len(weekly_schedule) > 0:
                 first_day = weekly_schedule[0]
-                # class_schedules フィールドがあれば school_general
+                # class_schedules フィールドがあれば ikuya_school
                 if "class_schedules" in first_day:
                     return True
 
-        # text_blocks と structured_tables の両方があれば school_general の可能性が高い
+        # text_blocks と structured_tables の両方があれば ikuya_school の可能性が高い
         if "text_blocks" in metadata and "structured_tables" in metadata:
             return True
 

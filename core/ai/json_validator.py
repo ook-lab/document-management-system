@@ -22,24 +22,24 @@ from jsonschema import validate, ValidationError, Draft7Validator
 
 
 # doc_typeとスキーマファイル名のマッピング
-# ✅ 全ての学校文書はschool_general.json 汎用スキーマに統一
+# ✅ 全ての学校文書はikuya_school.json スキーマに統一
 DOC_TYPE_SCHEMA_MAPPING = {
-    # 学校関連: school_general.json 汎用スキーマを使用
-    'ikuya_school': 'school_general.json',
-    # 後方互換性のため旧タイプも school_general.json にマッピング
-    'timetable': 'school_general.json',
-    'school_notice': 'school_general.json',
-    'class_newsletter': 'school_general.json',
-    'homework': 'school_general.json',
-    'test_exam': 'school_general.json',
-    'report_card': 'school_general.json',
-    'school_event': 'school_general.json',
-    'parent_teacher_meeting': 'school_general.json',
-    'notice': 'school_general.json',
-    # Phase 3 doc types (すべて school_general.json に統一)
-    'gakunen_dayori_monthly': 'school_general.json',
-    'gakunen_tsushin_weekly': 'school_general.json',
-    'masumi': 'school_general.json',
+    # 育哉-学校関連: ikuya_school.json スキーマを使用
+    'ikuya_school': 'ikuya_school.json',
+    # 後方互換性のため旧タイプも ikuya_school.json にマッピング
+    'timetable': 'ikuya_school.json',
+    'school_notice': 'ikuya_school.json',
+    'class_newsletter': 'ikuya_school.json',
+    'homework': 'ikuya_school.json',
+    'test_exam': 'ikuya_school.json',
+    'report_card': 'ikuya_school.json',
+    'school_event': 'ikuya_school.json',
+    'parent_teacher_meeting': 'ikuya_school.json',
+    'notice': 'ikuya_school.json',
+    # Phase 3 doc types (すべて ikuya_school.json に統一)
+    'gakunen_dayori_monthly': 'ikuya_school.json',
+    'gakunen_tsushin_weekly': 'ikuya_school.json',
+    'masumi': 'ikuya_school.json',
 }
 
 

@@ -1,8 +1,8 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "title": "学校共通汎用スキーマ",
-  "description": "あらゆる学校関連文書に対応する汎用的な構造定義",
+  "title": "育哉-学校 汎用スキーマ",
+  "description": "育哉の学校関連文書に対応する汎用的な構造定義",
   "properties": {
     "basic_info": {
       "type": "object",
