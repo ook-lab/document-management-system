@@ -268,9 +268,12 @@ class Stage2Extractor:
     def _get_custom_fields(self, doc_type: str) -> str:
         """doc_typeに応じたカスタムフィールド定義"""
 
-        # 学校関連文書は ikuya_school スキーマに統合
-        ikuya_school_fields = """
-   【重要】学校関連文書は ikuya_school スキーマに統合されています。
+        # 学校関連文書は school_general スキーマを使用
+        school_general_fields = """
+   【重要】学校関連文書は school_general 汎用スキーマを使用します。
+
+   ★★★ データ振り分けの基本原則 ★★★
+   **文章は text_blocks へ、時間割は weekly_schedule へ振り分けてください。**
 
    metadataフィールドの構造:
    {
@@ -286,37 +289,6 @@ class Stage2Extractor:
        {
          "title": "見出し（例: 朝会「マナーとルールについて」）",
          "content": "本文（原文そのまま、一切省略せず）"
-       }
-     ],
-     "monthly_schedule_blocks": [
-       {
-         "date": "YYYY-MM-DD",
-         "day_of_week": "曜日（月、火など）",
-         "event": "イベント・行事の内容",
-         "time": "時刻（例: 7:45 集合、11:30 下校）",
-         "notes": "持ち物、場所などの補足情報"
-       }
-     ],
-     "learning_content_blocks": [
-       {
-         "subject": "教科名（国語、算数など）",
-         "teacher": "担当教員名",
-         "content": "学習内容の詳細（原文そのまま）",
-         "materials": "持ち物・準備物"
-       }
-     ],
-     "weekly_timetable_matrix": [
-       {
-         "class": "クラス名（例: 5A, 5B）",
-         "date": "YYYY-MM-DD",
-         "day_of_week": "曜日（月、火など）",
-         "subjects": ["1限:国語", "2限:算数", "3限:理科", "4限:社会", "5限:体育", "6限:音楽"],
-         "events": ["委員会", "集会"],
-         "periods": [
-           {"period": 1, "subject": "国語", "time": "8:45-9:30"},
-           {"period": 2, "subject": "算数", "time": "9:40-10:25"}
-         ],
-         "note": "持ち物や連絡事項（原文そのまま）"
        }
      ],
      "weekly_schedule": [
@@ -365,81 +337,71 @@ class Stage2Extractor:
 
    【データ振り分けルール - 必ず守ること】:
 
-   ★★★ 重要: 表構造の明確なマッピング指示 ★★★
-   文書内の表を見つけたら、以下の基準に従って適切なフィールドにマッピングしてください:
-
-   1. **monthly_schedule_blocks**: 「今月の予定」「月間スケジュール」などの月単位のイベント表
-      - 文書内に「◯月の予定」「月間行事予定」などの見出しがある場合
-      - 日付、曜日、行事・イベント名、時刻、持ち物などが記載された表
-      - **【重要】表内の全ての日付行を抽出すること**: 表に20日分の予定がある場合は、**20件すべて**を個別のオブジェクトとして抽出してください（一部の日付だけを代表例として抽出し、他を省略することは禁止）
-      - 各行を1つのオブジェクトとして抽出
-      - 【必須フィールド】: date (YYYY-MM-DD), day_of_week, event
-      - 【任意フィールド】: time, notes (持ち物や場所の補足情報)
-
-   2. **learning_content_blocks**: 「今週の学習内容」「各教科の予定」などの学習内容表
-      - 文書内に「学習予定」「今週の学習」などの見出しがある場合
-      - 教科、担当教員、学習内容、持ち物などが記載された表
-      - **【重要】表内の全ての教科行を抽出すること**: 国語、算数、理科、社会、音楽、図工、体育など、表に記載されている**全ての教科**を1つずつ個別のオブジェクトとして抽出してください（一部の教科だけを代表例として抽出し、他を省略することは禁止）
-      - 各教科を1つのオブジェクトとして抽出
-      - 【必須フィールド】: subject (教科名), content (学習内容)
-      - 【任意フィールド】: teacher, materials (持ち物)
-      - **例**: 表に6教科ある場合は、learning_content_blocks の配列に6個のオブジェクトを含めること
-
-   3. **weekly_timetable_matrix**: クラス別の週間時間割表（複数クラスが並んだ表）
-      - 文書内に「5A」「5B」などのクラス名が列見出しとして並んでいる表
-      - 横軸に曜日（月・火・水など）、縦軸に時限（1限・2限など）がある
-      - 各クラス×各日の組み合わせで1つのオブジェクトを作成
-      - 【必須フィールド】: class, date (YYYY-MM-DD), day_of_week, subjects (時限順の配列)
-      - 【任意フィールド】: events (委員会、集会など), periods (詳細な時限情報), note
-
-   4. **weekly_schedule**: 日ごとのスケジュール（行事やイベント中心）
-      - 日付、曜日、その日の行事・イベントが記載された表（クラス情報なし）
-      - class_schedules がない場合はこちらを使用
-      - 【必須フィールド】: date, day_of_week, events
-      - 【任意フィールド】: note
-
-   5. **basic_info**: 学校名、学年、発行日、対象期間などの基本情報
-      - 文書の一番上に記載されている学校名や学年、日付を抽出
-
-   6. **structured_tables**: 上記1-4に当てはまらないその他の表データ
-      - 持ち物リスト、成績表、提出物リストなど
-      - table_title（表のタイトル）、table_type（種類）、headers（列名）、rows（行データ）で構造化
-
-   7. **text_blocks**: まとまった文章セクション（見出し+本文）
+   1. **text_blocks**: まとまった文章セクション（見出し+本文）
       - 朝会の話、今日のふりかえり、道徳の内容、先生からのメッセージなど
+      - 学級通信や学年通信の記事、お知らせ本文など
       - 見出しが明確にあり、その後に長めの文章が続く場合
       - title（見出し）と content（本文全文）のペアで記録
-      - content は一切省略せず、原文そのまま全文を記録
+      - **content は一切省略せず、原文そのまま全文を記録**
+      - 例: [
+          {"title": "朝会「マナーとルールについて」", "content": "今週の朝会では、学校生活におけるマナーとルールについて話しました...（全文）"},
+          {"title": "今日のふりかえり", "content": "今日は算数の時間に分数の計算を学びました...（全文）"}
+        ]
 
-   8. **important_notes**: 短い箇条書きの連絡事項
+   2. **weekly_schedule**: 日ごとの時間割・スケジュール（時間割表、週間予定表）
+      - 日付、曜日、その日の行事・イベントが記載された表
+      - 授業科目が時限ごとに記載された時間割
+      - **【重要】表内の全ての日付行・時限行を抽出すること**: 表に5日分の時間割がある場合は、**5日分すべて**を個別のオブジェクトとして抽出してください
+      - 各行を1つのオブジェクトとして抽出
+      - 【必須フィールド】: date, day_of_week
+      - 【任意フィールド】: events (行事), class_schedules (クラス別時間割), note
+      - クラス別時間割がある場合は class_schedules 配列を使用:
+        * 各クラスごとに {"class": "5A", "subjects": ["1限:国語", "2限:算数"], "periods": [...]} の形式
+      - **月間予定表も weekly_schedule へ**: 「今月の予定」「◯月の行事予定」などもこちらに含めてください
+
+   3. **structured_tables**: 上記1-2に当てはまらないその他の表データ
+      - 持ち物リスト、成績表、提出物リスト、制服価格表、給食献立など
+      - 時間割・予定表でない汎用的な表はすべてこちら
+      - table_title（表のタイトル）、table_type（種類）、headers（列名）、rows（行データ）で構造化
+      - **【重要】表内の全ての行を抽出すること**
+
+   4. **basic_info**: 学校名、学年、発行日、対象期間などの基本情報
+      - 文書の一番上に記載されている学校名や学年、日付を抽出
+
+   5. **important_notes**: 短い箇条書きの連絡事項
       - 「11月20日(水)は遠足のため弁当を持参してください」のような短い文
       - 原文そのまま配列に格納（要約・言い換え厳禁）
 
-   9. **special_events**: 特別イベント・行事
+   6. **special_events**: 特別イベント・行事
       - 通常授業以外の特別な予定
 
    【絶対原則】:
-   - 情報の欠損・省略は一切禁止
+   - **情報の欠損・省略は一切禁止**
    - 原文の全量を構造化データに落とし込む
-   - 要約・言い換えは厳禁（特に learning_content_blocks, monthly_schedule_blocks, text_blocks の content、important_notes、note フィールド）
-   - **【配列フィールドの完全抽出】**: learning_content_blocks, monthly_schedule_blocks などの配列フィールドは、表内の**全ての行**を抽出すること（一部だけを代表例として抽出し、残りを省略することは絶対に禁止）
+   - **要約・言い換えは厳禁**（特に text_blocks の content、important_notes、note フィールド）
+   - **【配列フィールドの完全抽出】**: text_blocks, weekly_schedule, structured_tables などの配列フィールドは、表内の**全ての行**を抽出すること（一部だけを代表例として抽出し、残りを省略することは絶対に禁止）
    - 日付は必ず YYYY-MM-DD 形式で統一
    - 見つからない情報は null または空のリスト [] を設定
+
+   【重要】文章と時間割の振り分け:
+   - **文章（記事、お知らせ本文、メッセージ）→ text_blocks**
+   - **時間割・予定表（授業、行事スケジュール）→ weekly_schedule**
+   - **その他の表（持ち物、価格表、献立など）→ structured_tables**
         """
 
         fields_map = {
-            # 学校関連文書 - 全て ikuya_school に統合
-            "ikuya_school": ikuya_school_fields,
+            # 学校関連文書 - 全て school_general に統合
+            "ikuya_school": school_general_fields,
             # 旧タイプ（後方互換性のため一時的にサポート）
-            "timetable": ikuya_school_fields,
-            "school_notice": ikuya_school_fields,
-            "class_newsletter": ikuya_school_fields,
-            "homework": ikuya_school_fields,
-            "test_exam": ikuya_school_fields,
-            "report_card": ikuya_school_fields,
-            "school_event": ikuya_school_fields,
-            "parent_teacher_meeting": ikuya_school_fields,
-            "notice": ikuya_school_fields,
+            "timetable": school_general_fields,
+            "school_notice": school_general_fields,
+            "class_newsletter": school_general_fields,
+            "homework": school_general_fields,
+            "test_exam": school_general_fields,
+            "report_card": school_general_fields,
+            "school_event": school_general_fields,
+            "parent_teacher_meeting": school_general_fields,
+            "notice": school_general_fields,
 
             # 以下は既存の定義を保持
             "timetable_old": """
