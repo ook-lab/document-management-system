@@ -307,7 +307,7 @@ class PDFProcessor:
             table_insufficient = len(tables) <= 2
 
             # 特別な強制条件: 学習予定の重要性を考慮
-            has_learning_schedule = "学習" in text and "予定" in text
+            has_learning_schedule = ("学習" in text and "予定" in text) or ("授業" in text and "予定" in text)
 
             # 条件判定
             if has_learning_schedule:
