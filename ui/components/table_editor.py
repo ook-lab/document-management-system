@@ -77,22 +77,46 @@ def _find_array_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 
 def _format_field_name(field_name: str) -> str:
-    """フィールド名を表示用に整形"""
+    """
+    フィールド名を表示用に整形
+
+    動的フィールド名の整形ルール:
+    - monthly_schedule_list → 📅 月間予定
+    - learning_content_list → 📚 学習予定
+    - xxx_list → xxx（_listを除去）
+    - xxx_blocks → xxx（_blocksを除去）
+    """
+    # 既知のフィールド名マッピング
     name_map = {
-        "daily_schedule": "日別時間割",
-        "weekly_schedule": "週間予定",
-        "periods": "時限別科目",
-        "class_schedules": "クラス別時間割",
-        "requirements": "持ち物・準備",
-        "important_points": "重要事項",
-        "special_events": "特別イベント",
-        "text_blocks": "文章セクション",
-        "structured_tables": "その他の表データ",
-        "important_notes": "連絡事項",
-        "monthly_schedule_blocks": "📅 月間予定表",
-        "learning_content_blocks": "📚 教科別学習予定"
+        # 新しい構造化フィールド（優先）
+        "monthly_schedule_list": "📅 月間予定",
+        "learning_content_list": "📚 学習予定",
+        # 汎用フィールド
+        "text_blocks": "📝 文章セクション",
+        "important_notes": "📌 連絡事項",
+        "special_events": "🎉 特別イベント",
+        "requirements": "📦 持ち物・準備",
+        "important_points": "⚠️ 重要事項"
     }
-    return name_map.get(field_name, field_name)
+
+    # マッピングに存在する場合はそれを返す
+    if field_name in name_map:
+        return name_map[field_name]
+
+    # 動的フィールド名の整形
+    # _list または _blocks で終わる場合は除去
+    if field_name.endswith("_list"):
+        base_name = field_name[:-5]  # _list を除去
+        # アンダースコアをスペースに変換して整形
+        formatted = base_name.replace("_", " ").title()
+        return f"📊 {formatted}"
+    elif field_name.endswith("_blocks"):
+        base_name = field_name[:-7]  # _blocks を除去
+        formatted = base_name.replace("_", " ").title()
+        return f"📊 {formatted}"
+
+    # その他の場合はそのまま返す
+    return field_name
 
 
 # --- 追加機能: スケジュールデータのフラット化とソート ---

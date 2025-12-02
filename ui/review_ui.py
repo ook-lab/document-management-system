@@ -28,8 +28,34 @@ from core.connectors.google_drive import GoogleDriveConnector
 # 新しいコンポーネントとユーティリティをインポート
 from ui.utils.schema_detector import SchemaDetector
 from ui.components.form_editor import render_form_editor
-from ui.components.table_editor import render_table_editor
+from ui.components.table_editor import render_table_editor, _render_array_table, _format_field_name
 from ui.components.json_preview import render_json_preview, render_json_diff
+
+
+def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """
+    メタデータから構造化データフィールドを自動検出
+
+    Args:
+        metadata: メタデータ辞書
+
+    Returns:
+        構造化フィールドのリスト [{"key": str, "label": str, "data": list}, ...]
+    """
+    structured_fields = []
+
+    for key, value in metadata.items():
+        # _list または _blocks で終わるキーを構造化データとして認識
+        if (key.endswith("_list") or key.endswith("_blocks")) and isinstance(value, list) and len(value) > 0:
+            # 配列の最初の要素が辞書であることを確認（構造化データの証拠）
+            if isinstance(value[0], dict):
+                structured_fields.append({
+                    "key": key,
+                    "label": _format_field_name(key),
+                    "data": value
+                })
+
+    return structured_fields
 
 
 def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
@@ -271,25 +297,63 @@ def main():
             st.warning("⚠️ スキーマが検出されませんでした。JSON編集モードを使用してください。")
             editable_fields = []
 
-        # タブUI: 3つの編集モード
-        tab1, tab2, tab3 = st.tabs(["📝 フォーム編集", "📊 表エディタ", "🔍 JSONプレビュー"])
+        # 【動的タブ生成】構造化データフィールドを自動検出
+        structured_fields = detect_structured_fields(metadata)
 
+        # 構造化フィールドのキーセットを作成（フォーム編集から除外するため）
+        structured_field_keys = {field["key"] for field in structured_fields}
+
+        # タブリストを動的に構築
+        tab_names = ["📝 フォーム編集"]
+
+        # 構造化データごとにタブを追加
+        for field in structured_fields:
+            tab_names.append(field["label"])
+
+        # 固定タブ：JSONプレビュー
+        tab_names.append("🔍 JSONプレビュー")
+
+        # タブを動的に生成
+        tabs = st.tabs(tab_names)
         edited_metadata = None
 
-        with tab1:
-            # フォーム編集タブ
+        # タブ1: フォーム編集
+        with tabs[0]:
             if editable_fields:
-                edited_metadata = render_form_editor(metadata, editable_fields)
+                # 構造化データフィールドをフォームから除外
+                form_fields = [f for f in editable_fields if f["name"] not in structured_field_keys]
+
+                if form_fields:
+                    edited_metadata = render_form_editor(metadata, form_fields)
+                else:
+                    st.info("このドキュメントのフィールドは全て専用タブで編集できます")
+                    st.markdown("各データタブまたはJSONプレビュータブをご利用ください")
             else:
                 st.info("フォーム編集には対応するスキーマが必要です")
                 st.markdown("JSONプレビュータブで直接編集してください")
 
-        with tab2:
-            # 表エディタタブ
-            edited_metadata = render_table_editor(metadata)
+        # タブ2以降: 構造化データタブ（動的に生成）
+        for idx, field in enumerate(structured_fields):
+            with tabs[idx + 1]:
+                st.markdown(f"### {field['label']}")
+                st.markdown("表形式で編集できます")
+                st.markdown("---")
 
-        with tab3:
-            # JSONプレビュータブ
+                # 表エディタでレンダリング
+                edited_value = _render_array_table(
+                    field["key"],
+                    field["data"],
+                    field["label"]
+                )
+
+                # edited_metadataを初期化（必要に応じて）
+                if edited_metadata is None:
+                    edited_metadata = metadata.copy()
+
+                edited_metadata[field["key"]] = edited_value
+
+        # 最後のタブ: JSONプレビュー
+        with tabs[-1]:
             edited_metadata = render_json_preview(metadata, editable=True)
 
         # 保存ボタンエリア
