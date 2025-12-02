@@ -92,14 +92,14 @@ class Stage2Extractor:
                 tier="stage2_extraction",
                 prompt=prompt
             )
-            
+
             if not response.get("success"):
                 logger.error(f"[Stage 2] 抽出失敗: {response.get('error')}")
                 return self._get_fallback_result(full_text, doc_type, stage1_result)
-            
-            # JSON抽出
+
+            # JSON抽出（リトライ機能付き）
             content = response.get("content", "")
-            result = self._extract_json(content)
+            result = self._extract_json_with_retry(content, tier="stage2_extraction", max_retries=2)
             
             # doc_typeの上書き(Stage 2の方が精度高い可能性)
             result["doc_type"] = result.get("doc_type", doc_type)
@@ -173,9 +173,26 @@ class Stage2Extractor:
 - **推測や補完は不要**: 記載されている情報のみを忠実に構造化してください
 - 日付は必ずYYYY-MM-DD形式で統一してください
 - 見つからない情報はnullまたは空のリスト[]を設定してください
-- **【特に重要】学年通信などで「5A」「5B」のようなクラス名が列見出しにある表形式の時間割を見つけた場合、
-  必ずweekly_scheduleの各日にclass_schedulesフィールドを追加し、クラスごとの科目を抽出してください。
-  例: "class_schedules": [{{"class": "5A", "subjects": ["1限:家庭", "2限:家庭", "3限:算数"]}}, {{"class": "5B", "subjects": ["1限:算数", "2限:国語", "3限:家庭"]}}]**
+
+# 【重要】表構造の正確なマッピング
+文書内の表を見つけたら、以下の基準で適切なフィールドに振り分けてください:
+
+1. **「今月の予定」「◯月の予定表」などの見出しがある表 → monthly_schedule_list**
+   - 日付、曜日、行事名、時刻、持ち物が記載された月間スケジュール表
+   - 各行を date, day_of_week, event, time, notes で構造化
+
+2. **「今週の学習」「各教科の予定」などの見出しがある表 → learning_content_list**
+   - 教科、担当教員、学習内容、持ち物が記載された学習予定表
+   - 各教科を subject, teacher, content, materials で構造化
+
+3. **「5A」「5B」などのクラス名が列見出しにある時間割表 → weekly_timetable_matrix**
+   - 横軸に曜日、縦軸に時限、複数クラスの授業が並んだ表
+   - 各クラス×各日の組み合わせで class, date, day_of_week, subjects, events, periods, note を構造化
+   - subjects は ["1限:国語", "2限:算数", "3限:理科"] のように時限順の配列で記録
+
+4. **上記に当てはまらない表 → structured_tables または weekly_schedule**
+   - 持ち物リスト、成績表などは structured_tables へ
+   - 単純な日別イベント表は weekly_schedule へ
 
 # 表構造抽出ガイドライン (Phase 2.2.2)
 {table_extraction_guidelines}
@@ -190,19 +207,36 @@ class Stage2Extractor:
   "document_date": "YYYY-MM-DD",
   "tags": ["tag1", "tag2", "tag3"],
   "metadata": {{
-    // doc_typeに応じたカスタムフィールド
+    "basic_info": {{
+      "school_name": "◯◯小学校",
+      "grade": "5年生",
+      "issue_date": "YYYY-MM-DD"
+    }},
+    "monthly_schedule_list": [
+      {{"date": "YYYY-MM-DD", "day_of_week": "月", "event": "運動会", "time": "9:00-15:00", "notes": "弁当持参"}}
+    ],
+    "learning_content_list": [
+      {{"subject": "国語", "teacher": "田中先生", "content": "物語文の読解", "materials": "教科書"}}
+    ],
+    "weekly_timetable_matrix": [
+      {{"class": "5A", "date": "YYYY-MM-DD", "day_of_week": "月", "subjects": ["1限:国語", "2限:算数"], "events": [], "note": ""}}
+    ],
+    "text_blocks": [
+      {{"title": "朝会の話", "content": "今週は...（全文）"}}
+    ]
   }},
-  "tables": [
-    {{
-      "table_type": "daily_schedule",
-      "headers": ["日付", "曜日", "1限", "2限"],
-      "rows": [...]
-      // 表構造抽出ガイドラインに従った構造
-    }}
-  ],
+  "tables": [],
   "extraction_confidence": 0.95
 }}
 ```
+
+**重要な注意事項**:
+- 上記の metadata 構造はあくまで例です。実際の文書の内容に応じて適切なフィールドを使用してください
+- monthly_schedule_list, learning_content_list, weekly_timetable_matrix は該当する表が文書内にある場合のみ出力してください
+- 該当する表がない場合は、そのフィールドを空の配列 [] にするか、フィールド自体を省略してください
+- **JSON構文エラー（カンマ、括弧、引用符の不一致）に十分注意してください**
+- すべてのキー名と文字列値は二重引用符で囲んでください
+- 配列やオブジェクトの最後の要素の後にカンマを付けないでください
 
 それでは、上記の文書を構造化データに変換し、JSON形式で回答してください。
 **重要: 情報の欠損・省略は一切禁止です。原文の全量をJSON構造に落とし込んでください。**"""
@@ -232,9 +266,40 @@ class Stage2Extractor:
          "content": "本文（原文そのまま、一切省略せず）"
        }
      ],
+     "monthly_schedule_list": [
+       {
+         "date": "YYYY-MM-DD",
+         "day_of_week": "曜日（月、火など）",
+         "event": "イベント・行事の内容",
+         "time": "時刻（例: 7:45 集合、11:30 下校）",
+         "notes": "持ち物、場所などの補足情報"
+       }
+     ],
+     "learning_content_list": [
+       {
+         "subject": "教科名（国語、算数など）",
+         "teacher": "担当教員名",
+         "content": "学習内容の詳細（原文そのまま）",
+         "materials": "持ち物・準備物"
+       }
+     ],
+     "weekly_timetable_matrix": [
+       {
+         "class": "クラス名（例: 5A, 5B）",
+         "date": "YYYY-MM-DD",
+         "day_of_week": "曜日（月、火など）",
+         "subjects": ["1限:国語", "2限:算数", "3限:理科", "4限:社会", "5限:体育", "6限:音楽"],
+         "events": ["委員会", "集会"],
+         "periods": [
+           {"period": 1, "subject": "国語", "time": "8:45-9:30"},
+           {"period": 2, "subject": "算数", "time": "9:40-10:25"}
+         ],
+         "note": "持ち物や連絡事項（原文そのまま）"
+       }
+     ],
      "weekly_schedule": [
        {
-         "date": "MM-DD または YYYY-MM-DD",
+         "date": "YYYY-MM-DD",
          "day": "曜日（月、火など）",
          "day_of_week": "曜日フル（月曜日など）",
          "events": ["行事1", "行事2"],
@@ -253,23 +318,6 @@ class Stage2Extractor:
            }
          ],
          "note": "持ち物や連絡事項（原文そのまま）"
-       }
-     ],
-     "monthly_schedule_blocks": [
-       {
-         "date": "MM-DD または YYYY-MM-DD",
-         "day_of_week": "曜日（月、火など）",
-         "event": "イベント・行事の内容",
-         "time": "時刻（例: 7:45 集合、11:30 下校）",
-         "notes": "持ち物、場所などの補足情報"
-       }
-     ],
-     "learning_content_blocks": [
-       {
-         "subject": "教科名（国語、算数など）",
-         "teacher": "担当教員名",
-         "content": "学習内容の詳細（原文そのまま）",
-         "materials": "持ち物・準備物"
        }
      ],
      "structured_tables": [
@@ -295,39 +343,54 @@ class Stage2Extractor:
 
    【データ振り分けルール - 必ず守ること】:
 
-   1. **basic_info**: 学校名、学年、発行日、対象期間などの基本情報
+   ★★★ 重要: 表構造の明確なマッピング指示 ★★★
+   文書内の表を見つけたら、以下の基準に従って適切なフィールドにマッピングしてください:
+
+   1. **monthly_schedule_list**: 「今月の予定」「月間スケジュール」などの月単位のイベント表
+      - 文書内に「◯月の予定」「月間行事予定」などの見出しがある場合
+      - 日付、曜日、行事・イベント名、時刻、持ち物などが記載された表
+      - 各行を1つのオブジェクトとして抽出
+      - 【必須フィールド】: date (YYYY-MM-DD), day_of_week, event
+      - 【任意フィールド】: time, notes (持ち物や場所の補足情報)
+
+   2. **learning_content_list**: 「今週の学習内容」「各教科の予定」などの学習内容表
+      - 文書内に「学習予定」「今週の学習」などの見出しがある場合
+      - 教科、担当教員、学習内容、持ち物などが記載された表
+      - 各教科を1つのオブジェクトとして抽出
+      - 【必須フィールド】: subject (教科名), content (学習内容)
+      - 【任意フィールド】: teacher, materials (持ち物)
+
+   3. **weekly_timetable_matrix**: クラス別の週間時間割表（複数クラスが並んだ表）
+      - 文書内に「5A」「5B」などのクラス名が列見出しとして並んでいる表
+      - 横軸に曜日（月・火・水など）、縦軸に時限（1限・2限など）がある
+      - 各クラス×各日の組み合わせで1つのオブジェクトを作成
+      - 【必須フィールド】: class, date (YYYY-MM-DD), day_of_week, subjects (時限順の配列)
+      - 【任意フィールド】: events (委員会、集会など), periods (詳細な時限情報), note
+
+   4. **weekly_schedule**: 日ごとのスケジュール（行事やイベント中心）
+      - 日付、曜日、その日の行事・イベントが記載された表（クラス情報なし）
+      - class_schedules がない場合はこちらを使用
+      - 【必須フィールド】: date, day_of_week, events
+      - 【任意フィールド】: note
+
+   5. **basic_info**: 学校名、学年、発行日、対象期間などの基本情報
       - 文書の一番上に記載されている学校名や学年、日付を抽出
 
-   2. **weekly_schedule**: 時間割表（曜日・時限・クラスで構成される表）
-      ★これが最も重要★ 以下の条件に当てはまる表は必ず weekly_schedule に構造化してください:
-      - 横軸に「月・火・水・木・金」などの曜日がある
-      - 縦軸に「1限・2限・3限」などの時限がある
-      - 「5A」「5B」などのクラス名が列見出しにある
-      - 各セルに科目名（国語、算数、理科など）が入っている
-
-      抽出方法:
-      - 各日付について、class_schedules フィールドを作成
-      - クラスごとに subjects 配列を作成（時限順に「1限:国語」形式で記録）
-      - periods フィールドには {period, subject, time} の詳細情報を記録
-      - 科目名に括弧書きの説明がある場合もそのまま含める（例: 「算数（持ち物:定規）」）
-      - 朝の時間は period を "朝" または 0 として記録
-
-   3. **structured_tables**: その他の表データ（weekly_schedule 以外）
-      - 持ち物リスト、イベント一覧、成績表、提出物リストなど
+   6. **structured_tables**: 上記1-4に当てはまらないその他の表データ
+      - 持ち物リスト、成績表、提出物リストなど
       - table_title（表のタイトル）、table_type（種類）、headers（列名）、rows（行データ）で構造化
-      - rows は配列形式で、各行をオブジェクトとして記録
 
-   4. **text_blocks**: まとまった文章セクション（見出し+本文）
+   7. **text_blocks**: まとまった文章セクション（見出し+本文）
       - 朝会の話、今日のふりかえり、道徳の内容、先生からのメッセージなど
       - 見出しが明確にあり、その後に長めの文章が続く場合
       - title（見出し）と content（本文全文）のペアで記録
       - content は一切省略せず、原文そのまま全文を記録
 
-   5. **important_notes**: 短い箇条書きの連絡事項
+   8. **important_notes**: 短い箇条書きの連絡事項
       - 「11月20日(水)は遠足のため弁当を持参してください」のような短い文
       - 原文そのまま配列に格納（要約・言い換え厳禁）
 
-   6. **special_events**: 特別イベント・行事
+   9. **special_events**: 特別イベント・行事
       - 通常授業以外の特別な予定
 
    【絶対原則】:
@@ -575,57 +638,158 @@ class Stage2Extractor:
         return fields_map.get(doc_type, fields_map["other"])
     
     def _extract_json(self, content: str) -> Dict:
-        """レスポンスからJSON抽出"""
+        """
+        レスポンスからJSON抽出
+
+        Note: この関数はJSONパースのみを行います。
+        リトライロジックは _extract_json_with_retry を使用してください。
+        """
+        # マークダウンコードブロックを除去
+        if "```json" in content:
+            content = content.split("```json")[1].split("```")[0]
+        elif "```" in content:
+            # 最初のコードブロックを取得
+            parts = content.split("```")
+            if len(parts) >= 3:
+                content = parts[1]
+
+        # JSON部分のみを抽出（先頭の{から最後の}まで）
+        start_idx = content.find('{')
+        end_idx = content.rfind('}')
+
+        if start_idx == -1 or end_idx == -1:
+            raise ValueError("JSON構造が見つかりません")
+
+        json_str = content[start_idx:end_idx+1]
+        result = json.loads(json_str)
+
+        # バリデーション
+        required_keys = ["doc_type", "summary", "extraction_confidence"]
+        for key in required_keys:
+            if key not in result:
+                logger.warning(f"必須キー欠損: {key}")
+
+        # データ型の正規化
+        if "extraction_confidence" in result:
+            result["extraction_confidence"] = float(result["extraction_confidence"])
+            result["extraction_confidence"] = max(0.0, min(1.0, result["extraction_confidence"]))
+
+        if "tags" not in result:
+            result["tags"] = []
+
+        if "metadata" not in result:
+            result["metadata"] = {}
+
+        # Phase 2.2.2: 表構造対応
+        if "tables" not in result:
+            result["tables"] = []
+
+        return result
+
+    def _extract_json_with_retry(self, content: str, tier: str = "stage2_extraction", max_retries: int = 2) -> Dict:
+        """
+        レスポンスからJSON抽出（リトライ機能付き）
+
+        JSONパースに失敗した場合、Claudeに修正を要求して最大max_retries回リトライします。
+
+        Args:
+            content: Claude からの最初のレスポンス
+            tier: モデルティア（リトライ時に使用）
+            max_retries: 最大リトライ回数（デフォルト: 2）
+
+        Returns:
+            パース成功したJSON辞書
+
+        Raises:
+            json.JSONDecodeError: 全てのリトライが失敗した場合
+        """
+        # 最初のパース試行
         try:
-            # マークダウンコードブロックを除去
-            if "```json" in content:
-                content = content.split("```json")[1].split("```")[0]
-            elif "```" in content:
-                # 最初のコードブロックを取得
-                parts = content.split("```")
-                if len(parts) >= 3:
-                    content = parts[1]
-            
-            # JSON部分のみを抽出（先頭の{から最後の}まで）
-            start_idx = content.find('{')
-            end_idx = content.rfind('}')
-            
-            if start_idx == -1 or end_idx == -1:
-                raise ValueError("JSON構造が見つかりません")
-            
-            json_str = content[start_idx:end_idx+1]
-            result = json.loads(json_str)
-            
-            # バリデーション
-            required_keys = ["doc_type", "summary", "extraction_confidence"]
-            for key in required_keys:
-                if key not in result:
-                    logger.warning(f"必須キー欠損: {key}")
-            
-            # データ型の正規化
-            if "extraction_confidence" in result:
-                result["extraction_confidence"] = float(result["extraction_confidence"])
-                result["extraction_confidence"] = max(0.0, min(1.0, result["extraction_confidence"]))
-            
-            if "tags" not in result:
-                result["tags"] = []
-
-            if "metadata" not in result:
-                result["metadata"] = {}
-
-            # Phase 2.2.2: 表構造対応
-            if "tables" not in result:
-                result["tables"] = []
-
+            logger.info("[JSON Parser] 初回パース試行")
+            result = self._extract_json(content)
+            logger.info("[JSON Parser] ✅ 初回パース成功")
             return result
-            
-        except json.JSONDecodeError as e:
-            logger.error(f"JSON解析エラー: {e}")
-            logger.debug(f"パース失敗した内容: {content[:500]}")
-            raise
-        except Exception as e:
-            logger.error(f"JSON抽出エラー: {e}")
-            raise
+        except (json.JSONDecodeError, ValueError) as first_error:
+            logger.warning(f"[JSON Parser] ⚠️ 初回パース失敗: {first_error}")
+            logger.debug(f"[JSON Parser] 失敗したコンテンツ (最初の500文字): {content[:500]}")
+
+            # リトライループ
+            last_error = first_error
+            last_content = content
+
+            for retry_num in range(1, max_retries + 1):
+                logger.info(f"[JSON Parser] 🔄 リトライ {retry_num}/{max_retries} を開始")
+
+                try:
+                    # Claudeに修正を要求
+                    correction_prompt = self._build_json_correction_prompt(last_content, str(last_error))
+
+                    logger.info(f"[JSON Parser] Claude に JSON修正を要求中...")
+                    retry_response = self.llm.call_model(
+                        tier=tier,
+                        prompt=correction_prompt
+                    )
+
+                    if not retry_response.get("success"):
+                        logger.error(f"[JSON Parser] リトライ {retry_num} のLLM呼び出し失敗: {retry_response.get('error')}")
+                        continue
+
+                    retry_content = retry_response.get("content", "")
+                    logger.debug(f"[JSON Parser] リトライ {retry_num} レスポンス (最初の300文字): {retry_content[:300]}")
+
+                    # 修正されたJSONをパース
+                    result = self._extract_json(retry_content)
+                    logger.info(f"[JSON Parser] ✅ リトライ {retry_num} でパース成功!")
+                    return result
+
+                except (json.JSONDecodeError, ValueError) as retry_error:
+                    logger.warning(f"[JSON Parser] ⚠️ リトライ {retry_num} もパース失敗: {retry_error}")
+                    last_error = retry_error
+                    last_content = retry_content if 'retry_content' in locals() else last_content
+
+                    if retry_num == max_retries:
+                        logger.error(f"[JSON Parser] ❌ 全 {max_retries} 回のリトライが失敗しました")
+                except Exception as unexpected_error:
+                    logger.error(f"[JSON Parser] 予期しないエラー (リトライ {retry_num}): {unexpected_error}", exc_info=True)
+
+            # 全てのリトライが失敗した場合、最後のエラーをraise
+            logger.error("[JSON Parser] ❌ JSON抽出に完全に失敗しました。フォールバック処理に移行します。")
+            raise last_error
+
+    def _build_json_correction_prompt(self, failed_content: str, error_message: str) -> str:
+        """
+        JSON修正リトライ用のプロンプトを構築
+
+        Args:
+            failed_content: パースに失敗したコンテンツ
+            error_message: エラーメッセージ
+
+        Returns:
+            修正要求プロンプト
+        """
+        return f"""前回のレスポンスでJSONのパースエラーが発生しました。
+
+# エラー内容
+{error_message}
+
+# 前回のレスポンス
+{failed_content[:2000]}
+
+# タスク
+上記のJSONを修正し、**正しい JSON 形式のみ**を出力してください。
+
+【重要な指示】:
+1. 説明文やマークダウンは一切不要です
+2. コードブロック (```) も不要です
+3. 純粋なJSONオブジェクトのみを出力してください
+4. JSONの構文エラー（カンマ、括弧、引用符の不一致など）を修正してください
+5. 不正なエスケープシーケンスを修正してください
+6. すべてのキー名は二重引用符で囲んでください
+7. 文字列値も二重引用符で囲んでください
+8. 配列の最後の要素の後にカンマを付けないでください
+9. オブジェクトの最後のプロパティの後にカンマを付けないでください
+
+それでは、修正されたJSONを出力してください（JSON形式のみ、他の文字は一切不要）:"""
     
     def _get_fallback_result(self, full_text: str, doc_type: str, stage1_result: Dict) -> Dict:
         """フォールバック結果"""

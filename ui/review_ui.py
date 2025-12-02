@@ -44,16 +44,45 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
     """
     structured_fields = []
 
+    logger.info("=" * 60)
+    logger.info("🔍 構造化フィールド検出を開始")
+    logger.info(f"メタデータのキー数: {len(metadata)}")
+    logger.info("=" * 60)
+
     for key, value in metadata.items():
+        # デバッグログ: 全てのキーと値の型を出力
+        logger.debug(f"Key: {key}, Type: {type(value)}, Value start: {str(value)[:50]}")
+
         # _list または _blocks で終わるキーを構造化データとして認識
-        if (key.endswith("_list") or key.endswith("_blocks")) and isinstance(value, list) and len(value) > 0:
+        if key.endswith("_list") or key.endswith("_blocks"):
+            logger.info(f"✓ '{key}' は _list/_blocks で終わるキー")
+
+            if not isinstance(value, list):
+                logger.warning(f"  ⚠️ '{key}' はリストではありません。Type: {type(value)}")
+                continue
+
+            if len(value) == 0:
+                logger.warning(f"  ⚠️ '{key}' は空のリストです")
+                continue
+
+            logger.info(f"  ✓ '{key}' はリストで、要素数: {len(value)}")
+
             # 配列の最初の要素が辞書であることを確認（構造化データの証拠）
             if isinstance(value[0], dict):
+                logger.info(f"  ✓ '{key}' の最初の要素は辞書です → 構造化フィールドとして検出!")
                 structured_fields.append({
                     "key": key,
                     "label": _format_field_name(key),
                     "data": value
                 })
+            else:
+                logger.warning(f"  ⚠️ '{key}' の最初の要素は辞書ではありません。Type: {type(value[0])}")
+
+    logger.info("=" * 60)
+    logger.info(f"🎯 検出された構造化フィールド数: {len(structured_fields)}")
+    for field in structured_fields:
+        logger.info(f"  - {field['key']} ({field['label']}) - {len(field['data'])} 件")
+    logger.info("=" * 60)
 
     return structured_fields
 
@@ -307,11 +336,15 @@ def main():
         tab_names = ["📝 フォーム編集"]
 
         # 構造化データごとにタブを追加
+        logger.info(f"🏷️ タブ生成: 構造化データタブを {len(structured_fields)} 個追加します")
         for field in structured_fields:
+            logger.info(f"  タブ追加: {field['label']} (キー: {field['key']})")
             tab_names.append(field["label"])
 
         # 固定タブ：JSONプレビュー
         tab_names.append("🔍 JSONプレビュー")
+
+        logger.info(f"📑 生成されるタブ一覧 ({len(tab_names)} 個): {tab_names}")
 
         # タブを動的に生成
         tabs = st.tabs(tab_names)
@@ -335,6 +368,9 @@ def main():
         # タブ2以降: 構造化データタブ（動的に生成）
         for idx, field in enumerate(structured_fields):
             with tabs[idx + 1]:
+                logger.info(f"📊 タブ {idx + 1} をレンダリング: {field['label']} ({field['key']})")
+                logger.info(f"  データ件数: {len(field['data'])} 件")
+
                 st.markdown(f"### {field['label']}")
                 st.markdown("表形式で編集できます")
                 st.markdown("---")
@@ -351,6 +387,7 @@ def main():
                     edited_metadata = metadata.copy()
 
                 edited_metadata[field["key"]] = edited_value
+                logger.info(f"  ✓ {field['label']} タブのレンダリング完了")
 
         # 最後のタブ: JSONプレビュー
         with tabs[-1]:
