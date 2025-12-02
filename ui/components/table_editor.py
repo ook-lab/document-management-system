@@ -26,6 +26,15 @@ def render_table_editor(metadata: Dict[str, Any]) -> Dict[str, Any]:
     # 配列型のフィールドを検出して表示
     array_fields = _find_array_fields(metadata)
 
+    # structured_tables が存在する場合は強制的に追加
+    if not array_fields and "structured_tables" in metadata:
+        if isinstance(metadata["structured_tables"], list):
+            array_fields = [{
+                "name": "structured_tables",
+                "value": metadata["structured_tables"],
+                "label": _format_field_name("structured_tables")
+            }]
+
     if not array_fields:
         st.info("表形式で編集可能な配列データが見つかりません")
         return edited_metadata
@@ -64,7 +73,14 @@ def _find_array_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
     array_fields = []
 
     for key, value in metadata.items():
-        if isinstance(value, list) and len(value) > 0:
+        # structured_tables は無条件で検出対象にする
+        if key == "structured_tables" and isinstance(value, list):
+            array_fields.append({
+                "name": key,
+                "value": value,
+                "label": _format_field_name(key)
+            })
+        elif isinstance(value, list) and len(value) > 0:
             # 配列の要素が辞書の場合のみ表エディタで扱う
             if isinstance(value[0], dict):
                 array_fields.append({
