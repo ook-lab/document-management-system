@@ -198,6 +198,10 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """Claude API呼び出し"""
         try:
+            # ✅ DEBUG: 送信するプロンプトの先頭部分をログに出力
+            from loguru import logger
+            logger.debug(f"[Claude CALL] Model: {model_name}, Prompt start: {prompt[:300]}...")
+
             response = self.anthropic_client.messages.create(
                 model=model_name,
                 max_tokens=config.get("max_tokens", 4096),
@@ -207,9 +211,15 @@ class LLMClient:
                 ]
             )
 
+            # ✅ DEBUG: Claude からの生の応答コンテンツ全体をログに出力
+            raw_content = response.content[0].text
+            logger.debug(f"[Claude RAW RESP] Content length: {len(raw_content)} chars")
+            # 応答が長すぎる場合があるため、先頭2000文字のみをログに記録
+            logger.debug(f"[Claude RAW RESP] Content preview: {raw_content[:2000]}")
+
             return {
                 "success": True,
-                "content": response.content[0].text,
+                "content": raw_content,
                 "model": model_name,
                 "provider": "claude"
             }

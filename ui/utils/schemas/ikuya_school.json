@@ -131,7 +131,7 @@
             "description": "月、火、水など"
           },
           "event": {
-            "type": "string",
+            "type": ["string", "null"],
             "title": "イベント・行事",
             "description": "その日の予定や行事の内容"
           },

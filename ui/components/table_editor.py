@@ -83,14 +83,17 @@ def _format_field_name(field_name: str) -> str:
     動的フィールド名の整形ルール:
     - monthly_schedule_list → 📅 月間予定
     - learning_content_list → 📚 学習予定
+    - weekly_timetable_matrix → 📅 週間時間割
     - xxx_list → xxx（_listを除去）
     - xxx_blocks → xxx（_blocksを除去）
+    - xxx_matrix → xxx（_matrixを除去）
     """
     # 既知のフィールド名マッピング
     name_map = {
         # 新しい構造化フィールド（優先）
         "monthly_schedule_list": "📅 月間予定",
         "learning_content_list": "📚 学習予定",
+        "weekly_timetable_matrix": "📅 週間時間割",
         # 汎用フィールド
         "text_blocks": "📝 文章セクション",
         "important_notes": "📌 連絡事項",
@@ -104,7 +107,7 @@ def _format_field_name(field_name: str) -> str:
         return name_map[field_name]
 
     # 動的フィールド名の整形
-    # _list または _blocks で終わる場合は除去
+    # _list, _blocks, または _matrix で終わる場合は除去
     if field_name.endswith("_list"):
         base_name = field_name[:-5]  # _list を除去
         # アンダースコアをスペースに変換して整形
@@ -114,6 +117,10 @@ def _format_field_name(field_name: str) -> str:
         base_name = field_name[:-7]  # _blocks を除去
         formatted = base_name.replace("_", " ").title()
         return f"📊 {formatted}"
+    elif field_name.endswith("_matrix"):
+        base_name = field_name[:-7]  # _matrix を除去
+        formatted = base_name.replace("_", " ").title()
+        return f"📅 {formatted}"
 
     # その他の場合はそのまま返す
     return field_name

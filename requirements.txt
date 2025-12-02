@@ -38,3 +38,4 @@ streamlit-pdf-viewer
 gunicorn==23.0.0
 Flask==3.1.0
 Flask-CORS==5.0.0
+json_repair
