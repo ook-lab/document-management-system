@@ -264,15 +264,16 @@ class DatabaseClient:
         import re
         from datetime import datetime
 
+        # 現在の年を取得
+        current_year = datetime.now().year
+
         # パターン1: MM/DD形式（例：12/4）
         match = re.search(r'(\d{1,2})/(\d{1,2})', query)
         if match:
             month = int(match.group(1))
             day = int(match.group(2))
-            # 現在の年を使用（将来的には前後の文脈から判断）
-            year = 2024  # または datetime.now().year
             try:
-                date_obj = datetime(year, month, day)
+                date_obj = datetime(current_year, month, day)
                 return date_obj.strftime('%Y-%m-%d')
             except ValueError:
                 pass
@@ -282,9 +283,8 @@ class DatabaseClient:
         if match:
             month = int(match.group(1))
             day = int(match.group(2))
-            year = 2024
             try:
-                date_obj = datetime(year, month, day)
+                date_obj = datetime(current_year, month, day)
                 return date_obj.strftime('%Y-%m-%d')
             except ValueError:
                 pass
