@@ -192,10 +192,16 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
                             period_key = str(p.get("period", ""))
                             subject = str(p.get("subject", ""))
                             if period_key:
-                                row[period_key] = subject
+                                # 時限番号に「時限目」を追加（例: "1" -> "1時限目"）
+                                if period_key.isdigit():
+                                    display_key = f"{period_key}時限目"
+                                else:
+                                    display_key = period_key
+                                row[display_key] = subject
                 elif "subjects" in class_sched and isinstance(class_sched["subjects"], list):
                     for i, subject in enumerate(class_sched["subjects"], 1):
-                        row[str(i)] = str(subject)
+                        # 時限番号に「時限目」を追加（例: "1" -> "1時限目"）
+                        row[f"{i}時限目"] = str(subject)
                         
                 flattened_data.append(row)
         else:
@@ -305,23 +311,30 @@ def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
             fixed_start.append(c)
             cols.remove(c)
             
-    # 時限列（数字 または "朝"）
+    # 時限列（数字、"1時限目"、または "朝"）
     period_cols = []
     other_cols = []
-    
+
     for c in cols:
-        # "1", "2" などの数字、または "朝"
-        if c == "朝" or c.isdigit():
+        # "1", "2" などの数字、"1時限目"、"2時限目"、または "朝"
+        if c == "朝" or c.isdigit() or c.endswith("時限目"):
             period_cols.append(c)
         else:
             other_cols.append(c)
-            
+
     # 時限列のソートロジック（朝を先頭、あとは数字順）
     def period_sort_key(k):
         if k == "朝":
             return -1
         if k.isdigit():
             return int(k)
+        # "1時限目" -> 1 を抽出してソート
+        if k.endswith("時限目"):
+            try:
+                num = int(k.replace("時限目", ""))
+                return num
+            except:
+                return 999
         return 999
         
     period_cols.sort(key=period_sort_key)
