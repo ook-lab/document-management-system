@@ -6,6 +6,7 @@ import streamlit as st
 import pandas as pd
 from typing import Dict, Any, List
 import re  # 追加: ソート用
+from ui.utils.table_parser import parse_extracted_tables
 
 def render_table_editor(metadata: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -73,13 +74,23 @@ def _find_array_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
     array_fields = []
 
     for key, value in metadata.items():
-        # structured_tables は無条件で検出対象にする
-        if key == "structured_tables" and isinstance(value, list):
-            array_fields.append({
-                "name": key,
-                "value": value,
-                "label": _format_field_name(key)
-            })
+        # structured_tables, extracted_tables は無条件で検出対象にする
+        if key in ["structured_tables", "extracted_tables"] and isinstance(value, list):
+            # extracted_tablesの場合、パースして構造化データに変換
+            if key == "extracted_tables":
+                parsed_tables = parse_extracted_tables(value)
+                if parsed_tables:
+                    array_fields.append({
+                        "name": key,
+                        "value": parsed_tables,
+                        "label": _format_field_name(key)
+                    })
+            else:
+                array_fields.append({
+                    "name": key,
+                    "value": value,
+                    "label": _format_field_name(key)
+                })
         elif isinstance(value, list) and len(value) > 0:
             # 配列の要素が辞書の場合のみ表エディタで扱う
             if isinstance(value[0], dict):
@@ -123,7 +134,8 @@ def _format_field_name(field_name: str) -> str:
         "class_schedules": "クラス別時間割",
         "structured_tables": "📋 その他リスト",
         "monthly_schedule_blocks": "📅 月間予定表",
-        "learning_content_blocks": "📚 教科別学習予定"
+        "learning_content_blocks": "📚 教科別学習予定",
+        "extracted_tables": "📊 抽出された表データ"
     }
 
     # マッピングに存在する場合はそれを返す

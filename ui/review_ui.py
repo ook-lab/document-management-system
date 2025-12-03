@@ -53,15 +53,21 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
         # デバッグログ: 全てのキーと値の型を出力
         logger.debug(f"Key: {key}, Type: {type(value)}, Value start: {str(value)[:50]}")
 
+        # extracted_tablesの特別処理
+        if key == "extracted_tables":
+            logger.info(f"🎯 FOUND extracted_tables! Type: {type(value)}, Length: {len(value) if isinstance(value, list) else 'N/A'}")
+            if isinstance(value, list):
+                logger.info(f"  First element type: {type(value[0]) if len(value) > 0 else 'empty'}")
+
         # text_blocksはフォーム編集で表示するため、構造化フィールドとして検出しない
         if key == "text_blocks":
             logger.info(f"⚠️ '{key}' はフォーム編集で表示するため、構造化フィールドから除外")
             continue
 
-        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables, weekly_schedule を構造化データとして認識
+        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables, weekly_schedule, extracted_tables を構造化データとして認識
         if (key.endswith("_list") or key.endswith("_blocks") or
             key.endswith("_matrix") or key.endswith("_tables") or
-            key == "structured_tables" or key == "weekly_schedule"):
+            key == "structured_tables" or key == "weekly_schedule" or key == "extracted_tables"):
             logger.info(f"✓ '{key}' は構造化データフィールドとして検出")
 
             if not isinstance(value, list):
@@ -186,28 +192,20 @@ def main():
     selected_index = st.selectbox(
         "編集するドキュメントを選択",
         range(len(documents)),
-        format_func=lambda i: f"{documents[i].get('file_name', 'Unknown')} (信頼度: {documents[i].get('confidence') or 0:.3f})"
+        format_func=lambda i: f"{documents[i].get('file_name', 'Unknown')} (信頼度: {documents[i].get('confidence') or 0:.3f})",
+        key="document_selector"  # 明示的なキーを追加
     )
 
     selected_doc = documents[selected_index]
     doc_id = selected_doc.get('id')
 
-    # ドキュメント変更を検出して、セッション状態をリセット
-    if 'previous_doc_id' not in st.session_state:
-        st.session_state.previous_doc_id = doc_id
+    # デバッグ: 選択されたドキュメントを確認
+    logger.info(f"=== 選択されたドキュメント ===")
+    logger.info(f"selected_index: {selected_index}")
+    logger.info(f"doc_id: {doc_id}")
+    logger.info(f"file_name: {selected_doc.get('file_name')}")
 
-    if st.session_state.previous_doc_id != doc_id:
-        # ドキュメントが変更された場合、フォームのキーをクリア
-        logger.info(f"ドキュメント変更を検出: {st.session_state.previous_doc_id} -> {doc_id}")
-        # フォーム関連のセッション状態をクリア
-        keys_to_remove = [key for key in st.session_state.keys() if key.startswith('form_')]
-        for key in keys_to_remove:
-            del st.session_state[key]
-        st.session_state.previous_doc_id = doc_id
-        logger.info(f"セッション状態をクリア: {len(keys_to_remove)} keys removed")
-        # ページを即座に再レンダリングして表示を更新
-        st.rerun()
-
+    # 先にドキュメント情報を取得（st.rerun()の前に）
     drive_file_id = selected_doc.get('drive_file_id')
     source_id = selected_doc.get('source_id')
     file_id = drive_file_id or source_id
@@ -215,6 +213,40 @@ def main():
     doc_type = selected_doc.get('doc_type', '')
     metadata = selected_doc.get('metadata') or {}
     confidence = selected_doc.get('confidence') or 0
+
+    # デバッグ: メタデータの状態を確認
+    logger.info(f"metadata keys: {list(metadata.keys())[:5]}...")
+    logger.info(f"metadata size: {len(str(metadata))} bytes")
+
+    # ドキュメント変更を検出して、セッション状態をリセット
+    if 'previous_doc_id' not in st.session_state:
+        st.session_state.previous_doc_id = doc_id
+
+    if st.session_state.previous_doc_id != doc_id:
+        # ドキュメントが変更された場合、全ての編集関連のキーをクリア
+        logger.info(f"ドキュメント変更を検出: {st.session_state.previous_doc_id} -> {doc_id}")
+        logger.info(f"新しいファイル名: {file_name}")
+
+        # 編集関連のセッション状態をクリア
+        # 古いドキュメントのキーを削除
+        old_doc_id = st.session_state.previous_doc_id
+        keys_to_remove = [
+            key for key in st.session_state.keys()
+            if (key.startswith('form_') or
+                key.startswith(f'json_editor_{old_doc_id}') or
+                key.startswith(f'text_editor_{old_doc_id}') or
+                key.startswith('table_editor_'))
+        ]
+
+        for key in keys_to_remove:
+            del st.session_state[key]
+            logger.debug(f"  削除: {key}")
+
+        st.session_state.previous_doc_id = doc_id
+        logger.info(f"セッション状態をクリア: {len(keys_to_remove)} keys removed")
+
+        # ページを再レンダリング
+        st.rerun()
 
     # 基本情報表示
     col1, col2, col3 = st.columns([2, 1, 1])
@@ -357,7 +389,7 @@ def main():
         structured_field_keys = {field["key"] for field in structured_fields}
 
         # タブリストを動的に構築
-        tab_names = ["📝 フォーム編集"]
+        tab_names = ["📝 フォーム編集", "📄 テキスト編集"]  # テキスト編集タブを追加
 
         # 構造化データごとにタブを追加
         logger.info(f"🏷️ タブ生成: 構造化データタブを {len(structured_fields)} 個追加します")
@@ -387,11 +419,84 @@ def main():
                     st.markdown("各データタブまたはJSONプレビュータブをご利用ください")
             else:
                 st.info("フォーム編集には対応するスキーマが必要です")
-                st.markdown("JSONプレビュータブで直接編集してください")
 
-        # タブ2以降: 構造化データタブ（動的に生成）
+        # タブ2: テキスト編集（新規）
+        with tabs[1]:
+            st.markdown("### 📄 元テキスト編集")
+            st.info("⚠️ ここでテキストを編集すると、メタデータ・チャンク・質問が自動的に再生成されます。")
+
+            # full_textを取得
+            full_text = selected_doc.get('full_text', '')
+
+            if not full_text:
+                st.warning("このドキュメントにはテキストデータがありません")
+            else:
+                # テキスト編集エリア
+                edited_text = st.text_area(
+                    "元テキスト（編集可能）",
+                    value=full_text,
+                    height=400,
+                    key=f"text_editor_{doc_id}",
+                    help="このテキストを編集して「保存して再生成」を押すと、全ての派生データ（メタデータ、チャンク、質問）が自動的に再生成されます"
+                )
+
+                # 変更検知
+                text_changed = edited_text != full_text
+
+                if text_changed:
+                    st.warning(f"⚠️ テキストが変更されています（{len(edited_text) - len(full_text):+d} 文字）")
+
+                    # プレビュー表示
+                    with st.expander("🔍 変更プレビュー", expanded=False):
+                        st.markdown("**変更前** (先頭500文字):")
+                        st.text(full_text[:500])
+
+                        st.markdown("**変更後** (先頭500文字):")
+                        st.text(edited_text[:500])
+
+                # 保存ボタン
+                col1, col2 = st.columns([1, 3])
+
+                with col1:
+                    if st.button("💾 保存して再生成", type="primary", disabled=not text_changed, key=f"save_text_{doc_id}"):
+                        with st.spinner("🔄 再生成中...（メタデータ、チャンク、質問を更新しています）"):
+                            try:
+                                # ReactiveDocumentUpdaterをインポート
+                                import asyncio
+                                from core.document.reactive_updater import ReactiveDocumentUpdater
+
+                                updater = ReactiveDocumentUpdater(db=db_client)
+
+                                # 非同期処理を実行
+                                loop = asyncio.new_event_loop()
+                                asyncio.set_event_loop(loop)
+                                result = loop.run_until_complete(
+                                    updater.update_document_from_source(
+                                        document_id=doc_id,
+                                        edited_text=edited_text,
+                                        edited_tables=None
+                                    )
+                                )
+                                loop.close()
+
+                                st.success("✅ 再生成完了！")
+                                st.json(result)
+
+                                # ページを再読み込み
+                                st.rerun()
+
+                            except Exception as e:
+                                st.error(f"❌ エラー: {e}")
+                                import traceback
+                                st.code(traceback.format_exc())
+
+                with col2:
+                    if text_changed:
+                        st.caption(f"📊 統計: 全{len(edited_text)}文字 (変更: {len(edited_text) - len(full_text):+d}文字)")
+
+        # タブ3以降: 構造化データタブ（動的に生成）
         for idx, field in enumerate(structured_fields):
-            with tabs[idx + 1]:
+            with tabs[idx + 2]:  # テキスト編集タブを追加したので +2
                 logger.info(f"📊 タブ {idx + 1} をレンダリング: {field['label']} ({field['key']})")
                 logger.info(f"  データ件数: {len(field['data'])} 件")
 
@@ -415,7 +520,7 @@ def main():
 
         # 最後のタブ: JSONプレビュー
         with tabs[-1]:
-            edited_metadata = render_json_preview(metadata, editable=True)
+            edited_metadata = render_json_preview(metadata, editable=True, key_suffix=doc_id)
 
         # 保存ボタンエリア
         st.markdown("---")

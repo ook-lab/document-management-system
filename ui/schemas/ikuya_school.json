@@ -10,40 +10,40 @@
       "description": "学校名、学年、発行日などの基本メタデータ",
       "properties": {
         "school_name": {
-          "type": "string",
+          "type": ["string", "null"],
           "title": "学校名",
           "description": "学校の正式名称"
         },
         "grade": {
-          "type": "string",
+          "type": ["string", "null"],
           "title": "学年",
           "description": "対象学年（例: 5年生）"
         },
         "issue_date": {
-          "type": "string",
+          "type": ["string", "null"],
           "format": "date",
           "title": "発行日",
           "description": "文書の発行日（YYYY-MM-DD形式）"
         },
         "period": {
-          "type": "string",
+          "type": ["string", "null"],
           "title": "対象期間",
           "description": "文書が対象とする期間（例: 2024年11月18日-21日）"
         },
         "document_title": {
-          "type": "string",
+          "type": ["string", "null"],
           "title": "文書タイトル",
           "description": "文書の表題・タイトル"
         },
         "document_number": {
-          "type": "string",
+          "type": ["string", "null"],
           "title": "文書番号",
           "description": "学年通信などの号数（例: 第12号）"
         }
       }
     },
     "text_blocks": {
-      "type": "array",
+      "type": ["array", "null"],
       "title": "文章セクション（記事ブロック）",
       "description": "表以外の場所にある、まとまった文章セクション（朝会の話、振り返り、道徳の内容など）",
       "items": {
@@ -64,7 +64,7 @@
       }
     },
     "weekly_schedule": {
-      "type": "array",
+      "type": ["array", "null"],
       "title": "週間予定・時間割",
       "description": "曜日・時限・クラスで構成される時間割表データ（既存の表エディタロジックをそのまま使用可能）",
       "items": {
@@ -153,7 +153,7 @@
       }
     },
     "structured_tables": {
-      "type": "array",
+      "type": ["array", "null"],
       "title": "その他の構造化表データ",
       "description": "weekly_schedule以外の汎用的な表データ（持ち物リスト、成績表、イベント一覧など）",
       "items": {
@@ -190,7 +190,7 @@
       }
     },
     "important_notes": {
-      "type": "array",
+      "type": ["array", "null"],
       "title": "連絡事項・重要事項",
       "description": "箇条書きの連絡事項や注意事項（原文そのまま）",
       "items": {
@@ -198,7 +198,7 @@
       }
     },
     "special_events": {
-      "type": "array",
+      "type": ["array", "null"],
       "title": "特別イベント",
       "description": "通常授業以外の特別な予定",
       "items": {
@@ -206,5 +206,5 @@
       }
     }
   },
-  "required": ["basic_info"]
+  "required": []
 }
