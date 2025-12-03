@@ -176,6 +176,7 @@ class DatabaseClient:
     def _check_date_match(self, doc: Dict[str, Any], target_date: str) -> float:
         """
         ドキュメントのメタデータに target_date が含まれているかチェック
+        年を無視して、月・日だけでマッチング（例：12-04）
 
         Args:
             doc: ドキュメント
@@ -184,6 +185,12 @@ class DatabaseClient:
         Returns:
             マッチスコア（0.0～0.3）
         """
+        # 年を除いた月・日のみを抽出（例：2025-12-04 → 12-04）
+        try:
+            target_month_day = target_date.split('-', 1)[1]  # "12-04"
+        except:
+            return 0.0
+
         metadata = doc.get('metadata', {})
 
         # weekly_schedule をチェック
@@ -192,13 +199,24 @@ class DatabaseClient:
             for day in weekly_schedule:
                 if isinstance(day, dict):
                     date = day.get('date', '')
-                    if target_date in date or date in target_date:
-                        return 0.3  # 日付マッチで +0.3 ブースト
+                    if date:
+                        # 年を除いた月・日のみを比較
+                        try:
+                            doc_month_day = date.split('-', 1)[1]  # "12-04"
+                            if target_month_day == doc_month_day:
+                                return 0.3  # 日付マッチで +0.3 ブースト
+                        except:
+                            pass
 
         # document_date をチェック
         document_date = doc.get('document_date', '')
-        if document_date and (target_date in str(document_date) or str(document_date) in target_date):
-            return 0.2
+        if document_date:
+            try:
+                doc_month_day = str(document_date).split('-', 1)[1]
+                if target_month_day == doc_month_day:
+                    return 0.2
+            except:
+                pass
 
         return 0.0
 
