@@ -7,6 +7,40 @@ from typing import Dict, Any, List
 from datetime import datetime, date
 
 
+def _calculate_text_height(text: str, min_height: int = 100, max_height: int = 600) -> int:
+    """
+    テキストの内容に基づいて適切な高さを計算
+
+    Args:
+        text: テキストの内容
+        min_height: 最小の高さ（ピクセル）
+        max_height: 最大の高さ（ピクセル）
+
+    Returns:
+        計算された高さ（ピクセル）
+    """
+    if not text:
+        return min_height
+
+    # 行数をカウント
+    line_count = text.count('\n') + 1
+
+    # 各行の長さをチェックして折り返しを考慮
+    # 1行あたり約80文字で折り返すと仮定
+    estimated_lines = 0
+    for line in text.split('\n'):
+        estimated_lines += max(1, len(line) // 80 + (1 if len(line) % 80 else 0))
+
+    # より正確な行数を使用
+    total_lines = max(line_count, estimated_lines)
+
+    # 1行あたり約25ピクセルとして計算
+    calculated_height = total_lines * 25
+
+    # min_heightとmax_heightの範囲内に収める
+    return max(min_height, min(calculated_height, max_height))
+
+
 def _is_empty_value(value: Any) -> bool:
     """
     値が空かどうかをチェック
@@ -125,9 +159,11 @@ def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -
 
         else:
             # その他の型はテキストエリアで表示
+            text_value = str(current_value) if current_value else ""
             edited_metadata[field_name] = st.text_area(
                 label,
-                value=str(current_value) if current_value else "",
+                value=text_value,
+                height=_calculate_text_height(text_value),
                 help=help_text,
                 key=f"form_{field_name}"
             )
@@ -190,7 +226,7 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         edited_text = st.text_area(
             f"{label}（1行1項目）",
             value=text_value,
-            height=150,
+            height=_calculate_text_height(text_value, min_height=100, max_height=400),
             label_visibility="collapsed",
             key=f"form_{field_name}"
         )
@@ -207,7 +243,7 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         edited_json = st.text_area(
             f"{label}（JSON形式）",
             value=json_str,
-            height=200,
+            height=_calculate_text_height(json_str, min_height=150, max_height=500),
             label_visibility="collapsed",
             key=f"form_{field_name}"
         )
@@ -278,10 +314,11 @@ def _render_object_array_input(field_name: str, label: str, current_value: List[
                 if prop_type == "string":
                     # contentフィールドは大きなテキストエリアで表示
                     if prop_name == "content" or len(str(prop_value)) > 100:
+                        text_value = str(prop_value) if prop_value else ""
                         edited_item[prop_name] = st.text_area(
                             prop_label,
-                            value=str(prop_value) if prop_value else "",
-                            height=200,
+                            value=text_value,
+                            height=_calculate_text_height(text_value, min_height=150, max_height=600),
                             help=prop_description,
                             key=f"form_{field_name}_{idx}_{prop_name}"
                         )
@@ -357,7 +394,7 @@ def _render_object_input(field_name: str, current_value: Any) -> Dict:
     edited_json = st.text_area(
         "JSON形式で編集",
         value=json_str,
-        height=200,
+        height=_calculate_text_height(json_str, min_height=150, max_height=500),
         key=f"form_obj_{field_name}"
     )
 
