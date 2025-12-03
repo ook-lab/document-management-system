@@ -124,12 +124,14 @@ class DatabaseClient:
         merged_results = []
         seen_ids = set()
 
-        # file_name マッチを優先的に追加
+        # file_name マッチを優先的に追加（一致度に応じてスコアを計算）
         for doc in keyword_results:
             doc_id = doc.get('id')
             if doc_id not in seen_ids:
-                # similarity を 1.0 に設定（キーワードマッチなので最優先）
-                doc['similarity'] = 1.0
+                # file_name とクエリの一致度を計算
+                file_name = doc.get('file_name', '')
+                match_score = self._calculate_keyword_match_score(file_name, keywords, query)
+                doc['similarity'] = match_score
                 merged_results.append(doc)
                 seen_ids.add(doc_id)
 
@@ -140,7 +142,59 @@ class DatabaseClient:
                 merged_results.append(doc)
                 seen_ids.add(doc_id)
 
+        # 類似度でソート（高い順）
+        merged_results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+
         return merged_results[:limit]
+
+    def _calculate_keyword_match_score(
+        self,
+        file_name: str,
+        keywords: List[str],
+        query: str
+    ) -> float:
+        """
+        file_name とクエリの一致度を計算
+
+        Args:
+            file_name: ファイル名
+            keywords: 抽出されたキーワードのリスト
+            query: 元のクエリ
+
+        Returns:
+            一致度スコア（0.0～1.0）
+        """
+        # クエリから記号を除去して正規化
+        normalized_query = query.replace('？', '').replace('?', '').replace('の内容は', '').replace('内容', '').strip()
+
+        # 完全一致（括弧付き単語がそのまま含まれる）
+        for kw in keywords:
+            if '（' in kw or '(' in kw:
+                if kw in file_name:
+                    return 1.0  # 「学年通信（29）」が完全一致
+
+        # マッチしたキーワードの数をカウント
+        matched_keywords = []
+        for kw in keywords:
+            if kw in file_name:
+                matched_keywords.append(kw)
+
+        if not matched_keywords:
+            return 0.0
+
+        # マッチ数に応じてスコアを設定
+        match_count = len(matched_keywords)
+        total_keywords = len(keywords)
+
+        if match_count == total_keywords:
+            # すべてのキーワードがマッチ（ただし完全一致ではない）
+            return 0.95
+        elif match_count >= 2:
+            # 2つ以上マッチ
+            return 0.90
+        else:
+            # 1つだけマッチ
+            return 0.85
 
     def _extract_keywords(self, query: str) -> List[str]:
         """
