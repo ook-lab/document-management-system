@@ -292,23 +292,17 @@ def _render_text_blocks_input(field_name: str, label: str, current_value: List[D
 
         # 各ブロックをexpanderで表示
         with st.expander(f"📝 {block_title}", expanded=True):
-            # タイトルの編集
-            edited_title = st.text_input(
-                "見出し",
-                value=block_title,
-                key=f"form_{field_name}_{idx}_title"
-            )
-
-            # コンテンツの編集（動的サイズ）
+            # コンテンツの編集のみ（ラベル非表示）
             edited_content = st.text_area(
                 "本文",
                 value=block_content,
                 height=_calculate_text_height(block_content, min_height=150, max_height=600),
-                key=f"form_{field_name}_{idx}_content"
+                key=f"form_{field_name}_{idx}_content",
+                label_visibility="collapsed"
             )
 
             edited_array.append({
-                "title": edited_title,
+                "title": block_title,  # タイトルは編集不可、元の値を保持
                 "content": edited_content
             })
 
