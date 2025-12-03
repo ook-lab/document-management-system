@@ -34,8 +34,12 @@ def search_documents():
     try:
         data = request.get_json()
         query = data.get('query', '')
-        limit = data.get('limit', 3)  # ✅ デフォルトを3に削減（最も関連性の高い文書のみ）
+        requested_limit = data.get('limit', 3)
+        # 最大5件に強制制限（フロントエンドの指定を無視）
+        limit = min(requested_limit, 5)
         workspace = data.get('workspace')
+
+        print(f"[DEBUG] 検索リクエスト: query='{query}', requested_limit={requested_limit}, actual_limit={limit}")
 
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
@@ -50,6 +54,8 @@ def search_documents():
             db_client.search_documents(query, embedding, limit, workspace)
         )
         loop.close()
+
+        print(f"[DEBUG] 検索結果: {len(results)} 件返却")
 
         return jsonify({
             'success': True,
