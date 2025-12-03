@@ -205,6 +205,9 @@ def main():
             del st.session_state[key]
         st.session_state.previous_doc_id = doc_id
         logger.info(f"セッション状態をクリア: {len(keys_to_remove)} keys removed")
+        # ページを即座に再レンダリングして表示を更新
+        st.rerun()
+
     drive_file_id = selected_doc.get('drive_file_id')
     source_id = selected_doc.get('source_id')
     file_id = drive_file_id or source_id
