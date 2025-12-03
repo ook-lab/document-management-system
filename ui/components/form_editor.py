@@ -143,10 +143,16 @@ def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -
             )
 
         elif field_type == "array":
-            # 配列入力
-            edited_metadata[field_name] = _render_array_input(
-                field_name, label, current_value, field.get("items"), help_text
-            )
+            # text_blocksの特別処理: 親ラベルなしで直接ボックス表示
+            if field_name == "text_blocks":
+                edited_metadata[field_name] = _render_text_blocks_input(
+                    field_name, label, current_value, field.get("items")
+                )
+            else:
+                # 配列入力
+                edited_metadata[field_name] = _render_array_input(
+                    field_name, label, current_value, field.get("items"), help_text
+                )
 
         elif field_type == "object":
             # オブジェクト入力（展開表示）
@@ -233,11 +239,7 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         return [line.strip() for line in edited_text.split("\n") if line.strip()]
 
     elif items_def and items_def.get("type") == "object":
-        # text_blocksの特別処理: title/contentのペアをボックス表示（ラベルなし）
-        if field_name == "text_blocks":
-            return _render_text_blocks_input(field_name, label, current_value, items_def)
-
-        # その他のオブジェクト配列: ラベルを表示してから処理
+        # オブジェクト配列: ラベルを表示してから処理
         st.markdown(f"**{label}**")
         if help_text:
             st.caption(help_text)
