@@ -233,6 +233,9 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         return [line.strip() for line in edited_text.split("\n") if line.strip()]
 
     elif items_def and items_def.get("type") == "object":
+        # text_blocksの特別処理: title/contentのペアをボックス表示
+        if field_name == "text_blocks":
+            return _render_text_blocks_input(field_name, label, current_value, items_def)
         # オブジェクト配列: スキーマ定義に基づいて個別フィールドとして表示
         return _render_object_array_input(field_name, label, current_value, items_def)
 
@@ -252,6 +255,68 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         except:
             st.error("JSON形式が不正です")
             return current_value
+
+
+def _render_text_blocks_input(field_name: str, label: str, current_value: List[Dict], items_def: Dict) -> List[Dict]:
+    """
+    text_blocks専用の入力フィールド
+    各ブロックをtitleをヘッダーとするボックスで表示
+
+    Args:
+        field_name: フィールド名
+        label: ラベル
+        current_value: 現在の値（text_blocksの配列）
+        items_def: スキーマのitems定義
+
+    Returns:
+        編集後のtext_blocks配列
+    """
+    if not current_value:
+        current_value = []
+
+    edited_array = []
+
+    for idx, block in enumerate(current_value):
+        block_title = block.get("title", f"セクション {idx + 1}")
+        block_content = block.get("content", "")
+
+        # 各ブロックをexpanderで表示
+        with st.expander(f"📝 {block_title}", expanded=True):
+            # タイトルの編集
+            edited_title = st.text_input(
+                "見出し",
+                value=block_title,
+                key=f"form_{field_name}_{idx}_title"
+            )
+
+            # コンテンツの編集（動的サイズ）
+            edited_content = st.text_area(
+                "本文",
+                value=block_content,
+                height=_calculate_text_height(block_content, min_height=150, max_height=600),
+                key=f"form_{field_name}_{idx}_content"
+            )
+
+            edited_array.append({
+                "title": edited_title,
+                "content": edited_content
+            })
+
+    # 追加・削除コントロール
+    st.markdown("---")
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button(f"➕ 新しいセクションを追加", key=f"add_{field_name}"):
+            st.info("💡 保存後、新しいセクションが追加されます")
+
+    with col2:
+        if len(edited_array) > 0:
+            if st.button(f"🗑️ 最後のセクションを削除", key=f"remove_{field_name}"):
+                edited_array = edited_array[:-1]
+                st.success("最後のセクションを削除しました")
+
+    return edited_array
 
 
 def _render_object_array_input(field_name: str, label: str, current_value: List[Dict], items_def: Dict) -> List[Dict]:
