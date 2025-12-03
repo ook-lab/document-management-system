@@ -79,6 +79,16 @@ def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -
 
     for field in fields:
         field_name = field["name"]
+
+        # text_blocksの特別処理: 最初に処理して他の処理をスキップ
+        if field_name == "text_blocks":
+            current_value = metadata.get(field_name)
+            if not _is_empty_value(current_value):
+                edited_metadata[field_name] = _render_text_blocks_input(
+                    field_name, "", current_value, field.get("items")
+                )
+            continue  # 他の処理をスキップ
+
         field_type = field["type"]
         field_title = field["title"]
         field_description = field["description"]
@@ -143,16 +153,10 @@ def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -
             )
 
         elif field_type == "array":
-            # text_blocksの特別処理: 親ラベルなしで直接ボックス表示
-            if field_name == "text_blocks":
-                edited_metadata[field_name] = _render_text_blocks_input(
-                    field_name, label, current_value, field.get("items")
-                )
-            else:
-                # 配列入力
-                edited_metadata[field_name] = _render_array_input(
-                    field_name, label, current_value, field.get("items"), help_text
-                )
+            # 配列入力
+            edited_metadata[field_name] = _render_array_input(
+                field_name, label, current_value, field.get("items"), help_text
+            )
 
         elif field_type == "object":
             # オブジェクト入力（展開表示）
