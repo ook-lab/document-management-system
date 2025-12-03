@@ -89,8 +89,12 @@ class DatabaseClient:
         vector_response = self.client.rpc("match_documents", rpc_params).execute()
         vector_results = vector_response.data if vector_response.data else []
 
-        # 2. クエリから重要なキーワードを抽出（簡易版）
+        # 2. クエリから日付とキーワードを抽出
+        target_date = self._extract_date(query)
         keywords = self._extract_keywords(query)
+
+        print(f"[DEBUG] 抽出された日付: {target_date}")
+        print(f"[DEBUG] 抽出されたキーワード: {keywords}")
 
         # 3. file_name でキーワード検索（いずれかのキーワードにマッチ）
         keyword_results = []
@@ -131,6 +135,14 @@ class DatabaseClient:
                 # file_name とクエリの一致度を計算
                 file_name = doc.get('file_name', '')
                 match_score = self._calculate_keyword_match_score(file_name, keywords, query)
+
+                # 日付マッチングでスコアをブースト
+                if target_date:
+                    date_match_score = self._check_date_match(doc, target_date)
+                    if date_match_score > 0:
+                        match_score = min(1.0, match_score + date_match_score)
+                        print(f"[DEBUG] 日付マッチ: {file_name} → スコア: {match_score}")
+
                 doc['similarity'] = match_score
                 merged_results.append(doc)
                 seen_ids.add(doc_id)
@@ -139,6 +151,14 @@ class DatabaseClient:
         for doc in vector_results:
             doc_id = doc.get('id')
             if doc_id not in seen_ids:
+                # 日付マッチングでスコアをブースト
+                if target_date:
+                    date_match_score = self._check_date_match(doc, target_date)
+                    if date_match_score > 0:
+                        original_score = doc.get('similarity', 0)
+                        doc['similarity'] = min(1.0, original_score + date_match_score)
+                        print(f"[DEBUG] 日付マッチ（ベクトル検索）: {doc.get('file_name')} → スコア: {doc['similarity']}")
+
                 merged_results.append(doc)
                 seen_ids.add(doc_id)
 
@@ -146,6 +166,35 @@ class DatabaseClient:
         merged_results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
 
         return merged_results[:limit]
+
+    def _check_date_match(self, doc: Dict[str, Any], target_date: str) -> float:
+        """
+        ドキュメントのメタデータに target_date が含まれているかチェック
+
+        Args:
+            doc: ドキュメント
+            target_date: ターゲット日付（YYYY-MM-DD形式）
+
+        Returns:
+            マッチスコア（0.0～0.3）
+        """
+        metadata = doc.get('metadata', {})
+
+        # weekly_schedule をチェック
+        weekly_schedule = metadata.get('weekly_schedule', [])
+        if isinstance(weekly_schedule, list):
+            for day in weekly_schedule:
+                if isinstance(day, dict):
+                    date = day.get('date', '')
+                    if target_date in date or date in target_date:
+                        return 0.3  # 日付マッチで +0.3 ブースト
+
+        # document_date をチェック
+        document_date = doc.get('document_date', '')
+        if document_date and (target_date in str(document_date) or str(document_date) in target_date):
+            return 0.2
+
+        return 0.0
 
     def _calculate_keyword_match_score(
         self,
@@ -195,6 +244,46 @@ class DatabaseClient:
         else:
             # 1つだけマッチ
             return 0.85
+
+    def _extract_date(self, query: str) -> Optional[str]:
+        """
+        クエリから日付を抽出（YYYY-MM-DD形式に正規化）
+
+        Args:
+            query: 検索クエリ
+
+        Returns:
+            正規化された日付文字列（YYYY-MM-DD）、または None
+        """
+        import re
+        from datetime import datetime
+
+        # パターン1: MM/DD形式（例：12/4）
+        match = re.search(r'(\d{1,2})/(\d{1,2})', query)
+        if match:
+            month = int(match.group(1))
+            day = int(match.group(2))
+            # 現在の年を使用（将来的には前後の文脈から判断）
+            year = 2024  # または datetime.now().year
+            try:
+                date_obj = datetime(year, month, day)
+                return date_obj.strftime('%Y-%m-%d')
+            except ValueError:
+                pass
+
+        # パターン2: MM月DD日形式（例：12月4日）
+        match = re.search(r'(\d{1,2})月(\d{1,2})日', query)
+        if match:
+            month = int(match.group(1))
+            day = int(match.group(2))
+            year = 2024
+            try:
+                date_obj = datetime(year, month, day)
+                return date_obj.strftime('%Y-%m-%d')
+            except ValueError:
+                pass
+
+        return None
 
     def _extract_keywords(self, query: str) -> List[str]:
         """

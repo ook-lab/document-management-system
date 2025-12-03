@@ -34,7 +34,7 @@ def search_documents():
     try:
         data = request.get_json()
         query = data.get('query', '')
-        limit = data.get('limit', 5)  # ✅ トークンリミット回避のため、デフォルトを5に制限
+        limit = data.get('limit', 3)  # ✅ デフォルトを3に削減（最も関連性の高い文書のみ）
         workspace = data.get('workspace')
 
         if not query:
