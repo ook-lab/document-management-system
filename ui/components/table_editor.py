@@ -200,8 +200,29 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
                                 row[display_key] = subject
                 elif "subjects" in class_sched and isinstance(class_sched["subjects"], list):
                     for i, subject in enumerate(class_sched["subjects"], 1):
-                        # 時限番号に「時限目」を追加（例: "1" -> "1時限目"）
-                        row[f"{i}時限目"] = str(subject)
+                        subject_str = str(subject)
+
+                        # "時限:科目" 形式の場合は分割して処理
+                        if ":" in subject_str:
+                            parts = subject_str.split(":", 1)
+                            period_label = parts[0].strip()  # 例: "朝", "1限", "2限"
+                            subject_name = parts[1].strip() if len(parts) > 1 else ""
+
+                            # "1限" -> "1時限目", "朝" -> "朝" のように変換
+                            if period_label == "朝":
+                                display_key = "朝"
+                            elif period_label.replace("限", "").isdigit():
+                                # "1限" -> "1時限目"
+                                num = period_label.replace("限", "")
+                                display_key = f"{num}時限目"
+                            else:
+                                # その他の場合はそのまま使用
+                                display_key = period_label
+
+                            row[display_key] = subject_name
+                        else:
+                            # 通常の形式（科目名のみ）の場合
+                            row[f"{i}時限目"] = subject_str
                         
                 flattened_data.append(row)
         else:
