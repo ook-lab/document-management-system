@@ -184,8 +184,11 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
                 # クラス名を追加
                 if "class" in class_sched:
                     row["class"] = str(class_sched["class"])
-                
-                # periods（辞書リスト）または subjects（文字列リスト）を展開して列にする
+
+                # periodsとsubjectsを統合して処理
+                period_data = {}  # {display_key: subject_name} の辞書
+
+                # 1. periodsから時限データを取得
                 if "periods" in class_sched and isinstance(class_sched["periods"], list):
                     for p in class_sched["periods"]:
                         if isinstance(p, dict):
@@ -197,8 +200,10 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
                                     display_key = f"{period_key}時限目"
                                 else:
                                     display_key = period_key
-                                row[display_key] = subject
-                elif "subjects" in class_sched and isinstance(class_sched["subjects"], list):
+                                period_data[display_key] = subject
+
+                # 2. subjectsから時限データを取得（periodsで設定されていない時限のみ追加）
+                if "subjects" in class_sched and isinstance(class_sched["subjects"], list):
                     for i, subject in enumerate(class_sched["subjects"], 1):
                         subject_str = str(subject)
 
@@ -219,10 +224,18 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
                                 # その他の場合はそのまま使用
                                 display_key = period_label
 
-                            row[display_key] = subject_name
+                            # periodsで既に設定されていない場合のみ追加
+                            if display_key not in period_data:
+                                period_data[display_key] = subject_name
                         else:
                             # 通常の形式（科目名のみ）の場合
-                            row[f"{i}時限目"] = subject_str
+                            display_key = f"{i}時限目"
+                            # periodsで既に設定されていない場合のみ追加
+                            if display_key not in period_data:
+                                period_data[display_key] = subject_str
+
+                # 3. 統合した時限データをrowに追加
+                row.update(period_data)
                         
                 flattened_data.append(row)
         else:
