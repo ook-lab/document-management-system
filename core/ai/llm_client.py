@@ -67,13 +67,13 @@ class LLMClient:
         config = get_model_config(tier)
         provider = config["provider"]
         # kwargsからmodel_nameが渡されていればそれを優先、なければconfigから取得
-        model_name = kwargs.get('model_name') or config["model"]
-        
+        model_name = kwargs.pop('model_name', None) or config["model"]
+
         if provider == AIProvider.GEMINI:
             if not self.gemini_api_key:
                 return {"success": False, "error": "Gemini API key is missing", "model": model_name}
             return self._call_gemini(model_name, prompt, file_path, config, **kwargs)
-        
+
         elif provider == AIProvider.CLAUDE:
             if not self.anthropic_client:
                 return {"success": False, "error": "Claude API key is missing", "model": model_name}
@@ -83,7 +83,7 @@ class LLMClient:
                 # リトライが全て失敗した場合
                 original_error = e.last_attempt.exception()
                 return {"success": False, "error": str(original_error), "model": model_name, "provider": "claude"}
-        
+
         elif provider == AIProvider.OPENAI:
             if not self.openai_client:
                 return {"success": False, "error": "OpenAI API key is missing", "model": model_name}
