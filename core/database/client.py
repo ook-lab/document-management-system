@@ -69,7 +69,7 @@ class DatabaseClient:
         workspace: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        ベクトル検索で文書を検索
+        ハイブリッド検索：ベクトル検索 + file_name キーワードマッチ
 
         Args:
             query: 検索クエリ
@@ -78,21 +78,95 @@ class DatabaseClient:
             workspace: ワークスペースフィルタ (オプション)
 
         Returns:
-            検索結果のリスト
+            検索結果のリスト（file_name マッチを優先）
         """
-        # RPC関数を使用してベクトル検索
+        # 1. ベクトル検索を実行
         rpc_params = {
             "query_embedding": embedding,
-            "match_threshold": 0.0,  # 類似度の下限を0.0に設定（すべての結果を返す）
+            "match_threshold": 0.0,
             "match_count": limit
         }
+        vector_response = self.client.rpc("match_documents", rpc_params).execute()
+        vector_results = vector_response.data if vector_response.data else []
 
-        # ワークスペースフィルタを無効化（常に全件検索）
-        # if workspace:
-        #     rpc_params["filter_workspace"] = workspace
+        # 2. クエリから重要なキーワードを抽出（簡易版）
+        keywords = self._extract_keywords(query)
 
-        response = self.client.rpc("match_documents", rpc_params).execute()
-        return response.data if response.data else []
+        # 3. file_name でキーワード検索（いずれかのキーワードにマッチ）
+        keyword_results = []
+        if keywords:
+            try:
+                # 複数キーワードの OR 検索
+                query_builder = self.client.table('documents').select('*')
+
+                # 最初のキーワードで検索
+                if len(keywords) > 0:
+                    query_builder = query_builder.or_(
+                        ','.join([f"file_name.ilike.%{kw}%" for kw in keywords])
+                    )
+
+                # 処理完了のみ、embedding必須
+                query_builder = (
+                    query_builder
+                    .eq('processing_status', 'completed')
+                    .not_.is_('embedding', 'null')
+                    .limit(limit)
+                )
+
+                keyword_response = query_builder.execute()
+                keyword_results = keyword_response.data if keyword_response.data else []
+            except Exception as e:
+                print(f"Keyword search error: {e}")
+
+        # 4. 結果をマージ（file_name マッチを優先、重複削除）
+        merged_results = []
+        seen_ids = set()
+
+        # file_name マッチを優先的に追加
+        for doc in keyword_results:
+            doc_id = doc.get('id')
+            if doc_id not in seen_ids:
+                # similarity を 1.0 に設定（キーワードマッチなので最優先）
+                doc['similarity'] = 1.0
+                merged_results.append(doc)
+                seen_ids.add(doc_id)
+
+        # ベクトル検索結果を追加（重複を除く）
+        for doc in vector_results:
+            doc_id = doc.get('id')
+            if doc_id not in seen_ids:
+                merged_results.append(doc)
+                seen_ids.add(doc_id)
+
+        return merged_results[:limit]
+
+    def _extract_keywords(self, query: str) -> List[str]:
+        """
+        クエリから重要なキーワードを抽出
+
+        Args:
+            query: 検索クエリ
+
+        Returns:
+            抽出されたキーワードのリスト
+        """
+        import re
+        keywords = []
+
+        # 括弧内の文字を抽出（例：「学年通信（29）」→「29」「学年通信」）
+        bracket_matches = re.findall(r'[（(]([^）)]+)[）)]', query)
+        keywords.extend(bracket_matches)
+
+        # 括弧を含む単語全体を抽出（例：「学年通信（29）」）
+        bracket_words = re.findall(r'[\w一-龠ぁ-んァ-ヶー]+[（(][^）)]+[）)]', query)
+        keywords.extend(bracket_words)
+
+        # 名詞的な単語を抽出（ひらがな・カタカナ・漢字が3文字以上）
+        words = re.findall(r'[一-龠ぁ-んァ-ヶー]{3,}', query)
+        keywords.extend(words)
+
+        # 重複削除して返す
+        return list(set(keywords))
 
     def get_documents_for_review(
         self,
