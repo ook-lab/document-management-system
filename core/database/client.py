@@ -175,45 +175,67 @@ class DatabaseClient:
 
     def _check_date_match(self, doc: Dict[str, Any], target_date: str) -> float:
         """
-        ドキュメントのメタデータに target_date が含まれているかチェック
+        ドキュメントのメタデータと本文から target_date を検索
         年を無視して、月・日だけでマッチング（例：12-04）
 
         Args:
             doc: ドキュメント
-            target_date: ターゲット日付（YYYY-MM-DD形式）
+            target_date: ターゲット日付（YYYY-MM-DD形式、例：2025-12-04）
 
         Returns:
-            マッチスコア（0.0～0.3）
+            マッチスコア（0.0～0.5）
         """
+        import re
+
         # 年を除いた月・日のみを抽出（例：2025-12-04 → 12-04）
         try:
-            target_month_day = target_date.split('-', 1)[1]  # "12-04"
+            parts = target_date.split('-')
+            month = int(parts[1])
+            day = int(parts[2])
         except:
             return 0.0
 
-        metadata = doc.get('metadata', {})
+        # 検索パターン：「12/4」「12月4日」「12-04」など
+        date_patterns = [
+            f"{month}/{day}",           # 12/4
+            f"{month:02d}/{day:02d}",   # 12/04
+            f"{month}月{day}日",         # 12月4日
+            f"{month:02d}-{day:02d}",   # 12-04
+        ]
 
-        # weekly_schedule をチェック
+        # 1. 本文（content, summary, full_text）を検索 - 最優先
+        text_fields = ['content', 'summary', 'full_text']
+        for field in text_fields:
+            text = doc.get(field, '')
+            if text:
+                for pattern in date_patterns:
+                    if pattern in text:
+                        print(f"[DEBUG] 本文で日付マッチ: {doc.get('file_name')} に '{pattern}' が含まれる")
+                        return 0.5  # 本文マッチで +0.5 ブースト（最優先）
+
+        # 2. メタデータの weekly_schedule をチェック
+        metadata = doc.get('metadata', {})
         weekly_schedule = metadata.get('weekly_schedule', [])
         if isinstance(weekly_schedule, list):
-            for day in weekly_schedule:
-                if isinstance(day, dict):
-                    date = day.get('date', '')
+            for day_item in weekly_schedule:
+                if isinstance(day_item, dict):
+                    date = day_item.get('date', '')
                     if date:
-                        # 年を除いた月・日のみを比較
                         try:
-                            doc_month_day = date.split('-', 1)[1]  # "12-04"
-                            if target_month_day == doc_month_day:
-                                return 0.3  # 日付マッチで +0.3 ブースト
+                            doc_month = int(date.split('-')[1])
+                            doc_day = int(date.split('-')[2])
+                            if month == doc_month and day == doc_day:
+                                return 0.3  # メタデータマッチで +0.3 ブースト
                         except:
                             pass
 
-        # document_date をチェック
+        # 3. document_date をチェック
         document_date = doc.get('document_date', '')
         if document_date:
             try:
-                doc_month_day = str(document_date).split('-', 1)[1]
-                if target_month_day == doc_month_day:
+                doc_month = int(str(document_date).split('-')[1])
+                doc_day = int(str(document_date).split('-')[2])
+                if month == doc_month and day == doc_day:
                     return 0.2
             except:
                 pass

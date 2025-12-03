@@ -13,6 +13,7 @@ import google.generativeai as genai
 from anthropic import Anthropic, RateLimitError
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, RetryError
+from loguru import logger
 
 from config.model_tiers import AIProvider, ModelTier, get_model_config
 
@@ -144,9 +145,25 @@ class LLMClient:
             # finish_reason をチェック
             if candidate.finish_reason != 1:  # 1 = STOP (正常終了)
                 self._cleanup_uploaded_file(uploaded_file)
+                # 詳細なエラー情報を取得
+                error_details = {
+                    "finish_reason": candidate.finish_reason,
+                    "finish_reason_name": candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
+                }
+                # safety_ratingsがあれば追加
+                if hasattr(candidate, 'safety_ratings') and candidate.safety_ratings:
+                    error_details["safety_ratings"] = [
+                        {
+                            "category": rating.category.name if hasattr(rating.category, 'name') else str(rating.category),
+                            "probability": rating.probability.name if hasattr(rating.probability, 'name') else str(rating.probability)
+                        }
+                        for rating in candidate.safety_ratings
+                    ]
+                logger.error(f"Gemini Vision失敗: {error_details}")
                 return {
                     "success": False,
                     "error": f"Gemini finish_reason: {candidate.finish_reason}",
+                    "error_details": error_details,
                     "model": model_name,
                     "provider": "gemini"
                 }
@@ -321,7 +338,7 @@ class LLMClient:
             prompt=prompt,
             file_path=image_path,
             config={
-                "max_tokens": 4096,
+                "max_tokens": 8192,  # トークン数を増やして長い出力に対応
                 "temperature": 0.0
             }
         )
