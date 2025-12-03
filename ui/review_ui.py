@@ -186,6 +186,20 @@ def main():
 
     selected_doc = documents[selected_index]
     doc_id = selected_doc.get('id')
+
+    # ドキュメント変更を検出して、セッション状態をリセット
+    if 'previous_doc_id' not in st.session_state:
+        st.session_state.previous_doc_id = doc_id
+
+    if st.session_state.previous_doc_id != doc_id:
+        # ドキュメントが変更された場合、フォームのキーをクリア
+        logger.info(f"ドキュメント変更を検出: {st.session_state.previous_doc_id} -> {doc_id}")
+        # フォーム関連のセッション状態をクリア
+        keys_to_remove = [key for key in st.session_state.keys() if key.startswith('form_')]
+        for key in keys_to_remove:
+            del st.session_state[key]
+        st.session_state.previous_doc_id = doc_id
+        logger.info(f"セッション状態をクリア: {len(keys_to_remove)} keys removed")
     drive_file_id = selected_doc.get('drive_file_id')
     source_id = selected_doc.get('source_id')
     file_id = drive_file_id or source_id

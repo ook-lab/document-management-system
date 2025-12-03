@@ -7,6 +7,25 @@ from typing import Dict, Any, List
 from datetime import datetime, date
 
 
+def _is_empty_value(value: Any) -> bool:
+    """
+    値が空かどうかをチェック
+
+    Args:
+        value: チェックする値
+
+    Returns:
+        空の場合True、値がある場合False
+    """
+    if value is None:
+        return True
+    if isinstance(value, str) and not value.strip():
+        return True
+    if isinstance(value, (list, dict)) and len(value) == 0:
+        return True
+    return False
+
+
 def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -> Dict[str, Any]:
     """
     スキーマ定義に基づいてフォーム形式のエディタを表示
@@ -31,6 +50,10 @@ def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -
         field_description = field["description"]
         required = field["required"]
         current_value = metadata.get(field_name)
+
+        # 空のフィールドをスキップ（必須フィールドは除く）
+        if not required and _is_empty_value(current_value):
+            continue
 
         # フィールドラベル
         label = f"{'🔴 ' if required else ''}{field_title}"
@@ -242,6 +265,11 @@ def _render_object_array_input(field_name: str, label: str, current_value: List[
                 is_required = prop_name in required_fields
 
                 prop_value = item.get(prop_name, "")
+
+                # 空のフィールドをスキップ（必須フィールドとtitle/contentは除く）
+                # title/contentは文書セクションで重要なので常に表示
+                if not is_required and prop_name not in ["title", "content"] and _is_empty_value(prop_value):
+                    continue
 
                 # フィールドラベル
                 prop_label = f"{'🔴 ' if is_required else ''}{prop_title}"
