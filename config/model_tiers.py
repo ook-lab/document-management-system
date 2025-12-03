@@ -38,14 +38,14 @@ class ModelTier:
     }
     
     # UI回答生成（速度・コスト重視）
-    # ✅ GPT-5.1 Instantに変更（最新モデルで高品質・高速）
+    # ✅ GPT-5 miniに変更（最新モデルで高品質・高速・安価）
     UI_RESPONSE_GENERATOR = {
         "provider": AIProvider.OPENAI,
-        "model": "gpt-5.1-chat-latest",  # ✅ GPT-5.1 Instant（正式名称）
+        "model": "gpt-5-mini",  # ✅ GPT-5 mini（デフォルト）
         "description": "高速で効率的な対話応答",
         "temperature": 0.7,
         "max_completion_tokens": 2048,
-        "cost_per_1k_tokens": 0.00015
+        "cost_per_1k_tokens": 0.00025  # GPT-5 mini: $0.250/$2.000
     }
     
     # Embedding生成
