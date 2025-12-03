@@ -212,16 +212,16 @@ def _render_select_input(field_name: str, label: str, current_value: Any, option
 
 def _render_array_input(field_name: str, label: str, current_value: Any, items_def: Dict, help_text: str) -> List:
     """配列入力フィールド"""
-    st.markdown(f"**{label}**")
-    if help_text:
-        st.caption(help_text)
-
     if not current_value:
         current_value = []
 
     # 配列の型に応じた処理
     if items_def and items_def.get("type") == "string":
         # 文字列配列: テキストエリアで改行区切り入力
+        st.markdown(f"**{label}**")
+        if help_text:
+            st.caption(help_text)
+
         text_value = "\n".join(current_value) if isinstance(current_value, list) else ""
         edited_text = st.text_area(
             f"{label}（1行1項目）",
@@ -233,10 +233,14 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         return [line.strip() for line in edited_text.split("\n") if line.strip()]
 
     elif items_def and items_def.get("type") == "object":
-        # text_blocksの特別処理: title/contentのペアをボックス表示
+        # text_blocksの特別処理: title/contentのペアをボックス表示（ラベルなし）
         if field_name == "text_blocks":
             return _render_text_blocks_input(field_name, label, current_value, items_def)
-        # オブジェクト配列: スキーマ定義に基づいて個別フィールドとして表示
+
+        # その他のオブジェクト配列: ラベルを表示してから処理
+        st.markdown(f"**{label}**")
+        if help_text:
+            st.caption(help_text)
         return _render_object_array_input(field_name, label, current_value, items_def)
 
     else:
