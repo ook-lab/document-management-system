@@ -167,7 +167,7 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
         if "class_schedules" in item and isinstance(item["class_schedules"], list):
             has_class_schedule = True
             break
-    
+
     if not has_class_schedule:
         return data
 
@@ -176,11 +176,23 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
     for item in data:
         if "class_schedules" in item and isinstance(item["class_schedules"], list):
             # class_schedules以外の基本情報を取得（日付や曜日など）
-            base_info = {k: v for k, v in item.items() if k != "class_schedules"}
-            
+            base_info = {}
+
+            for k, v in item.items():
+                if k == "class_schedules":
+                    continue
+                # eventsは配列なので文字列に変換
+                elif k == "events" and isinstance(v, list):
+                    base_info[k] = ", ".join(str(e) for e in v) if v else ""
+                # day_of_weekは不要（dayと重複）
+                elif k == "day_of_week":
+                    continue
+                else:
+                    base_info[k] = v
+
             for class_sched in item["class_schedules"]:
                 row = base_info.copy()
-                
+
                 # クラス名を追加
                 if "class" in class_sched:
                     row["class"] = str(class_sched["class"])
@@ -236,7 +248,7 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
 
                 # 3. 統合した時限データをrowに追加
                 row.update(period_data)
-                        
+
                 flattened_data.append(row)
         else:
             # class_schedulesがない行も一応そのまま保持
@@ -247,7 +259,7 @@ def _flatten_and_sort_schedule(data: List[Dict[str, Any]]) -> List[Dict[str, Any
         c = row.get("class", "")
         d = row.get("date", "")
         return (str(c), str(d))
-    
+
     try:
         flattened_data.sort(key=sort_key)
     except:
