@@ -165,7 +165,13 @@ class DatabaseClient:
         # 類似度でソート（高い順）
         merged_results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
 
-        return merged_results[:limit]
+        # 上位のみに制限（最大でも5件）
+        max_limit = min(limit, 5)
+        final_results = merged_results[:max_limit]
+
+        print(f"[DEBUG] 最終結果: {len(final_results)} 件（limit={limit}, max_limit={max_limit}）")
+
+        return final_results
 
     def _check_date_match(self, doc: Dict[str, Any], target_date: str) -> float:
         """
@@ -306,11 +312,18 @@ class DatabaseClient:
         bracket_words = re.findall(r'[\w一-龠ぁ-んァ-ヶー]+[（(][^）)]+[）)]', query)
         keywords.extend(bracket_words)
 
-        # 名詞的な単語を抽出（ひらがな・カタカナ・漢字が3文字以上）
-        words = re.findall(r'[一-龠ぁ-んァ-ヶー]{3,}', query)
+        # 助詞を除去してクリーニング
+        cleaned_query = query
+        particles = ['の', 'は', 'を', 'が', 'に', 'へ', 'と', 'から', 'まで', 'で', '？', '?']
+        for particle in particles:
+            cleaned_query = cleaned_query.replace(particle, ' ')
+
+        # 名詞的な単語を抽出（漢字・カタカナが2文字以上）
+        words = re.findall(r'[一-龠ァ-ヶー]{2,}', cleaned_query)
         keywords.extend(words)
 
-        # 重複削除して返す
+        # 重複削除・空白除去して返す
+        keywords = [kw.strip() for kw in keywords if kw.strip()]
         return list(set(keywords))
 
     def get_documents_for_review(
