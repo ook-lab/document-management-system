@@ -213,16 +213,26 @@ class SchemaDetector:
 
         return len(errors) == 0, errors
 
-    def _check_type(self, value: Any, expected_type: str) -> bool:
-        """値の型をチェック"""
+    def _check_type(self, value: Any, expected_type: Any) -> bool:
+        """値の型をチェック（配列形式の型定義にも対応）"""
         type_map = {
             "string": str,
             "integer": int,
             "number": (int, float),
             "boolean": bool,
             "array": list,
-            "object": dict
+            "object": dict,
+            "null": type(None)
         }
+
+        # expected_type が配列の場合（例: ["string", "null"]）
+        if isinstance(expected_type, list):
+            # いずれかの型に一致すればOK
+            return any(self._check_type(value, t) for t in expected_type)
+
+        # expected_type が文字列の場合
+        if not isinstance(expected_type, str):
+            return True  # 不明な型は検証をスキップ
 
         expected_python_type = type_map.get(expected_type)
         if expected_python_type is None:
