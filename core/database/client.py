@@ -94,27 +94,29 @@ class DatabaseClient:
 
         # 3. file_name でキーワード検索（いずれかのキーワードにマッチ）
         keyword_results = []
+        seen_keyword_ids = set()
+
         if keywords:
             try:
-                # 複数キーワードの OR 検索
-                query_builder = self.client.table('documents').select('*')
-
-                # 最初のキーワードで検索
-                if len(keywords) > 0:
-                    query_builder = query_builder.or_(
-                        ','.join([f"file_name.ilike.%{kw}%" for kw in keywords])
+                # 各キーワードで個別に検索し、結果をマージ
+                for keyword in keywords:
+                    query_response = (
+                        self.client.table('documents')
+                        .select('*')
+                        .ilike('file_name', f'%{keyword}%')
+                        .eq('processing_status', 'completed')
+                        .not_.is_('embedding', 'null')
+                        .limit(limit)
+                        .execute()
                     )
 
-                # 処理完了のみ、embedding必須
-                query_builder = (
-                    query_builder
-                    .eq('processing_status', 'completed')
-                    .not_.is_('embedding', 'null')
-                    .limit(limit)
-                )
+                    if query_response.data:
+                        for doc in query_response.data:
+                            doc_id = doc.get('id')
+                            if doc_id not in seen_keyword_ids:
+                                keyword_results.append(doc)
+                                seen_keyword_ids.add(doc_id)
 
-                keyword_response = query_builder.execute()
-                keyword_results = keyword_response.data if keyword_response.data else []
             except Exception as e:
                 print(f"Keyword search error: {e}")
 
