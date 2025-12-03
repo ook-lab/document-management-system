@@ -6,8 +6,8 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# .env ファイルを読み込む
-load_dotenv()
+# .env ファイルを読み込む（システム環境変数よりも優先）
+load_dotenv(override=True)
 
 
 class Settings:

@@ -16,8 +16,8 @@ import argparse
 import traceback
 from dotenv import load_dotenv
 
-# .envファイルを読み込む
-load_dotenv()
+# .envファイルを読み込む（システム環境変数よりも優先）
+load_dotenv(override=True)
 
 # パス設定
 sys.path.insert(0, str(Path(__file__).parent.parent))
