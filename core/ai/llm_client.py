@@ -248,9 +248,12 @@ class LLMClient:
                 "model": model_name,
                 "messages": [
                     {"role": "user", "content": prompt}
-                ],
-                "temperature": config.get("temperature", 0.7)
+                ]
             }
+
+            # temperatureはGPT-5.1などの一部モデルでサポートされていないため、configに含まれている場合のみ設定
+            if "temperature" in config:
+                api_params["temperature"] = config["temperature"]
 
             # max_completion_tokens が設定されていればそれを使用、なければ max_tokens
             if max_completion_tokens:

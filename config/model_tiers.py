@@ -43,7 +43,7 @@ class ModelTier:
         "provider": AIProvider.OPENAI,
         "model": "gpt-5-mini",  # ✅ GPT-5 mini（デフォルト: $0.25/$2.00）
         "description": "高速で効率的な対話応答",
-        "temperature": 0.7,
+        # temperatureはGPT-5.1モデルでサポートされていないため削除
         "max_completion_tokens": 2048,
         "cost_per_1k_tokens": 0.00025  # GPT-5 mini
     }
