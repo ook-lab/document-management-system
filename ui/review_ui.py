@@ -80,14 +80,20 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
 
             logger.info(f"  ✓ '{key}' はリストで、要素数: {len(value)}")
 
-            # extracted_tablesは特別処理（文字列のリストでもOK）
+            # extracted_tablesは特別処理（文字列のリストをパースして構造化データに変換）
             if key == "extracted_tables":
-                logger.info(f"  ✓ '{key}' は extracted_tables として構造化フィールドに追加")
-                structured_fields.append({
-                    "key": key,
-                    "label": _format_field_name(key),
-                    "data": value
-                })
+                logger.info(f"  ✓ '{key}' は extracted_tables として検出 - パース処理を実行")
+                from ui.utils.table_parser import parse_extracted_tables
+                parsed_tables = parse_extracted_tables(value)
+                if parsed_tables:
+                    logger.info(f"  ✓ {len(parsed_tables)} 個の表をパースしました")
+                    structured_fields.append({
+                        "key": key,
+                        "label": _format_field_name(key),
+                        "data": parsed_tables
+                    })
+                else:
+                    logger.warning(f"  ⚠️ '{key}' のパースに失敗しました")
                 continue
 
             # 配列の最初の要素が辞書であることを確認（構造化データの証拠）
