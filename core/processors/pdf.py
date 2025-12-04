@@ -187,16 +187,31 @@ class PDFProcessor:
                     text = page.extract_text() or ""
                     page_texts.append(text)
 
-                    # 表抽出（デフォルト設定 - すべて抽出）
-                    tables = page.extract_tables()
+                    # 表抽出（複数戦略で試行）
                     tables_md = []
 
+                    # 戦略1: デフォルト（罫線ベース）
+                    tables = page.extract_tables()
                     if tables:
+                        logger.info(f"ページ {i+1}: 罫線ベースで {len(tables)} 個の表を検出")
                         for table in tables:
-                            # 表をMarkdown形式に変換
                             table_md = self._table_to_markdown(table)
                             if table_md:
                                 tables_md.append(table_md)
+
+                    # 戦略2: テキストベース（罫線がない表用）
+                    if not tables:
+                        logger.info(f"ページ {i+1}: 罫線なし - テキストベース戦略を試行")
+                        text_tables = page.extract_tables({
+                            "vertical_strategy": "text",
+                            "horizontal_strategy": "text"
+                        })
+                        if text_tables:
+                            logger.info(f"ページ {i+1}: テキストベースで {len(text_tables)} 個の表を検出")
+                            for table in text_tables:
+                                table_md = self._table_to_markdown(table)
+                                if table_md:
+                                    tables_md.append(table_md)
 
                     page_tables.append(tables_md)
 
