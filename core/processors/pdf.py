@@ -292,7 +292,7 @@ class PDFProcessor:
 
     def _remove_irrelevant_rows(self, table: List[List]) -> None:
         """
-        表の最後の行から不要な行を削除（in-place）
+        表のヘッダーとフッターから不要な行を削除（in-place）
 
         Args:
             table: 2次元リスト（変更される）
@@ -302,21 +302,33 @@ class PDFProcessor:
 
         irrelevant_keywords = [
             "営業時間", "E-MAIL", "Ｅ-ＭＡＩＬ", "TEL", "FAX",
-            "住所", "アクセス", "URL", "http", "www."
+            "住所", "アクセス", "URL", "http", "www.", "@"
         ]
 
-        # 最後の5行をチェック
         rows_to_remove = []
-        check_range = min(5, len(table))
 
-        for i in range(len(table) - check_range, len(table)):
+        # ヘッダー部分（最初の3行）をチェック
+        header_check_range = min(3, len(table))
+        for i in range(header_check_range):
             row = table[i]
             row_text = " ".join(str(cell) for cell in row if cell)
 
             # 不要なキーワードが含まれているかチェック
             if any(keyword in row_text for keyword in irrelevant_keywords):
                 rows_to_remove.append(i)
-                logger.debug(f"不要な行を検出: {row_text[:50]}...")
+                logger.debug(f"不要なヘッダー行を検出: {row_text[:50]}...")
+
+        # フッター部分（最後の5行）をチェック
+        footer_check_range = min(5, len(table))
+        for i in range(len(table) - footer_check_range, len(table)):
+            row = table[i]
+            row_text = " ".join(str(cell) for cell in row if cell)
+
+            # 不要なキーワードが含まれているかチェック
+            if any(keyword in row_text for keyword in irrelevant_keywords):
+                if i not in rows_to_remove:  # 重複チェック
+                    rows_to_remove.append(i)
+                    logger.debug(f"不要なフッター行を検出: {row_text[:50]}...")
 
         # 後ろから削除（インデックスがずれないように）
         for i in sorted(rows_to_remove, reverse=True):
