@@ -351,6 +351,95 @@ def _render_single_structured_table(field_key: str, table_data: Dict[str, Any]) 
         return table_data
 
 
+def _render_extracted_table(field_key: str, table_data: Dict[str, Any]) -> Dict[str, Any]:
+    """
+    extracted_tables の1つのテーブルをレンダリング
+
+    Args:
+        field_key: 一意なキー (st.data_editor用)
+        table_data: {page, table_number, headers, rows} 形式のデータ
+
+    Returns:
+        編集後のテーブルデータ
+    """
+    page = table_data.get("page", 1)
+    table_number = table_data.get("table_number", 1)
+    headers = table_data.get("headers", [])
+    rows = table_data.get("rows", [])
+
+    if not rows and not headers:
+        st.info(f"ページ{page} 表{table_number}: データがありません")
+        return table_data
+
+    # headersとrowsを使ってDataFrameを作成
+    try:
+        if headers:
+            # ヘッダーがある場合：rowsを辞書のリストに変換
+            df_data = []
+            for row in rows:
+                # rowの長さがheadersと異なる場合は調整
+                row_dict = {}
+                for i, header in enumerate(headers):
+                    if i < len(row):
+                        row_dict[header] = row[i]
+                    else:
+                        row_dict[header] = ""
+                df_data.append(row_dict)
+            df = pd.DataFrame(df_data)
+        else:
+            # ヘッダーがない場合：rowsをそのまま使用
+            df = pd.DataFrame(rows)
+
+        # PyArrow エラー対策: 型強制とデータクリーニング
+        df = df.astype(str)
+        df = df.fillna("")
+        df = df.replace(["None", "nan", "NaN", "null"], "")
+
+    except Exception as e:
+        st.error(f"データフレーム変換エラー: {e}")
+        st.json(table_data)
+        return table_data
+
+    # 表のメタ情報を表示
+    st.markdown(f"#### ページ{page} 表{table_number}")
+    st.caption(f"全 {len(df)} 行 × {len(df.columns)} 列")
+
+    # 編集可能な表を表示
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        num_rows="dynamic",
+        key=f"table_{field_key}",
+        height=400
+    )
+
+    # データフレームを元の形式に戻す
+    try:
+        # ヘッダーを更新
+        new_headers = edited_df.columns.tolist()
+
+        # 行データを更新
+        new_rows = []
+        for _, row in edited_df.iterrows():
+            row_data = [str(cell) if cell != "" else "" for cell in row.values]
+            # 空でない行のみ追加
+            if any(cell != "" for cell in row_data):
+                new_rows.append(row_data)
+
+        # 編集後のデータで table_data を更新
+        edited_table_data = {
+            "page": page,
+            "table_number": table_number,
+            "headers": new_headers,
+            "rows": new_rows
+        }
+        return edited_table_data
+
+    except Exception as e:
+        st.error(f"データ変換エラー: {e}")
+        return table_data
+
+
 def _reorder_columns(df: pd.DataFrame) -> pd.DataFrame:
     """
     データフレームの列を見やすく並び替え
@@ -418,6 +507,32 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
     if not array_value:
         st.info(f"{label}のデータがありません")
         return []
+
+    # --- extracted_tables の特別処理 ---
+    # extracted_tables は {page, table_number, headers, rows} の形式
+    if "extracted_tables" in field_name and isinstance(array_value, list):
+        # 複数の表がある場合、それぞれを個別のタブで表示
+        if len(array_value) > 1:
+            table_tabs = st.tabs([
+                f"ページ{table.get('page', i+1)} 表{table.get('table_number', i+1)}"
+                for i, table in enumerate(array_value)
+            ])
+            edited_tables = []
+            for i, (tab, table_data) in enumerate(zip(table_tabs, array_value)):
+                with tab:
+                    edited_table = _render_extracted_table(
+                        f"{field_name}_{i}",
+                        table_data
+                    )
+                    edited_tables.append(edited_table)
+            return edited_tables
+        elif len(array_value) == 1:
+            # 1つの表のみの場合はタブなしで表示
+            edited_table = _render_extracted_table(
+                field_name,
+                array_value[0]
+            )
+            return [edited_table]
 
     # --- structured_tables の特別処理 ---
     # structured_tables は {table_title, table_type, headers, rows} の形式

@@ -80,6 +80,16 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
 
             logger.info(f"  ✓ '{key}' はリストで、要素数: {len(value)}")
 
+            # extracted_tablesは特別処理（文字列のリストでもOK）
+            if key == "extracted_tables":
+                logger.info(f"  ✓ '{key}' は extracted_tables として構造化フィールドに追加")
+                structured_fields.append({
+                    "key": key,
+                    "label": _format_field_name(key),
+                    "data": value
+                })
+                continue
+
             # 配列の最初の要素が辞書であることを確認（構造化データの証拠）
             if isinstance(value[0], dict):
                 logger.info(f"  ✓ '{key}' の最初の要素は辞書です → 構造化フィールドとして検出!")
