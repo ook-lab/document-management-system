@@ -67,4 +67,4 @@ async def reprocess_file(file_name: str):
         logger.error("❌ 再処理失敗")
 
 if __name__ == "__main__":
-    asyncio.run(reprocess_file("学年通信（29）.pdf"))
+    asyncio.run(reprocess_file("価格表(小）2025.5.1以降 (1).pdf"))
