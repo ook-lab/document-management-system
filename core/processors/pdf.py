@@ -249,12 +249,12 @@ class PDFProcessor:
 
     def _is_valid_table(self, table: List[List]) -> bool:
         """
-        表の品質をチェック
+        表の品質をチェック（緩和版）
 
         判定基準:
         1. 最低行数・列数チェック（2行2列以上）
-        2. 空セル率チェック（70%以下）
-        3. 不要な行を含まないかチェック（営業時間、E-MAILなど）
+        2. 空セル率チェック（85%以下） - 緩和
+        3. 不要な行の除外（最後の数行のみチェック）
 
         Args:
             table: pdfplumberのextract_tables()が返す2次元リスト
@@ -270,7 +270,7 @@ class PDFProcessor:
         if num_cols < 2:
             return False
 
-        # 空セル率チェック
+        # 空セル率チェック（緩和: 85%に変更）
         total_cells = 0
         empty_cells = 0
         for row in table:
@@ -280,28 +280,47 @@ class PDFProcessor:
                     empty_cells += 1
 
         empty_ratio = empty_cells / total_cells if total_cells > 0 else 1.0
-        if empty_ratio > 0.7:  # 70%以上が空セル
+        if empty_ratio > 0.85:  # 85%以上が空セル
             logger.debug(f"表の品質チェック: 空セル率が高すぎます ({empty_ratio:.1%})")
             return False
 
-        # 不要な行チェック（営業時間、E-MAIL、TEL/FAXなど）
-        irrelevant_keywords = [
-            "営業時間", "E-MAIL", "Ｅ-ＭＡＩＬ", "TEL/FAX", "電話", "FAX",
-            "住所", "アクセス", "URL", "http", "www.", "@"
-        ]
-
-        # 表全体のテキストを結合
-        table_text = " ".join(
-            str(cell) for row in table for cell in row if cell
-        )
-
-        # 不要なキーワードが多い場合は除外
-        irrelevant_count = sum(1 for keyword in irrelevant_keywords if keyword in table_text)
-        if irrelevant_count >= 2:  # 2つ以上のキーワードがある場合
-            logger.debug(f"表の品質チェック: 不要なキーワードが含まれています ({irrelevant_count}個)")
-            return False
+        # 表の後処理：最後の行に不要な情報が含まれる場合は削除
+        # (営業時間、E-MAILなどは表の最後に記載されることが多い)
+        self._remove_irrelevant_rows(table)
 
         return True
+
+    def _remove_irrelevant_rows(self, table: List[List]) -> None:
+        """
+        表の最後の行から不要な行を削除（in-place）
+
+        Args:
+            table: 2次元リスト（変更される）
+        """
+        if not table or len(table) < 3:
+            return
+
+        irrelevant_keywords = [
+            "営業時間", "E-MAIL", "Ｅ-ＭＡＩＬ", "TEL", "FAX",
+            "住所", "アクセス", "URL", "http", "www."
+        ]
+
+        # 最後の5行をチェック
+        rows_to_remove = []
+        check_range = min(5, len(table))
+
+        for i in range(len(table) - check_range, len(table)):
+            row = table[i]
+            row_text = " ".join(str(cell) for cell in row if cell)
+
+            # 不要なキーワードが含まれているかチェック
+            if any(keyword in row_text for keyword in irrelevant_keywords):
+                rows_to_remove.append(i)
+                logger.debug(f"不要な行を検出: {row_text[:50]}...")
+
+        # 後ろから削除（インデックスがずれないように）
+        for i in sorted(rows_to_remove, reverse=True):
+            del table[i]
 
     def _table_to_markdown(self, table: List[List]) -> str:
         """
