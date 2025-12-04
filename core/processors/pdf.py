@@ -187,30 +187,16 @@ class PDFProcessor:
                     text = page.extract_text() or ""
                     page_texts.append(text)
 
-                    # 表抽出（より厳密な設定）
-                    table_settings = {
-                        "vertical_strategy": "lines",
-                        "horizontal_strategy": "lines",
-                        "snap_tolerance": 3,
-                        "join_tolerance": 3,
-                        "edge_min_length": 3,
-                        "min_words_vertical": 3,
-                        "min_words_horizontal": 1,
-                        "intersection_tolerance": 3
-                    }
-                    tables = page.extract_tables(table_settings=table_settings)
+                    # 表抽出（デフォルト設定 - すべて抽出）
+                    tables = page.extract_tables()
                     tables_md = []
 
                     if tables:
                         for table in tables:
-                            # 表の品質チェック
-                            if self._is_valid_table(table):
-                                # 表をMarkdown形式に変換
-                                table_md = self._table_to_markdown(table)
-                                if table_md:
-                                    tables_md.append(table_md)
-                            else:
-                                logger.debug(f"ページ {i+1}: 品質チェック不合格の表をスキップ")
+                            # 表をMarkdown形式に変換
+                            table_md = self._table_to_markdown(table)
+                            if table_md:
+                                tables_md.append(table_md)
 
                     page_tables.append(tables_md)
 
@@ -246,93 +232,6 @@ class PDFProcessor:
                 "metadata": {"error": str(e)},
                 "error_message": str(e)
             }
-
-    def _is_valid_table(self, table: List[List]) -> bool:
-        """
-        表の品質をチェック（緩和版）
-
-        判定基準:
-        1. 最低行数・列数チェック（2行2列以上）
-        2. 空セル率チェック（85%以下） - 緩和
-        3. 不要な行の除外（最後の数行のみチェック）
-
-        Args:
-            table: pdfplumberのextract_tables()が返す2次元リスト
-
-        Returns:
-            True: 有効な表, False: 無効な表
-        """
-        if not table or len(table) < 2:
-            return False
-
-        # 列数チェック（最初の行を基準）
-        num_cols = len(table[0]) if table[0] else 0
-        if num_cols < 2:
-            return False
-
-        # 空セル率チェック（緩和: 85%に変更）
-        total_cells = 0
-        empty_cells = 0
-        for row in table:
-            for cell in row:
-                total_cells += 1
-                if cell is None or str(cell).strip() == "":
-                    empty_cells += 1
-
-        empty_ratio = empty_cells / total_cells if total_cells > 0 else 1.0
-        if empty_ratio > 0.85:  # 85%以上が空セル
-            logger.debug(f"表の品質チェック: 空セル率が高すぎます ({empty_ratio:.1%})")
-            return False
-
-        # 表の後処理：最後の行に不要な情報が含まれる場合は削除
-        # (営業時間、E-MAILなどは表の最後に記載されることが多い)
-        self._remove_irrelevant_rows(table)
-
-        return True
-
-    def _remove_irrelevant_rows(self, table: List[List]) -> None:
-        """
-        表のヘッダーとフッターから不要な行を削除（in-place）
-
-        Args:
-            table: 2次元リスト（変更される）
-        """
-        if not table or len(table) < 3:
-            return
-
-        irrelevant_keywords = [
-            "営業時間", "E-MAIL", "Ｅ-ＭＡＩＬ", "TEL", "FAX",
-            "住所", "アクセス", "URL", "http", "www.", "@"
-        ]
-
-        rows_to_remove = []
-
-        # ヘッダー部分（最初の3行）をチェック
-        header_check_range = min(3, len(table))
-        for i in range(header_check_range):
-            row = table[i]
-            row_text = " ".join(str(cell) for cell in row if cell)
-
-            # 不要なキーワードが含まれているかチェック
-            if any(keyword in row_text for keyword in irrelevant_keywords):
-                rows_to_remove.append(i)
-                logger.debug(f"不要なヘッダー行を検出: {row_text[:50]}...")
-
-        # フッター部分（最後の5行）をチェック
-        footer_check_range = min(5, len(table))
-        for i in range(len(table) - footer_check_range, len(table)):
-            row = table[i]
-            row_text = " ".join(str(cell) for cell in row if cell)
-
-            # 不要なキーワードが含まれているかチェック
-            if any(keyword in row_text for keyword in irrelevant_keywords):
-                if i not in rows_to_remove:  # 重複チェック
-                    rows_to_remove.append(i)
-                    logger.debug(f"不要なフッター行を検出: {row_text[:50]}...")
-
-        # 後ろから削除（インデックスがずれないように）
-        for i in sorted(rows_to_remove, reverse=True):
-            del table[i]
 
     def _table_to_markdown(self, table: List[List]) -> str:
         """
