@@ -7,13 +7,14 @@ import json
 from typing import Dict, Any, Optional
 
 
-def render_json_preview(metadata: Dict[str, Any], editable: bool = True) -> Optional[Dict[str, Any]]:
+def render_json_preview(metadata: Dict[str, Any], editable: bool = True, key_suffix: str = "") -> Optional[Dict[str, Any]]:
     """
     JSONプレビュー/編集UI
 
     Args:
         metadata: メタデータ
         editable: 編集可能かどうか
+        key_suffix: Streamlitウィジェットのキーに付けるサフィックス
 
     Returns:
         編集可能な場合: 編集後のメタデータ
@@ -50,7 +51,7 @@ def render_json_preview(metadata: Dict[str, Any], editable: bool = True) -> Opti
             value=json_str,
             height=500,
             help="JSON形式で直接編集できます。保存前に構文エラーがないか確認してください。",
-            key="json_editor"
+            key=f"json_editor_{key_suffix}" if key_suffix else "json_editor"
         )
 
         # JSON検証
