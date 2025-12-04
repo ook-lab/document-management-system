@@ -125,6 +125,12 @@ class PDFProcessor:
                 # ページヘッダー
                 full_text_parts.append(f"\n\n--- Page {page_num} ---\n\n")
 
+                # Vision補完（該当ページのみ）- 先頭に配置することで年号などの重要情報を最初に提示
+                if i in vision_supplements:
+                    full_text_parts.append("--- Vision OCR (Header & Important Info) ---\n")
+                    full_text_parts.append(vision_supplements[i])
+                    full_text_parts.append("\n\n--- Text Extraction ---\n")
+
                 # pdfplumberテキスト
                 if text.strip():
                     full_text_parts.append(text)
@@ -134,11 +140,6 @@ class PDFProcessor:
                     full_text_parts.append("\n\n[Tables from pdfplumber]\n")
                     for table_idx, table_md in enumerate(tables, 1):
                         full_text_parts.append(f"\n**Table {table_idx}**\n{table_md}\n")
-
-                # Vision補完（該当ページのみ）
-                if i in vision_supplements:
-                    full_text_parts.append("\n\n--- Vision Supplement ---\n")
-                    full_text_parts.append(vision_supplements[i])
 
             final_content = "".join(full_text_parts)
 
