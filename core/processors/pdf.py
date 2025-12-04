@@ -187,16 +187,30 @@ class PDFProcessor:
                     text = page.extract_text() or ""
                     page_texts.append(text)
 
-                    # 表抽出
-                    tables = page.extract_tables()
+                    # 表抽出（より厳密な設定）
+                    table_settings = {
+                        "vertical_strategy": "lines",
+                        "horizontal_strategy": "lines",
+                        "snap_tolerance": 3,
+                        "join_tolerance": 3,
+                        "edge_min_length": 3,
+                        "min_words_vertical": 3,
+                        "min_words_horizontal": 1,
+                        "intersection_tolerance": 3
+                    }
+                    tables = page.extract_tables(table_settings=table_settings)
                     tables_md = []
 
                     if tables:
                         for table in tables:
-                            # 表をMarkdown形式に変換
-                            table_md = self._table_to_markdown(table)
-                            if table_md:
-                                tables_md.append(table_md)
+                            # 表の品質チェック
+                            if self._is_valid_table(table):
+                                # 表をMarkdown形式に変換
+                                table_md = self._table_to_markdown(table)
+                                if table_md:
+                                    tables_md.append(table_md)
+                            else:
+                                logger.debug(f"ページ {i+1}: 品質チェック不合格の表をスキップ")
 
                     page_tables.append(tables_md)
 
@@ -232,6 +246,62 @@ class PDFProcessor:
                 "metadata": {"error": str(e)},
                 "error_message": str(e)
             }
+
+    def _is_valid_table(self, table: List[List]) -> bool:
+        """
+        表の品質をチェック
+
+        判定基準:
+        1. 最低行数・列数チェック（2行2列以上）
+        2. 空セル率チェック（70%以下）
+        3. 不要な行を含まないかチェック（営業時間、E-MAILなど）
+
+        Args:
+            table: pdfplumberのextract_tables()が返す2次元リスト
+
+        Returns:
+            True: 有効な表, False: 無効な表
+        """
+        if not table or len(table) < 2:
+            return False
+
+        # 列数チェック（最初の行を基準）
+        num_cols = len(table[0]) if table[0] else 0
+        if num_cols < 2:
+            return False
+
+        # 空セル率チェック
+        total_cells = 0
+        empty_cells = 0
+        for row in table:
+            for cell in row:
+                total_cells += 1
+                if cell is None or str(cell).strip() == "":
+                    empty_cells += 1
+
+        empty_ratio = empty_cells / total_cells if total_cells > 0 else 1.0
+        if empty_ratio > 0.7:  # 70%以上が空セル
+            logger.debug(f"表の品質チェック: 空セル率が高すぎます ({empty_ratio:.1%})")
+            return False
+
+        # 不要な行チェック（営業時間、E-MAIL、TEL/FAXなど）
+        irrelevant_keywords = [
+            "営業時間", "E-MAIL", "Ｅ-ＭＡＩＬ", "TEL/FAX", "電話", "FAX",
+            "住所", "アクセス", "URL", "http", "www.", "@"
+        ]
+
+        # 表全体のテキストを結合
+        table_text = " ".join(
+            str(cell) for row in table for cell in row if cell
+        )
+
+        # 不要なキーワードが多い場合は除外
+        irrelevant_count = sum(1 for keyword in irrelevant_keywords if keyword in table_text)
+        if irrelevant_count >= 2:  # 2つ以上のキーワードがある場合
+            logger.debug(f"表の品質チェック: 不要なキーワードが含まれています ({irrelevant_count}個)")
+            return False
+
+        return True
 
     def _table_to_markdown(self, table: List[List]) -> str:
         """
