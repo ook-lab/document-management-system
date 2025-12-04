@@ -135,7 +135,7 @@ def _format_field_name(field_name: str) -> str:
         "structured_tables": "📋 その他リスト",
         "monthly_schedule_blocks": "📅 月間予定表",
         "learning_content_blocks": "📚 教科別学習予定",
-        "extracted_tables": "📊 抽出された表データ"
+        "extracted_tables": "📊 その他表形式"
     }
 
     # マッピングに存在する場合はそれを返す
@@ -373,8 +373,17 @@ def _render_extracted_table(field_key: str, table_data: Dict[str, Any]) -> Dict[
 
     # headersとrowsを使ってDataFrameを作成
     try:
-        if headers:
-            # ヘッダーがある場合：rowsを辞書のリストに変換
+        # rowsが既に辞書のリストの場合（新形式）
+        if rows and isinstance(rows[0], dict):
+            df = pd.DataFrame(rows)
+            # ヘッダーの順序を調整
+            if headers:
+                # headersで指定された順序に並び替え（存在するカラムのみ）
+                available_cols = [h for h in headers if h in df.columns]
+                if available_cols:
+                    df = df[available_cols]
+        elif headers:
+            # rowsがリストのリストの場合（旧形式）
             df_data = []
             for row in rows:
                 # rowの長さがheadersと異なる場合は調整
@@ -513,10 +522,18 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
     if "extracted_tables" in field_name and isinstance(array_value, list):
         # 複数の表がある場合、それぞれを個別のタブで表示
         if len(array_value) > 1:
-            table_tabs = st.tabs([
-                f"ページ{table.get('page', i+1)} 表{table.get('table_number', i+1)}"
-                for i, table in enumerate(array_value)
-            ])
+            # タブ名を生成: description > table_id > デフォルト
+            tab_names = []
+            for i, table in enumerate(array_value):
+                if 'description' in table and table['description']:
+                    tab_names.append(table['description'])
+                elif 'table_id' in table and table['table_id']:
+                    tab_names.append(table['table_id'])
+                elif 'page' in table or 'table_number' in table:
+                    tab_names.append(f"ページ{table.get('page', i+1)} 表{table.get('table_number', i+1)}")
+                else:
+                    tab_names.append(f"表{i+1}")
+            table_tabs = st.tabs(tab_names)
             edited_tables = []
             for i, (tab, table_data) in enumerate(zip(table_tabs, array_value)):
                 with tab:

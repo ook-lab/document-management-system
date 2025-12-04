@@ -55,6 +55,8 @@ def parse_extracted_tables(extracted_tables: Any) -> List[Dict[str, Any]]:
 
     Args:
         extracted_tables: データベースから取得した`extracted_tables`
+                         - 新形式: 辞書のリスト [{"table_id": ..., "headers": [...], "rows": [...]}, ...]
+                         - 旧形式: Markdown文字列のリストのリスト
 
     Returns:
         構造化された表データのリスト
@@ -62,24 +64,30 @@ def parse_extracted_tables(extracted_tables: Any) -> List[Dict[str, Any]]:
     if not extracted_tables:
         return []
 
-    # extracted_tablesがリストのリストの場合（ページごとの表）
-    if isinstance(extracted_tables, list):
-        all_tables = []
+    if not isinstance(extracted_tables, list):
+        return []
 
-        for page_idx, page_tables in enumerate(extracted_tables, 1):
-            if isinstance(page_tables, list):
-                for table_idx, table_data in enumerate(page_tables, 1):
-                    if isinstance(table_data, str):
-                        # Markdown形式の文字列をパース
-                        parsed_table = parse_markdown_table(table_data)
-                        if parsed_table["headers"] or parsed_table["rows"]:
-                            all_tables.append({
-                                "page": page_idx,
-                                "table_number": table_idx,
-                                "headers": parsed_table["headers"],
-                                "rows": parsed_table["rows"]
-                            })
+    # 新形式: 既に構造化された辞書のリストの場合
+    if len(extracted_tables) > 0 and isinstance(extracted_tables[0], dict):
+        # 'headers'キーと'rows'キーが存在するか確認
+        if 'headers' in extracted_tables[0] and 'rows' in extracted_tables[0]:
+            # そのまま返す（既に正しい形式）
+            return extracted_tables
 
-        return all_tables
+    # 旧形式: extracted_tablesがリストのリストの場合（ページごとの表）
+    all_tables = []
+    for page_idx, page_tables in enumerate(extracted_tables, 1):
+        if isinstance(page_tables, list):
+            for table_idx, table_data in enumerate(page_tables, 1):
+                if isinstance(table_data, str):
+                    # Markdown形式の文字列をパース
+                    parsed_table = parse_markdown_table(table_data)
+                    if parsed_table["headers"] or parsed_table["rows"]:
+                        all_tables.append({
+                            "page": page_idx,
+                            "table_number": table_idx,
+                            "headers": parsed_table["headers"],
+                            "rows": parsed_table["rows"]
+                        })
 
-    return []
+    return all_tables

@@ -201,9 +201,10 @@ class TwoStageIngestionPipeline:
                         summary = stage2_result.get('summary', summary)
                         document_date = stage2_result.get('document_date')
                         tags = stage2_result.get('tags', [])
+                        tables = stage2_result.get('tables', [])  # 表データを取得
                         stage2_metadata = stage2_result.get('metadata', {})
                         stage2_confidence = stage2_result.get('extraction_confidence', 0.0)
-                        
+
                         # metadataをマージ（Stage 2優先）
                         metadata = {
                             **base_metadata,
@@ -214,6 +215,8 @@ class TwoStageIngestionPipeline:
                             metadata['tags'] = tags
                         if document_date:
                             metadata['document_date'] = document_date
+                        if tables:
+                            metadata['tables'] = tables  # 表データをmetadataに追加
                         
                         # 最終的な信頼度（Stage 1とStage 2の加重平均）
                         confidence = (stage1_confidence * 0.3 + stage2_confidence * 0.7)
@@ -328,6 +331,11 @@ class TwoStageIngestionPipeline:
             if summary:
                 summary = summary.replace('\x00', '')
 
+            # metadata.tables から extracted_tables を抽出
+            extracted_tables = None
+            if 'tables' in metadata and metadata['tables']:
+                extracted_tables = metadata['tables']
+
             document_data = {
                 "source_type": "drive",
                 "source_id": file_id,
@@ -341,6 +349,7 @@ class TwoStageIngestionPipeline:
                 "summary": summary,
                 "embedding": embedding,
                 "metadata": metadata,
+                "extracted_tables": extracted_tables,  # UIでの表表示用
                 "content_hash": content_hash,
                 "confidence": confidence,  # AIモデルの確信度
                 "total_confidence": total_confidence,  # 複合信頼度スコア
