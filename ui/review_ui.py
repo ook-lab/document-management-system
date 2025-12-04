@@ -453,7 +453,7 @@ def main():
                 form_fields = [f for f in editable_fields if f["name"] not in structured_field_keys]
 
                 if form_fields:
-                    edited_metadata = render_form_editor(metadata, form_fields)
+                    edited_metadata = render_form_editor(metadata, form_fields, doc_id)
                 else:
                     st.info("このドキュメントのフィールドは全て専用タブで編集できます")
                     st.markdown("各データタブまたはJSONプレビュータブをご利用ください")

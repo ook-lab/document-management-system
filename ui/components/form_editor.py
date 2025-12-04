@@ -60,13 +60,14 @@ def _is_empty_value(value: Any) -> bool:
     return False
 
 
-def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -> Dict[str, Any]:
+def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]], doc_id: str = None) -> Dict[str, Any]:
     """
     スキーマ定義に基づいてフォーム形式のエディタを表示
 
     Args:
         metadata: 現在のメタデータ
         fields: スキーマから取得したフィールド定義リスト
+        doc_id: ドキュメントID（widgetのkeyに使用してキャッシュ問題を回避）
 
     Returns:
         編集後のメタデータ
@@ -85,7 +86,7 @@ def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -
             current_value = metadata.get(field_name)
             if not _is_empty_value(current_value):
                 edited_metadata[field_name] = _render_text_blocks_input(
-                    field_name, "", current_value, field.get("items")
+                    field_name, "", current_value, field.get("items"), doc_id
                 )
             continue  # 他の処理をスキップ
 
@@ -108,54 +109,58 @@ def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -
             if field.get("format") == "date":
                 # 日付入力
                 edited_metadata[field_name] = _render_date_input(
-                    field_name, label, current_value, help_text
+                    field_name, label, current_value, help_text, doc_id
                 )
             elif field.get("enum"):
                 # 選択肢入力
                 edited_metadata[field_name] = _render_select_input(
-                    field_name, label, current_value, field["enum"], help_text
+                    field_name, label, current_value, field["enum"], help_text, doc_id
                 )
             else:
                 # テキスト入力
+                widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
                 edited_metadata[field_name] = st.text_input(
                     label,
                     value=current_value if current_value else "",
                     help=help_text,
-                    key=f"form_{field_name}"
+                    key=widget_key
                 )
 
         elif field_type == "integer":
             # 整数入力
+            widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
             edited_metadata[field_name] = st.number_input(
                 label,
                 value=int(current_value) if current_value is not None else 0,
                 step=1,
                 help=help_text,
-                key=f"form_{field_name}"
+                key=widget_key
             )
 
         elif field_type == "number":
             # 数値入力
+            widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
             edited_metadata[field_name] = st.number_input(
                 label,
                 value=float(current_value) if current_value is not None else 0.0,
                 help=help_text,
-                key=f"form_{field_name}"
+                key=widget_key
             )
 
         elif field_type == "boolean":
             # チェックボックス
+            widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
             edited_metadata[field_name] = st.checkbox(
                 label,
                 value=bool(current_value) if current_value is not None else False,
                 help=help_text,
-                key=f"form_{field_name}"
+                key=widget_key
             )
 
         elif field_type == "array":
             # 配列入力
             edited_metadata[field_name] = _render_array_input(
-                field_name, label, current_value, field.get("items"), help_text
+                field_name, label, current_value, field.get("items"), help_text, doc_id
             )
 
         elif field_type == "object":
@@ -164,24 +169,25 @@ def render_form_editor(metadata: Dict[str, Any], fields: List[Dict[str, Any]]) -
                 if field_description:
                     st.caption(field_description)
                 edited_metadata[field_name] = _render_object_input(
-                    field_name, current_value
+                    field_name, current_value, doc_id
                 )
 
         else:
             # その他の型はテキストエリアで表示
             text_value = str(current_value) if current_value else ""
+            widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
             edited_metadata[field_name] = st.text_area(
                 label,
                 value=text_value,
                 height=_calculate_text_height(text_value),
                 help=help_text,
-                key=f"form_{field_name}"
+                key=widget_key
             )
 
     return edited_metadata
 
 
-def _render_date_input(field_name: str, label: str, current_value: Any, help_text: str) -> str:
+def _render_date_input(field_name: str, label: str, current_value: Any, help_text: str, doc_id: str = None) -> str:
     """日付入力フィールド"""
     if current_value:
         try:
@@ -194,33 +200,35 @@ def _render_date_input(field_name: str, label: str, current_value: Any, help_tex
     else:
         current_date = date.today()
 
+    widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
     selected_date = st.date_input(
         label,
         value=current_date,
         help=help_text,
-        key=f"form_{field_name}"
+        key=widget_key
     )
 
     return selected_date.strftime("%Y-%m-%d")
 
 
-def _render_select_input(field_name: str, label: str, current_value: Any, options: List[str], help_text: str) -> str:
+def _render_select_input(field_name: str, label: str, current_value: Any, options: List[str], help_text: str, doc_id: str = None) -> str:
     """選択肢入力フィールド"""
     if current_value and current_value in options:
         index = options.index(current_value)
     else:
         index = 0
 
+    widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
     return st.selectbox(
         label,
         options=options,
         index=index,
         help=help_text,
-        key=f"form_{field_name}"
+        key=widget_key
     )
 
 
-def _render_array_input(field_name: str, label: str, current_value: Any, items_def: Dict, help_text: str) -> List:
+def _render_array_input(field_name: str, label: str, current_value: Any, items_def: Dict, help_text: str, doc_id: str = None) -> List:
     """配列入力フィールド"""
     if not current_value:
         current_value = []
@@ -233,12 +241,13 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
             st.caption(help_text)
 
         text_value = "\n".join(current_value) if isinstance(current_value, list) else ""
+        widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
         edited_text = st.text_area(
             f"{label}（1行1項目）",
             value=text_value,
             height=_calculate_text_height(text_value, min_height=100, max_height=400),
             label_visibility="collapsed",
-            key=f"form_{field_name}"
+            key=widget_key
         )
         return [line.strip() for line in edited_text.split("\n") if line.strip()]
 
@@ -247,18 +256,19 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
         st.markdown(f"**{label}**")
         if help_text:
             st.caption(help_text)
-        return _render_object_array_input(field_name, label, current_value, items_def)
+        return _render_object_array_input(field_name, label, current_value, items_def, doc_id)
 
     else:
         # デフォルト: JSON文字列として表示
         import json
         json_str = json.dumps(current_value, ensure_ascii=False, indent=2)
+        widget_key = f"form_{doc_id}_{field_name}" if doc_id else f"form_{field_name}"
         edited_json = st.text_area(
             f"{label}（JSON形式）",
             value=json_str,
             height=_calculate_text_height(json_str, min_height=150, max_height=500),
             label_visibility="collapsed",
-            key=f"form_{field_name}"
+            key=widget_key
         )
         try:
             return json.loads(edited_json)
@@ -267,7 +277,7 @@ def _render_array_input(field_name: str, label: str, current_value: Any, items_d
             return current_value
 
 
-def _render_text_blocks_input(field_name: str, label: str, current_value: List[Dict], items_def: Dict) -> List[Dict]:
+def _render_text_blocks_input(field_name: str, label: str, current_value: List[Dict], items_def: Dict, doc_id: str = None) -> List[Dict]:
     """
     text_blocks専用の入力フィールド
     各ブロックをtitleをヘッダーとするボックスで表示
@@ -277,6 +287,7 @@ def _render_text_blocks_input(field_name: str, label: str, current_value: List[D
         label: ラベル
         current_value: 現在の値（text_blocksの配列）
         items_def: スキーマのitems定義
+        doc_id: ドキュメントID（widgetのkeyに使用）
 
     Returns:
         編集後のtext_blocks配列
@@ -293,11 +304,12 @@ def _render_text_blocks_input(field_name: str, label: str, current_value: List[D
         # 各ブロックをexpanderで表示
         with st.expander(f"📝 {block_title}", expanded=True):
             # コンテンツの編集のみ（ラベル非表示）
+            widget_key = f"form_{doc_id}_{field_name}_{idx}_content" if doc_id else f"form_{field_name}_{idx}_content"
             edited_content = st.text_area(
                 "本文",
                 value=block_content,
                 height=_calculate_text_height(block_content, min_height=150, max_height=600),
-                key=f"form_{field_name}_{idx}_content",
+                key=widget_key,
                 label_visibility="collapsed"
             )
 
@@ -311,19 +323,21 @@ def _render_text_blocks_input(field_name: str, label: str, current_value: List[D
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button(f"➕ 新しいセクションを追加", key=f"add_{field_name}"):
+        button_key = f"add_{doc_id}_{field_name}" if doc_id else f"add_{field_name}"
+        if st.button(f"➕ 新しいセクションを追加", key=button_key):
             st.info("💡 保存後、新しいセクションが追加されます")
 
     with col2:
         if len(edited_array) > 0:
-            if st.button(f"🗑️ 最後のセクションを削除", key=f"remove_{field_name}"):
+            button_key = f"remove_{doc_id}_{field_name}" if doc_id else f"remove_{field_name}"
+            if st.button(f"🗑️ 最後のセクションを削除", key=button_key):
                 edited_array = edited_array[:-1]
                 st.success("最後のセクションを削除しました")
 
     return edited_array
 
 
-def _render_object_array_input(field_name: str, label: str, current_value: List[Dict], items_def: Dict) -> List[Dict]:
+def _render_object_array_input(field_name: str, label: str, current_value: List[Dict], items_def: Dict, doc_id: str = None) -> List[Dict]:
     """
     オブジェクト配列入力フィールド（スキーマ定義に基づく）
 
@@ -332,6 +346,7 @@ def _render_object_array_input(field_name: str, label: str, current_value: List[
         label: ラベル
         current_value: 現在の値（オブジェクトの配列）
         items_def: スキーマのitems定義
+        doc_id: ドキュメントID（widgetのkeyに使用）
 
     Returns:
         編集後のオブジェクト配列
@@ -349,7 +364,7 @@ def _render_object_array_input(field_name: str, label: str, current_value: List[
         edited_array = []
         for idx, item in enumerate(current_value):
             with st.expander(f"項目 {idx + 1}", expanded=False):
-                edited_item = _render_object_input(f"{field_name}_{idx}", item)
+                edited_item = _render_object_input(f"{field_name}_{idx}", item, doc_id)
                 edited_array.append(edited_item)
         return edited_array
 
@@ -384,53 +399,59 @@ def _render_object_array_input(field_name: str, label: str, current_value: List[
                     # contentフィールドは大きなテキストエリアで表示
                     if prop_name == "content" or len(str(prop_value)) > 100:
                         text_value = str(prop_value) if prop_value else ""
+                        widget_key = f"form_{doc_id}_{field_name}_{idx}_{prop_name}" if doc_id else f"form_{field_name}_{idx}_{prop_name}"
                         edited_item[prop_name] = st.text_area(
                             prop_label,
                             value=text_value,
                             height=_calculate_text_height(text_value, min_height=150, max_height=600),
                             help=prop_description,
-                            key=f"form_{field_name}_{idx}_{prop_name}"
+                            key=widget_key
                         )
                     else:
+                        widget_key = f"form_{doc_id}_{field_name}_{idx}_{prop_name}" if doc_id else f"form_{field_name}_{idx}_{prop_name}"
                         edited_item[prop_name] = st.text_input(
                             prop_label,
                             value=str(prop_value) if prop_value else "",
                             help=prop_description,
-                            key=f"form_{field_name}_{idx}_{prop_name}"
+                            key=widget_key
                         )
 
                 elif prop_type == "integer":
+                    widget_key = f"form_{doc_id}_{field_name}_{idx}_{prop_name}" if doc_id else f"form_{field_name}_{idx}_{prop_name}"
                     edited_item[prop_name] = st.number_input(
                         prop_label,
                         value=int(prop_value) if prop_value is not None else 0,
                         step=1,
                         help=prop_description,
-                        key=f"form_{field_name}_{idx}_{prop_name}"
+                        key=widget_key
                     )
 
                 elif prop_type == "number":
+                    widget_key = f"form_{doc_id}_{field_name}_{idx}_{prop_name}" if doc_id else f"form_{field_name}_{idx}_{prop_name}"
                     edited_item[prop_name] = st.number_input(
                         prop_label,
                         value=float(prop_value) if prop_value is not None else 0.0,
                         help=prop_description,
-                        key=f"form_{field_name}_{idx}_{prop_name}"
+                        key=widget_key
                     )
 
                 elif prop_type == "boolean":
+                    widget_key = f"form_{doc_id}_{field_name}_{idx}_{prop_name}" if doc_id else f"form_{field_name}_{idx}_{prop_name}"
                     edited_item[prop_name] = st.checkbox(
                         prop_label,
                         value=bool(prop_value) if prop_value is not None else False,
                         help=prop_description,
-                        key=f"form_{field_name}_{idx}_{prop_name}"
+                        key=widget_key
                     )
 
                 else:
                     # その他の型はテキスト入力
+                    widget_key = f"form_{doc_id}_{field_name}_{idx}_{prop_name}" if doc_id else f"form_{field_name}_{idx}_{prop_name}"
                     edited_item[prop_name] = st.text_input(
                         prop_label,
                         value=str(prop_value) if prop_value else "",
                         help=prop_description,
-                        key=f"form_{field_name}_{idx}_{prop_name}"
+                        key=widget_key
                     )
 
             edited_array.append(edited_item)
@@ -440,19 +461,21 @@ def _render_object_array_input(field_name: str, label: str, current_value: List[
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button(f"➕ 新しい項目を追加", key=f"add_{field_name}"):
+        button_key = f"add_{doc_id}_{field_name}" if doc_id else f"add_{field_name}"
+        if st.button(f"➕ 新しい項目を追加", key=button_key):
             st.info("💡 保存後、新しい項目が追加されます")
 
     with col2:
         if len(edited_array) > 0:
-            if st.button(f"🗑️ 最後の項目を削除", key=f"remove_{field_name}"):
+            button_key = f"remove_{doc_id}_{field_name}" if doc_id else f"remove_{field_name}"
+            if st.button(f"🗑️ 最後の項目を削除", key=button_key):
                 edited_array = edited_array[:-1]
                 st.success("最後の項目を削除しました")
 
     return edited_array
 
 
-def _render_object_input(field_name: str, current_value: Any) -> Dict:
+def _render_object_input(field_name: str, current_value: Any, doc_id: str = None) -> Dict:
     """オブジェクト入力フィールド"""
     import json
 
@@ -460,11 +483,12 @@ def _render_object_input(field_name: str, current_value: Any) -> Dict:
         current_value = {}
 
     json_str = json.dumps(current_value, ensure_ascii=False, indent=2)
+    widget_key = f"form_obj_{doc_id}_{field_name}" if doc_id else f"form_obj_{field_name}"
     edited_json = st.text_area(
         "JSON形式で編集",
         value=json_str,
         height=_calculate_text_height(json_str, min_height=150, max_height=500),
-        key=f"form_obj_{field_name}"
+        key=widget_key
     )
 
     try:
