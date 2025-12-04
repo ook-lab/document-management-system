@@ -192,6 +192,8 @@ class PDFProcessor:
 
                     # 戦略1: デフォルト（罫線ベース）
                     tables = page.extract_tables()
+                    logger.debug(f"ページ {i+1}: extract_tables() 結果: {tables is None}, 長さ: {len(tables) if tables else 0}, 内容: {tables}")
+
                     if tables:
                         logger.info(f"ページ {i+1}: 罫線ベースで {len(tables)} 個の表を検出")
                         for table in tables:
@@ -200,18 +202,39 @@ class PDFProcessor:
                                 tables_md.append(table_md)
 
                     # 戦略2: テキストベース（罫線がない表用）
-                    if not tables:
+                    # tables が空リストまたはNoneの場合に実行
+                    if not tables or len(tables) == 0:
                         logger.info(f"ページ {i+1}: 罫線なし - テキストベース戦略を試行")
+
+                        # 戦略2-1: 基本的なテキストベース
                         text_tables = page.extract_tables({
                             "vertical_strategy": "text",
                             "horizontal_strategy": "text"
                         })
+
                         if text_tables:
-                            logger.info(f"ページ {i+1}: テキストベースで {len(text_tables)} 個の表を検出")
+                            logger.info(f"ページ {i+1}: テキストベース（基本）で {len(text_tables)} 個の表を検出")
                             for table in text_tables:
                                 table_md = self._table_to_markdown(table)
                                 if table_md:
                                     tables_md.append(table_md)
+
+                        # 戦略2-2: より細かい設定でテキストベース抽出を試行
+                        if not text_tables or len(text_tables) == 0:
+                            logger.info(f"ページ {i+1}: 拡張テキストベース戦略を試行")
+                            extended_tables = page.extract_tables({
+                                "vertical_strategy": "text",
+                                "horizontal_strategy": "text",
+                                "intersection_tolerance": 15,  # 交差判定の許容範囲を広げる
+                                "text_tolerance": 5,  # テキスト位置の許容範囲
+                            })
+
+                            if extended_tables:
+                                logger.info(f"ページ {i+1}: 拡張テキストベースで {len(extended_tables)} 個の表を検出")
+                                for table in extended_tables:
+                                    table_md = self._table_to_markdown(table)
+                                    if table_md:
+                                        tables_md.append(table_md)
 
                     page_tables.append(tables_md)
 
