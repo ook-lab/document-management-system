@@ -211,12 +211,36 @@ def main():
     file_id = drive_file_id or source_id
     file_name = selected_doc.get('file_name', 'unknown')
     doc_type = selected_doc.get('doc_type', '')
+
+    # metadataをパース（JSON文字列の場合と辞書の場合の両方に対応）
     metadata = selected_doc.get('metadata') or {}
+    if isinstance(metadata, str):
+        try:
+            metadata = json.loads(metadata)
+        except json.JSONDecodeError:
+            logger.error(f"Failed to parse metadata JSON for doc_id: {doc_id}")
+            metadata = {}
+
+    # extracted_tables カラムの内容を metadata に統合
+    if 'extracted_tables' in selected_doc and selected_doc['extracted_tables']:
+        extracted_tables = selected_doc['extracted_tables']
+        if isinstance(extracted_tables, str):
+            try:
+                extracted_tables = json.loads(extracted_tables)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse extracted_tables JSON for doc_id: {doc_id}")
+                extracted_tables = None
+        if extracted_tables:
+            metadata['extracted_tables'] = extracted_tables
+            logger.info(f"Added extracted_tables to metadata: {len(extracted_tables)} tables")
+
     confidence = selected_doc.get('confidence') or 0
 
     # デバッグ: メタデータの状態を確認
-    logger.info(f"metadata keys: {list(metadata.keys())[:5]}...")
+    logger.info(f"metadata keys: {list(metadata.keys())}")
     logger.info(f"metadata size: {len(str(metadata))} bytes")
+    if 'extracted_tables' in metadata:
+        logger.info(f"extracted_tables found in metadata: {len(metadata['extracted_tables'])} tables")
 
     # ドキュメント変更を検出して、セッション状態をリセット
     if 'previous_doc_id' not in st.session_state:
@@ -389,7 +413,7 @@ def main():
         structured_field_keys = {field["key"] for field in structured_fields}
 
         # タブリストを動的に構築
-        tab_names = ["📝 フォーム編集", "📄 テキスト編集"]  # テキスト編集タブを追加
+        tab_names = ["📝 フォーム編集"]  # フォーム編集タブのみ
 
         # 構造化データごとにタブを追加
         logger.info(f"🏷️ タブ生成: 構造化データタブを {len(structured_fields)} 個追加します")
@@ -420,83 +444,9 @@ def main():
             else:
                 st.info("フォーム編集には対応するスキーマが必要です")
 
-        # タブ2: テキスト編集（新規）
-        with tabs[1]:
-            st.markdown("### 📄 元テキスト編集")
-            st.info("⚠️ ここでテキストを編集すると、メタデータ・チャンク・質問が自動的に再生成されます。")
-
-            # full_textを取得
-            full_text = selected_doc.get('full_text', '')
-
-            if not full_text:
-                st.warning("このドキュメントにはテキストデータがありません")
-            else:
-                # テキスト編集エリア
-                edited_text = st.text_area(
-                    "元テキスト（編集可能）",
-                    value=full_text,
-                    height=400,
-                    key=f"text_editor_{doc_id}",
-                    help="このテキストを編集して「保存して再生成」を押すと、全ての派生データ（メタデータ、チャンク、質問）が自動的に再生成されます"
-                )
-
-                # 変更検知
-                text_changed = edited_text != full_text
-
-                if text_changed:
-                    st.warning(f"⚠️ テキストが変更されています（{len(edited_text) - len(full_text):+d} 文字）")
-
-                    # プレビュー表示
-                    with st.expander("🔍 変更プレビュー", expanded=False):
-                        st.markdown("**変更前** (先頭500文字):")
-                        st.text(full_text[:500])
-
-                        st.markdown("**変更後** (先頭500文字):")
-                        st.text(edited_text[:500])
-
-                # 保存ボタン
-                col1, col2 = st.columns([1, 3])
-
-                with col1:
-                    if st.button("💾 保存して再生成", type="primary", disabled=not text_changed, key=f"save_text_{doc_id}"):
-                        with st.spinner("🔄 再生成中...（メタデータ、チャンク、質問を更新しています）"):
-                            try:
-                                # ReactiveDocumentUpdaterをインポート
-                                import asyncio
-                                from core.document.reactive_updater import ReactiveDocumentUpdater
-
-                                updater = ReactiveDocumentUpdater(db=db_client)
-
-                                # 非同期処理を実行
-                                loop = asyncio.new_event_loop()
-                                asyncio.set_event_loop(loop)
-                                result = loop.run_until_complete(
-                                    updater.update_document_from_source(
-                                        document_id=doc_id,
-                                        edited_text=edited_text,
-                                        edited_tables=None
-                                    )
-                                )
-                                loop.close()
-
-                                st.success("✅ 再生成完了！")
-                                st.json(result)
-
-                                # ページを再読み込み
-                                st.rerun()
-
-                            except Exception as e:
-                                st.error(f"❌ エラー: {e}")
-                                import traceback
-                                st.code(traceback.format_exc())
-
-                with col2:
-                    if text_changed:
-                        st.caption(f"📊 統計: 全{len(edited_text)}文字 (変更: {len(edited_text) - len(full_text):+d}文字)")
-
-        # タブ3以降: 構造化データタブ（動的に生成）
+        # タブ2以降: 構造化データタブ（動的に生成）
         for idx, field in enumerate(structured_fields):
-            with tabs[idx + 2]:  # テキスト編集タブを追加したので +2
+            with tabs[idx + 1]:  # フォーム編集の次から
                 logger.info(f"📊 タブ {idx + 1} をレンダリング: {field['label']} ({field['key']})")
                 logger.info(f"  データ件数: {len(field['data'])} 件")
 
