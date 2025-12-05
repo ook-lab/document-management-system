@@ -3,12 +3,13 @@ FROM python:3.12-slim
 
 # 2. 必要なシステムツール（Tesseract, Popplerなど）をインストール
 # ここが Buildpacks ではできなかった部分です！
+# 修正点: libgl1-mesa-glx は古いので libgl1 に変更しました
 RUN apt-get update && apt-get install -y \
     tesseract-ocr \
     tesseract-ocr-jpn \
     libtesseract-dev \
     poppler-utils \
-    libgl1-mesa-glx \
+    libgl1 \
     && rm -rf /var/lib/apt/lists/*
 
 # 3. 作業ディレクトリを設定
