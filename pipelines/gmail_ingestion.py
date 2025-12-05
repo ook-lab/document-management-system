@@ -283,34 +283,35 @@ class GmailIngestionPipeline:
 
         return result
 
-    async def process_unread_emails(
+    async def process_emails(
         self,
         max_emails: int = 10,
         query: Optional[str] = None,
-        mark_as_read: bool = True
+        mark_as_read: bool = False
     ) -> List[Dict[str, Any]]:
         """
-        未読メールをまとめて処理
+        メールをまとめて処理
 
         Args:
             max_emails: 処理する最大件数
-            query: Gmail検索クエリ（Noneの場合は「label:{self.gmail_label} is:unread」）
+            query: Gmail検索クエリ（Noneの場合は「label:{self.gmail_label}」）
             mark_as_read: 処理後に既読にするか
 
         Returns:
             処理結果のリスト
         """
-        # クエリが指定されていない場合は、設定されたラベルと未読条件を使用
+        # クエリが指定されていない場合は、設定されたラベルを使用（未読限定なし）
         if query is None:
-            query = f'label:{self.gmail_label} is:unread'
+            query = f'label:{self.gmail_label}'
 
         logger.info("=" * 60)
-        logger.info("未読メール処理開始")
+        logger.info("メール処理開始")
         logger.info(f"  最大処理件数: {max_emails}")
         logger.info(f"  検索クエリ: {query}")
+        logger.info(f"  既読マーク: {mark_as_read}")
         logger.info("=" * 60)
 
-        # 未読メール一覧を取得
+        # メール一覧を取得
         messages = self.gmail.list_messages(query=query, max_results=max_emails)
         logger.info(f"対象メール数: {len(messages)}件")
 
@@ -342,8 +343,8 @@ async def main():
     # パイプラインの初期化
     pipeline = GmailIngestionPipeline(gmail_user_email=gmail_user)
 
-    # 未読メールを処理（最大10件）
-    results = await pipeline.process_unread_emails(max_emails=10, mark_as_read=True)
+    # ラベル「TEST」のメールを処理（最大10件、既読マークなし）
+    results = await pipeline.process_emails(max_emails=10, mark_as_read=False)
 
     # 結果を表示
     for result in results:
