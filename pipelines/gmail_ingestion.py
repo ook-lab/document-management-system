@@ -190,7 +190,7 @@ class GmailIngestionPipeline:
 
         return file_id
 
-    def process_single_email(
+    async def process_single_email(
         self,
         message_id: str,
         mark_as_read: bool = True
@@ -279,7 +279,7 @@ class GmailIngestionPipeline:
 
         return result
 
-    def process_unread_emails(
+    async def process_unread_emails(
         self,
         max_emails: int = 10,
         query: Optional[str] = None,
@@ -313,7 +313,7 @@ class GmailIngestionPipeline:
         results = []
         for i, msg in enumerate(messages, 1):
             logger.info(f"[{i}/{len(messages)}] 処理中...")
-            result = self.process_single_email(
+            result = await self.process_single_email(
                 message_id=msg['id'],
                 mark_as_read=mark_as_read
             )
@@ -339,7 +339,7 @@ async def main():
     pipeline = GmailIngestionPipeline(gmail_user_email=gmail_user)
 
     # 未読メールを処理（最大10件）
-    results = pipeline.process_unread_emails(max_emails=10, mark_as_read=True)
+    results = await pipeline.process_unread_emails(max_emails=10, mark_as_read=True)
 
     # 結果を表示
     for result in results:
