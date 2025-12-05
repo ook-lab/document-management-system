@@ -237,11 +237,15 @@ def main():
 
     # ドキュメント選択
     st.subheader("🔍 ドキュメント詳細")
+
+    # セレクトボックスのキーに検索クエリを含めることで、モード変更時にリセット
+    selector_key = f"document_selector_{search_query or 'normal'}"
+
     selected_index = st.selectbox(
         "編集するドキュメントを選択",
         range(len(documents)),
         format_func=lambda i: f"{documents[i].get('file_name', 'Unknown')} (信頼度: {documents[i].get('confidence') or 0:.3f})",
-        key="document_selector"  # 明示的なキーを追加
+        key=selector_key
     )
 
     selected_doc = documents[selected_index]
