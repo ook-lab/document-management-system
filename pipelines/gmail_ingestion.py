@@ -25,6 +25,10 @@ import base64
 root_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(root_dir))
 
+# .envファイルを読み込む
+from dotenv import load_dotenv
+load_dotenv(root_dir / ".env")
+
 from core.connectors.gmail_connector import GmailConnector
 from core.connectors.google_drive import GoogleDriveConnector
 from core.database.client import DatabaseClient
