@@ -37,15 +37,18 @@ class GmailIngestionPipeline:
     def __init__(
         self,
         gmail_user_email: str,
-        drive_folder_id: Optional[str] = None
+        drive_folder_id: Optional[str] = None,
+        gmail_label: Optional[str] = None
     ):
         """
         Args:
             gmail_user_email: Gmailのメールアドレス（例: ookubo.y@workspace-o.com）
             drive_folder_id: メール保存先のDriveフォルダID（Noneの場合は環境変数から取得）
+            gmail_label: 読み取り対象のGmailラベル（Noneの場合は環境変数から取得、デフォルト: TEST）
         """
         self.gmail_user_email = gmail_user_email
         self.drive_folder_id = drive_folder_id or os.getenv("GMAIL_ARCHIVE_FOLDER_ID")
+        self.gmail_label = gmail_label or os.getenv("GMAIL_LABEL", "TEST")
 
         # コネクタの初期化
         self.gmail = GmailConnector(user_email=gmail_user_email)
@@ -55,6 +58,7 @@ class GmailIngestionPipeline:
 
         logger.info(f"GmailIngestionPipeline初期化完了")
         logger.info(f"  - Gmail: {gmail_user_email}")
+        logger.info(f"  - Label: {self.gmail_label}")
         logger.info(f"  - Drive folder: {self.drive_folder_id}")
 
     def convert_email_to_html(
@@ -274,7 +278,7 @@ class GmailIngestionPipeline:
     def process_unread_emails(
         self,
         max_emails: int = 10,
-        query: str = 'is:unread',
+        query: Optional[str] = None,
         mark_as_read: bool = True
     ) -> List[Dict[str, Any]]:
         """
@@ -282,12 +286,16 @@ class GmailIngestionPipeline:
 
         Args:
             max_emails: 処理する最大件数
-            query: Gmail検索クエリ
+            query: Gmail検索クエリ（Noneの場合は「label:{self.gmail_label} is:unread」）
             mark_as_read: 処理後に既読にするか
 
         Returns:
             処理結果のリスト
         """
+        # クエリが指定されていない場合は、設定されたラベルと未読条件を使用
+        if query is None:
+            query = f'label:{self.gmail_label} is:unread'
+
         logger.info("=" * 60)
         logger.info("未読メール処理開始")
         logger.info(f"  最大処理件数: {max_emails}")

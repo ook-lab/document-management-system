@@ -85,14 +85,43 @@ Google Workspaceアカウント（ookubo.y@workspace-o.com）で、サービス�
 
 ---
 
-## ステップ5: 環境変数の設定（オプション）
+## ステップ5: Gmailでラベルを作成
 
-既存の `.env` ファイルに、自分のメールアドレスを追加：
+メールを整理するため、専用ラベルを作成します：
+
+1. **Gmailにアクセス**
+   - https://mail.google.com/
+   - ookubo.y@workspace-o.com でログイン
+
+2. **ラベルを作成**
+   - 左サイドバーの「新しいラベルを作成」をクリック
+   - ラベル名: `TEST` と入力
+   - 「作成」をクリック
+
+3. **処理対象のメールにラベルを付ける**
+   - 処理したいメールを選択
+   - 上部のラベルアイコンをクリック
+   - `TEST` ラベルを選択
+
+これで、`label:TEST` のメールだけが処理対象になります。
+
+---
+
+## ステップ6: 環境変数の設定
+
+既存の `.env` ファイルに、以下を追加：
 
 ```bash
 # Gmail API設定
 GMAIL_USER_EMAIL=ookubo.y@workspace-o.com
+GMAIL_LABEL=TEST  # 読み取り対象のラベル
+GMAIL_ARCHIVE_FOLDER_ID=your_drive_folder_id  # Driveの保存先フォルダID
 ```
+
+**GMAIL_ARCHIVE_FOLDER_IDの取得方法:**
+1. Google Driveで保存先フォルダを作成（例: 「Gmail Archive」）
+2. フォルダを開く
+3. URLから最後の部分をコピー（例: `https://drive.google.com/drive/folders/1abc...xyz` の `1abc...xyz`）
 
 ---
 
