@@ -156,24 +156,56 @@ def main():
         st.error(f"初期化エラー: {e}")
         st.stop()
 
-    # サイドバー: フィルタ設定
-    st.sidebar.header("🔧 フィルタ設定")
+    # サイドバー: 検索とフィルタ設定
+    st.sidebar.header("🔍 検索 & フィルタ")
+
+    # 検索ボックス
+    search_query = st.sidebar.text_input(
+        "IDやファイル名で検索",
+        placeholder="例: 学年通信, abc123...",
+        help="検索ワードを入力すると、レビュー状態に関係なく全データから検索します"
+    )
+
+    # 取得件数
     limit = st.sidebar.number_input(
         "取得件数",
         min_value=10,
         max_value=500,
-        value=100,
+        value=50,
         step=10,
         help="表示するドキュメントの最大件数"
     )
 
-    # レビュー対象ドキュメントを取得
+    # モード表示
+    if search_query:
+        st.sidebar.info("🔎 **検索モード**: 全データから検索中")
+    else:
+        st.sidebar.success("📝 **通常モード**: 未レビューのみ表示")
+
+    # 進捗表示
+    st.sidebar.markdown("---")
+    st.sidebar.header("📊 レビュー進捗")
+    progress_data = db_client.get_review_progress()
+
+    col_p1, col_p2 = st.sidebar.columns(2)
+    with col_p1:
+        st.metric("未レビュー", f"{progress_data['unreviewed']} 件")
+    with col_p2:
+        st.metric("完了", f"{progress_data['reviewed']} 件")
+
+    st.sidebar.progress(progress_data['progress_percent'] / 100)
+    st.sidebar.caption(f"進捗率: {progress_data['progress_percent']}%")
+
+    # リスト更新ボタン
+    st.sidebar.markdown("---")
     if st.sidebar.button("🔄 リストを更新", use_container_width=True):
         st.rerun()
 
+    # レビュー対象ドキュメントを取得
     with st.spinner("ドキュメントを取得中..."):
         documents = db_client.get_documents_for_review(
-            limit=limit
+            limit=limit,
+            search_query=search_query if search_query else None
         )
 
     # デバッグログ: 取得後の確認
@@ -490,7 +522,16 @@ def main():
 
         # 保存ボタンエリア
         st.markdown("---")
-        col_save, col_validate, col_cancel = st.columns([1, 1, 1])
+
+        # レビュー状態の表示
+        is_reviewed = selected_doc.get('is_reviewed', False)
+        if is_reviewed:
+            reviewed_at = selected_doc.get('reviewed_at', '')
+            reviewed_by = selected_doc.get('reviewed_by', '')
+            st.info(f"✅ レビュー済み（{reviewed_at[:10] if reviewed_at else '日時不明'}）" +
+                   (f" by {reviewed_by}" if reviewed_by else ""))
+
+        col_save, col_validate, col_review, col_cancel = st.columns([1, 1, 1, 1])
 
         with col_validate:
             if st.button("🔍 変更を確認", use_container_width=True):
@@ -528,6 +569,28 @@ def main():
                         st.rerun()
                     else:
                         st.error("❌ 保存に失敗しました")
+
+        with col_review:
+            # レビュー状態切り替えボタン
+            if is_reviewed:
+                # レビュー済み → 未完了に戻す
+                if st.button("↩️ 未完了に戻す", use_container_width=True, type="secondary"):
+                    success = db_client.mark_document_unreviewed(doc_id)
+                    if success:
+                        st.success("✅ 未完了に戻しました")
+                        st.rerun()
+                    else:
+                        st.error("❌ 操作に失敗しました")
+            else:
+                # 未レビュー → チェック完了
+                if st.button("✅ チェック完了", use_container_width=True, type="primary"):
+                    success = db_client.mark_document_reviewed(doc_id)
+                    if success:
+                        st.success("✅ レビュー完了としてマークしました")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error("❌ 操作に失敗しました")
 
         with col_cancel:
             if st.button("🔄 リセット", use_container_width=True):

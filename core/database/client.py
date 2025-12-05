@@ -368,29 +368,171 @@ class DatabaseClient:
 
     def get_documents_for_review(
         self,
-        limit: int = 100
+        limit: int = 100,
+        search_query: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        レビュー対象のドキュメントを取得（全ステータス・全信頼度）
+        レビュー対象のドキュメントを取得
+
+        通常モード（search_query=None）: 未レビューのドキュメントのみ取得
+        検索モード（search_query指定）: レビュー状態に関係なく全件から検索
 
         Args:
             limit: 取得する最大件数
+            search_query: 検索クエリ（IDまたはファイル名で部分一致）
 
         Returns:
             ドキュメントのリスト（更新日時降順）
         """
         try:
-            response = (
-                self.client.table('documents')
-                .select('*')
-                .order('updated_at', desc=True)
-                .limit(limit)
-                .execute()
-            )
-            return response.data if response.data else []
+            query = self.client.table('documents').select('*')
+
+            if search_query:
+                # 検索モード: レビュー状態に関係なく検索
+                # IDでの完全一致検索を試みる
+                if len(search_query) == 36 or len(search_query) == 8:  # UUID形式またはID先頭8文字
+                    # IDで検索（部分一致）
+                    response_id = query.ilike('id', f'{search_query}%').limit(limit).execute()
+                    if response_id.data:
+                        return response_id.data
+
+                # ファイル名で部分一致検索
+                response = (
+                    query
+                    .ilike('file_name', f'%{search_query}%')
+                    .order('updated_at', desc=True)
+                    .limit(limit)
+                    .execute()
+                )
+                return response.data if response.data else []
+            else:
+                # 通常モード: 未レビューのドキュメントのみ取得
+                response = (
+                    query
+                    .eq('is_reviewed', False)
+                    .order('updated_at', desc=True)
+                    .limit(limit)
+                    .execute()
+                )
+                return response.data if response.data else []
+
         except Exception as e:
             print(f"Error getting documents for review: {e}")
             return []
+
+    def mark_document_reviewed(
+        self,
+        doc_id: str,
+        reviewed_by: Optional[str] = None
+    ) -> bool:
+        """
+        ドキュメントをレビュー済みとしてマークする
+
+        Args:
+            doc_id: ドキュメントID
+            reviewed_by: レビュー担当者のメールアドレス（オプション）
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            from datetime import datetime
+
+            update_data = {
+                'is_reviewed': True,
+                'reviewed_at': datetime.utcnow().isoformat()
+            }
+            if reviewed_by:
+                update_data['reviewed_by'] = reviewed_by
+
+            response = (
+                self.client.table('documents')
+                .update(update_data)
+                .eq('id', doc_id)
+                .execute()
+            )
+            return bool(response.data)
+        except Exception as e:
+            print(f"Error marking document as reviewed: {e}")
+            return False
+
+    def mark_document_unreviewed(
+        self,
+        doc_id: str
+    ) -> bool:
+        """
+        ドキュメントを未レビュー状態に戻す
+
+        Args:
+            doc_id: ドキュメントID
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            update_data = {
+                'is_reviewed': False,
+                'reviewed_at': None,
+                'reviewed_by': None
+            }
+
+            response = (
+                self.client.table('documents')
+                .update(update_data)
+                .eq('id', doc_id)
+                .execute()
+            )
+            return bool(response.data)
+        except Exception as e:
+            print(f"Error marking document as unreviewed: {e}")
+            return False
+
+    def get_review_progress(self) -> Dict[str, Any]:
+        """
+        レビュー進捗状況を取得
+
+        Returns:
+            進捗情報の辞書
+        """
+        try:
+            # 未レビューの件数
+            unreviewed_response = (
+                self.client.table('documents')
+                .select('*', count='exact')
+                .eq('is_reviewed', False)
+                .execute()
+            )
+            unreviewed_count = unreviewed_response.count if unreviewed_response else 0
+
+            # レビュー済みの件数
+            reviewed_response = (
+                self.client.table('documents')
+                .select('*', count='exact')
+                .eq('is_reviewed', True)
+                .execute()
+            )
+            reviewed_count = reviewed_response.count if reviewed_response else 0
+
+            # 総件数
+            total_count = unreviewed_count + reviewed_count
+
+            # 進捗率
+            progress_percent = (reviewed_count / total_count * 100) if total_count > 0 else 0
+
+            return {
+                'total': total_count,
+                'reviewed': reviewed_count,
+                'unreviewed': unreviewed_count,
+                'progress_percent': round(progress_percent, 2)
+            }
+        except Exception as e:
+            print(f"Error getting review progress: {e}")
+            return {
+                'total': 0,
+                'reviewed': 0,
+                'unreviewed': 0,
+                'progress_percent': 0
+            }
 
     def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
