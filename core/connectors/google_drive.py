@@ -7,8 +7,8 @@ import os
 from typing import List, Dict, Any, Optional, Union
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-from io import FileIO
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload, MediaInMemoryUpload
+from io import FileIO, BytesIO
 from loguru import logger
 from pathlib import Path
 
@@ -239,3 +239,106 @@ class GoogleDriveConnector:
         except Exception as e:
             logger.error(f"ファイル移動エラー ({file_id}): {e}")
             return False
+
+    def upload_file(
+        self,
+        file_content: Union[bytes, str],
+        file_name: str,
+        mime_type: str,
+        folder_id: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        ファイルをGoogle Driveにアップロード
+
+        Args:
+            file_content: ファイルの内容（バイトまたは文字列）
+            file_name: ファイル名
+            mime_type: MIMEタイプ（例: 'text/html', 'application/pdf'）
+            folder_id: 保存先フォルダID（Noneの場合はルート）
+
+        Returns:
+            アップロードされたファイルのID、失敗時はNone
+        """
+        try:
+            # ファイルメタデータ
+            file_metadata = {'name': file_name}
+            if folder_id:
+                file_metadata['parents'] = [folder_id]
+
+            # 文字列の場合はバイトに変換
+            if isinstance(file_content, str):
+                file_content = file_content.encode('utf-8')
+
+            # メモリ上のデータからアップロード
+            media = MediaInMemoryUpload(
+                file_content,
+                mimetype=mime_type,
+                resumable=True
+            )
+
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, name, webViewLink'
+            ).execute()
+
+            logger.info(f"ファイルアップロード成功: {file_name} (ID: {file['id']})")
+            return file['id']
+
+        except Exception as e:
+            logger.error(f"ファイルアップロードエラー ({file_name}): {e}")
+            return None
+
+    def upload_file_from_path(
+        self,
+        file_path: Union[str, Path],
+        folder_id: Optional[str] = None,
+        mime_type: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        ローカルファイルをGoogle Driveにアップロード
+
+        Args:
+            file_path: ローカルファイルのパス
+            folder_id: 保存先フォルダID（Noneの場合はルート）
+            mime_type: MIMEタイプ（Noneの場合は自動判定）
+
+        Returns:
+            アップロードされたファイルのID、失敗時はNone
+        """
+        try:
+            file_path = Path(file_path)
+            if not file_path.exists():
+                logger.error(f"ファイルが見つかりません: {file_path}")
+                return None
+
+            # ファイルメタデータ
+            file_metadata = {'name': file_path.name}
+            if folder_id:
+                file_metadata['parents'] = [folder_id]
+
+            # MIMEタイプの自動判定
+            if mime_type is None:
+                import mimetypes
+                mime_type, _ = mimetypes.guess_type(str(file_path))
+                mime_type = mime_type or 'application/octet-stream'
+
+            # ファイルからアップロード
+            media = MediaFileUpload(
+                str(file_path),
+                mimetype=mime_type,
+                resumable=True
+            )
+
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, name, webViewLink'
+            ).execute()
+
+            logger.info(f"ファイルアップロード成功: {file_path.name} (ID: {file['id']})")
+            return file['id']
+
+        except Exception as e:
+            logger.error(f"ファイルアップロードエラー ({file_path}): {e}")
+            return None
