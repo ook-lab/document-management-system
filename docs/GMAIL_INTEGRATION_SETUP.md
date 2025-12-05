@@ -107,7 +107,26 @@ Google Workspaceアカウント（ookubo.y@workspace-o.com）で、サービス�
 
 ---
 
-## ステップ6: 環境変数の設定
+## ステップ6: Google Driveで保存先フォルダを作成
+
+メール本文と添付ファイルを分けて保存するため、2つのフォルダを作成します：
+
+1. **Google Driveにアクセス**
+   - https://drive.google.com/
+
+2. **フォルダを2つ作成**
+   - フォルダ1: 「Gmail - メール本文」（または任意の名前）
+   - フォルダ2: 「Gmail - 添付ファイル」（または任意の名前）
+
+3. **各フォルダのIDを取得**
+   - 各フォルダを開く
+   - URLから最後の部分をコピー
+   - 例: `https://drive.google.com/drive/folders/1SBv0oug4psVJr9G1XS8kGtXmN7Ou9ee8`
+   - → フォルダID: `1SBv0oug4psVJr9G1XS8kGtXmN7Ou9ee8`
+
+---
+
+## ステップ7: 環境変数の設定
 
 既存の `.env` ファイルに、以下を追加：
 
@@ -115,13 +134,13 @@ Google Workspaceアカウント（ookubo.y@workspace-o.com）で、サービス�
 # Gmail API設定
 GMAIL_USER_EMAIL=ookubo.y@workspace-o.com
 GMAIL_LABEL=TEST  # 読み取り対象のラベル
-GMAIL_ARCHIVE_FOLDER_ID=your_drive_folder_id  # Driveの保存先フォルダID
+GMAIL_EMAIL_FOLDER_ID=1SBv0oug4psVJr9G1XS8kGtXmN7Ou9ee8  # メール本文(HTML)の保存先
+GMAIL_ATTACHMENT_FOLDER_ID=1nq_KG8rWX859jA_VZAe8b0imgcrWFcS-  # 添付ファイルの保存先
 ```
 
-**GMAIL_ARCHIVE_FOLDER_IDの取得方法:**
-1. Google Driveで保存先フォルダを作成（例: 「Gmail Archive」）
-2. フォルダを開く
-3. URLから最後の部分をコピー（例: `https://drive.google.com/drive/folders/1abc...xyz` の `1abc...xyz`）
+**各IDの説明:**
+- `GMAIL_EMAIL_FOLDER_ID`: メール本文をHTML形式で保存するフォルダ
+- `GMAIL_ATTACHMENT_FOLDER_ID`: PDFなどの添付ファイルを保存するフォルダ
 
 ---
 
@@ -146,13 +165,13 @@ GMAIL_ARCHIVE_FOLDER_ID=your_drive_folder_id  # Driveの保存先フォルダID
 設定が完了したら、Pythonコードで以下のように使えます：
 
 ```python
-from core.connectors.gmail_connector import GmailConnector
+from pipelines.gmail_ingestion import GmailIngestionPipeline
 
-# サービスアカウントで、ookubo.yのGmailにアクセス
-gmail = GmailConnector(user_email='ookubo.y@workspace-o.com')
+# パイプラインの初期化（環境変数から自動取得）
+pipeline = GmailIngestionPipeline(gmail_user_email='ookubo.y@workspace-o.com')
 
-# 未読メール一覧を取得
-emails = gmail.list_unread_emails(max_results=10)
+# ラベル「TEST」の未読メールを処理（最大10件）
+results = pipeline.process_unread_emails(max_emails=10)
 ```
 
 ---

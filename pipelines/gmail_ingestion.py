@@ -37,17 +37,20 @@ class GmailIngestionPipeline:
     def __init__(
         self,
         gmail_user_email: str,
-        drive_folder_id: Optional[str] = None,
+        email_folder_id: Optional[str] = None,
+        attachment_folder_id: Optional[str] = None,
         gmail_label: Optional[str] = None
     ):
         """
         Args:
             gmail_user_email: Gmailのメールアドレス（例: ookubo.y@workspace-o.com）
-            drive_folder_id: メール保存先のDriveフォルダID（Noneの場合は環境変数から取得）
+            email_folder_id: メール本文(HTML)保存先のDriveフォルダID（Noneの場合は環境変数から取得）
+            attachment_folder_id: 添付ファイル保存先のDriveフォルダID（Noneの場合は環境変数から取得）
             gmail_label: 読み取り対象のGmailラベル（Noneの場合は環境変数から取得、デフォルト: TEST）
         """
         self.gmail_user_email = gmail_user_email
-        self.drive_folder_id = drive_folder_id or os.getenv("GMAIL_ARCHIVE_FOLDER_ID")
+        self.email_folder_id = email_folder_id or os.getenv("GMAIL_EMAIL_FOLDER_ID")
+        self.attachment_folder_id = attachment_folder_id or os.getenv("GMAIL_ATTACHMENT_FOLDER_ID")
         self.gmail_label = gmail_label or os.getenv("GMAIL_LABEL", "TEST")
 
         # コネクタの初期化
@@ -59,7 +62,8 @@ class GmailIngestionPipeline:
         logger.info(f"GmailIngestionPipeline初期化完了")
         logger.info(f"  - Gmail: {gmail_user_email}")
         logger.info(f"  - Label: {self.gmail_label}")
-        logger.info(f"  - Drive folder: {self.drive_folder_id}")
+        logger.info(f"  - Email folder: {self.email_folder_id}")
+        logger.info(f"  - Attachment folder: {self.attachment_folder_id}")
 
     def convert_email_to_html(
         self,
@@ -131,12 +135,12 @@ class GmailIngestionPipeline:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         file_name = f"{timestamp}_{safe_subject}_{message_id[:8]}.html"
 
-        # Driveにアップロード
+        # Driveにアップロード（メール本文用フォルダ）
         file_id = self.drive.upload_file(
             file_content=html_content,
             file_name=file_name,
             mime_type='text/html',
-            folder_id=self.drive_folder_id
+            folder_id=self.email_folder_id
         )
 
         if file_id:
@@ -171,12 +175,12 @@ class GmailIngestionPipeline:
             logger.error(f"添付ファイル取得失敗: {filename}")
             return None
 
-        # Driveにアップロード
+        # Driveにアップロード（添付ファイル用フォルダ）
         file_id = self.drive.upload_file(
             file_content=file_data,
             file_name=filename,
             mime_type=mime_type,
-            folder_id=self.drive_folder_id
+            folder_id=self.attachment_folder_id
         )
 
         if file_id:
