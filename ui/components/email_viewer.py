@@ -151,15 +151,32 @@ def render_email_detail(email: Dict[str, Any]):
                     st.warning(f"⚠️ JSON解析に失敗しました。重要なフィールドのみ抽出します。")
                     import re
 
-                    # "summary": "..." を抽出（改行を含む可能性を考慮）
-                    summary_match = re.search(r'"summary"\s*:\s*"([^"]+)"', json_str, re.DOTALL)
-                    if summary_match:
-                        email_data['summary'] = summary_match.group(1).replace('\\n', '\n')
+                    # デバッグ情報を表示
+                    with st.expander("🔍 デバッグ: JSON内容を確認", expanded=False):
+                        st.markdown("**元のJSON（最初の1000文字）:**")
+                        st.code(json_str[:1000])
+                        st.markdown("**JSON文字列の長さ:**")
+                        st.code(f"{len(json_str)} 文字")
 
-                    # "extracted_text": "..." を抽出（最初の1000文字まで）
-                    extracted_match = re.search(r'"extracted_text"\s*:\s*"(.{1,3000}?)"(?:\s*,|\s*})', json_str, re.DOTALL)
+                    # より柔軟な正規表現で抽出
+                    # "summary": "..." を抽出（エスケープされた引用符も考慮）
+                    summary_match = re.search(r'"summary"\s*:\s*"((?:[^"\\]|\\.)*)"', json_str, re.DOTALL)
+                    if summary_match:
+                        summary_value = summary_match.group(1)
+                        # エスケープシーケンスを復元
+                        summary_value = summary_value.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"').replace('\\\\', '\\')
+                        email_data['summary'] = summary_value
+                        st.info(f"✓ 要約を抽出しました（{len(summary_value)}文字）")
+
+                    # "extracted_text": "..." を抽出
+                    extracted_match = re.search(r'"extracted_text"\s*:\s*"((?:[^"\\]|\\.)*)"', json_str, re.DOTALL)
                     if extracted_match:
-                        email_data['extracted_text'] = extracted_match.group(1).replace('\\n', '\n')
+                        extracted_value = extracted_match.group(1)
+                        # エスケープシーケンスを復元（最初の3000文字まで）
+                        extracted_value = extracted_value[:3000]
+                        extracted_value = extracted_value.replace('\\n', '\n').replace('\\t', '\t').replace('\\"', '"').replace('\\\\', '\\')
+                        email_data['extracted_text'] = extracted_value
+                        st.info(f"✓ 本文を抽出しました（{len(extracted_value)}文字）")
 
                     # "key_information": [...] を抽出
                     key_info_match = re.search(r'"key_information"\s*:\s*\[(.*?)\]', json_str, re.DOTALL)
@@ -167,8 +184,19 @@ def render_email_detail(email: Dict[str, Any]):
                         try:
                             key_info_str = '[' + key_info_match.group(1) + ']'
                             email_data['key_information'] = json.loads(key_info_str)
+                            st.info(f"✓ 重要情報を抽出しました（{len(email_data['key_information'])}件）")
                         except:
                             pass
+
+                    # 抽出できたフィールドを表示
+                    with st.expander("📊 抽出できたフィールド", expanded=False):
+                        st.json({
+                            "summary": bool(email_data.get('summary')),
+                            "extracted_text": bool(email_data.get('extracted_text')),
+                            "key_information": bool(email_data.get('key_information')),
+                            "summary_length": len(email_data.get('summary', '')),
+                            "extracted_text_length": len(email_data.get('extracted_text', ''))
+                        })
 
                     if email_data:
                         parse_success = True
