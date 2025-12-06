@@ -84,7 +84,7 @@ def email_inbox_ui():
 
     # リスト更新ボタン
     st.sidebar.markdown("---")
-    if st.sidebar.button("🔄 リストを更新", use_container_width=True):
+    if st.sidebar.button("🔄 リストを更新", use_container_width=True, key="refresh_email_list"):
         st.rerun()
 
     # メール一覧を表形式で表示（上部）

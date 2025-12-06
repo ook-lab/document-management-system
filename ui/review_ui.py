@@ -192,7 +192,7 @@ def pdf_review_ui():
 
     # リスト更新ボタン
     st.sidebar.markdown("---")
-    if st.sidebar.button("🔄 リストを更新", use_container_width=True):
+    if st.sidebar.button("🔄 リストを更新", use_container_width=True, key="refresh_pdf_list"):
         st.rerun()
 
     # レビュー対象ドキュメントを取得
