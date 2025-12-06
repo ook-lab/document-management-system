@@ -2,10 +2,13 @@
 Email Vision Processor
 
 HTMLメールをスクリーンショット化してGemini 2.0 Flash-LiteでVision解析
++ HTMLからのテキスト抽出とインテリジェントマージ
 """
 import base64
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 from loguru import logger
+from bs4 import BeautifulSoup
+import re
 
 from core.utils.html_screenshot import HTMLScreenshotGenerator
 from core.ai.llm_client import LLMClient
@@ -26,13 +29,142 @@ class EmailVisionProcessor:
 
         logger.info(f"EmailVisionProcessor初期化: {self.model_config['model']}")
 
+    def _extract_html_text(self, html_content: str) -> Dict[str, Any]:
+        """
+        HTMLからテキストとリンクを抽出
+
+        Args:
+            html_content: HTML文字列
+
+        Returns:
+            {
+                'text': str,  # 抽出されたテキスト
+                'links': List[str],  # URLリスト
+                'has_tables': bool,  # テーブルがあるか
+                'has_lists': bool  # リストがあるか
+            }
+        """
+        try:
+            soup = BeautifulSoup(html_content, 'html.parser')
+
+            # スクリプトとスタイルを除去
+            for script in soup(['script', 'style']):
+                script.decompose()
+
+            # テキストを抽出
+            text = soup.get_text(separator='\n', strip=True)
+
+            # 空行を削減（連続する改行を2つまでに）
+            text = re.sub(r'\n{3,}', '\n\n', text)
+
+            # リンクを抽出
+            links = []
+            for a in soup.find_all('a', href=True):
+                href = a['href']
+                if href.startswith('http://') or href.startswith('https://'):
+                    links.append(href)
+
+            # テーブルとリストの存在チェック
+            has_tables = len(soup.find_all('table')) > 0
+            has_lists = len(soup.find_all(['ul', 'ol'])) > 0
+
+            logger.info(f"HTML解析: テキスト={len(text)}文字, リンク={len(links)}個, テーブル={has_tables}, リスト={has_lists}")
+
+            return {
+                'text': text,
+                'links': links,
+                'has_tables': has_tables,
+                'has_lists': has_lists
+            }
+
+        except Exception as e:
+            logger.error(f"HTMLテキスト抽出エラー: {e}")
+            return {
+                'text': '',
+                'links': [],
+                'has_tables': False,
+                'has_lists': False
+            }
+
+    def _merge_vision_and_html(
+        self,
+        vision_result: Dict[str, Any],
+        html_extract: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """
+        Vision解析結果とHTML抽出結果をインテリジェントにマージ
+
+        Args:
+            vision_result: Vision APIの解析結果
+            html_extract: HTMLから抽出したテキスト・リンク
+
+        Returns:
+            マージされた結果
+        """
+        try:
+            # Visionのテキストを基本とする（画像説明などを含む）
+            vision_text = vision_result.get('extracted_text', '')
+            html_text = html_extract.get('text', '')
+
+            # HTMLテキストの方が明らかに長い場合は、両方を組み合わせる
+            if len(html_text) > len(vision_text) * 1.5:
+                logger.info("HTMLテキストの方が長いため、両方を組み合わせます")
+
+                # Visionの画像説明や特殊情報を抽出
+                vision_special_info = []
+                if vision_result.get('has_images') and vision_result.get('image_descriptions'):
+                    vision_special_info.append("【画像内容】")
+                    vision_special_info.extend(vision_result.get('image_descriptions', []))
+
+                # 組み合わせ
+                combined_text = f"{html_text}\n\n"
+                if vision_special_info:
+                    combined_text += "\n".join(vision_special_info)
+
+                final_text = combined_text
+            else:
+                # Visionのテキストを優先
+                final_text = vision_text
+
+            # リンクをマージ（重複排除）
+            vision_links = vision_result.get('links', [])
+            html_links = html_extract.get('links', [])
+            all_links = list(set(vision_links + html_links))
+
+            # 結果をマージ
+            merged_result = {
+                'extracted_text': final_text,
+                'summary': vision_result.get('summary', ''),
+                'key_information': vision_result.get('key_information', []),
+                'has_images': vision_result.get('has_images', False),
+                'image_descriptions': vision_result.get('image_descriptions', []),
+                'tables': vision_result.get('tables', []),
+                'links': all_links,
+                'has_tables': html_extract.get('has_tables', False) or len(vision_result.get('tables', [])) > 0,
+                'has_lists': html_extract.get('has_lists', False)
+            }
+
+            logger.info(f"マージ完了: 最終テキスト={len(final_text)}文字, リンク={len(all_links)}個")
+
+            return merged_result
+
+        except Exception as e:
+            logger.error(f"マージエラー: {e}")
+            # エラー時はVisionの結果をそのまま返す
+            return vision_result
+
     async def extract_email_content(
         self,
         html_content: str,
         email_metadata: Optional[Dict[str, str]] = None
     ) -> Dict[str, Any]:
         """
-        HTMLメールの内容をVision APIで抽出
+        HTMLメールの内容をVision API + HTML解析で抽出
+
+        処理フロー:
+        1. Vision解析（画像・レイアウト・表を優先的に取得）
+        2. HTMLテキスト抽出（純粋なテキスト部分を取得）
+        3. インテリジェントマージ（両方の結果を統合）
 
         Args:
             html_content: メールのHTML内容
@@ -48,6 +180,9 @@ class EmailVisionProcessor:
             }
         """
         try:
+            logger.info("=" * 60)
+            logger.info("メール解析開始: Vision + HTML解析")
+            logger.info("=" * 60)
             logger.info("メールスクリーンショット生成中...")
 
             # HTMLをスクリーンショット化
@@ -124,11 +259,11 @@ class EmailVisionProcessor:
                 json_str = response
 
             try:
-                result = json.loads(json_str)
+                vision_result = json.loads(json_str)
             except json.JSONDecodeError:
                 # JSONパースに失敗した場合、テキストとして扱う
                 logger.warning("JSON解析失敗、テキストとして扱います")
-                result = {
+                vision_result = {
                     'extracted_text': response,
                     'summary': response[:200] + '...' if len(response) > 200 else response,
                     'key_information': [],
@@ -138,10 +273,27 @@ class EmailVisionProcessor:
                     'links': []
                 }
 
-            # メタデータを追加
-            result['metadata'] = email_metadata or {}
+            logger.info(f"Vision解析結果: テキスト={len(vision_result.get('extracted_text', ''))}文字")
 
-            return result
+            # ステップ2: HTMLからテキストとリンクを抽出
+            logger.info("HTMLからテキスト抽出中...")
+            html_extract = self._extract_html_text(html_content)
+
+            # ステップ3: Vision結果とHTML抽出結果をマージ
+            logger.info("Vision結果とHTML抽出結果をマージ中...")
+            merged_result = self._merge_vision_and_html(vision_result, html_extract)
+
+            # メタデータを追加
+            merged_result['metadata'] = email_metadata or {}
+
+            logger.info("=" * 60)
+            logger.info("メール解析完了")
+            logger.info(f"  最終テキスト: {len(merged_result.get('extracted_text', ''))}文字")
+            logger.info(f"  リンク: {len(merged_result.get('links', []))}個")
+            logger.info(f"  画像: {merged_result.get('has_images', False)}")
+            logger.info("=" * 60)
+
+            return merged_result
 
         except Exception as e:
             logger.error(f"メールVision処理エラー: {e}", exc_info=True)
