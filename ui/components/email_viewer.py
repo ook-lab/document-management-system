@@ -227,10 +227,23 @@ def render_email_html_preview(email: Dict[str, Any], drive_connector=None):
                 st.warning("HTMLファイルのダウンロードに失敗しました")
 
     except Exception as e:
-        st.error(f"HTMLプレビューの表示中にエラーが発生しました: {e}")
+        error_str = str(e)
+
+        # 404エラーの場合は特別なメッセージを表示
+        if "File not found" in error_str or "404" in error_str:
+            st.warning("⚠️ HTMLファイルがGoogle Driveで見つかりませんでした")
+            st.info("""
+            考えられる原因：
+            - ファイルが削除されている
+            - サービスアカウントにアクセス権限がない
+            - ファイルIDが正しくない
+            """)
+        else:
+            st.error(f"HTMLプレビューの表示中にエラーが発生しました")
 
         # デバッグ情報を表示
         with st.expander("🔍 エラー詳細"):
+            st.text(f"エラー: {error_str}")
             import traceback
             st.code(traceback.format_exc())
             st.json({
@@ -245,6 +258,7 @@ def render_email_html_preview(email: Dict[str, Any], drive_connector=None):
         # フォールバック：リンクボタンを表示
         if drive_file_id:
             st.markdown("---")
+            st.caption("Google Driveで直接確認してください：")
             col1, col2 = st.columns(2)
             with col1:
                 st.link_button(

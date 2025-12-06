@@ -143,7 +143,10 @@ class GoogleDriveConnector:
             return str(dest_path)
 
         except Exception as e:
-            logger.error(f"ファイルダウンロードエラー ({file_name}): {e}", exc_info=True)
+            # エラーメッセージを文字列化してからログに渡す（loguruのフォーマットエラーを回避）
+            error_msg = str(e)
+            logger.error(f"ファイルダウンロードエラー ({file_name}): {error_msg}")
+            logger.debug(f"エラー詳細: {error_msg}", exc_info=True)
             return None
 
     def get_inbox_folder_id(self) -> Optional[str]:
