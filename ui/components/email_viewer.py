@@ -115,9 +115,11 @@ def render_email_detail(email: Dict[str, Any]):
             # 直接JSON文字列の場合
             elif summary.startswith('{'):
                 email_data = json.loads(summary)
-        except:
-            # パースに失敗した場合は元のデータを使用
-            pass
+        except Exception as e:
+            # パースに失敗した場合はログに出力
+            import logging
+            logging.warning(f"Failed to parse summary JSON: {e}")
+            logging.debug(f"Summary content: {summary[:200]}...")
 
     # email_dataがない場合はmetadataを使用
     if not email_data:
@@ -183,8 +185,16 @@ def render_email_detail(email: Dict[str, Any]):
     with tab2:
         st.markdown("#### メール本文（全文）")
 
-        # extracted_textを表示
+        # extracted_textを取得（複数の場所から試す）
         extracted_text = email_data.get('extracted_text', '')
+
+        # extracted_textがない場合は、full_textを試す
+        if not extracted_text:
+            extracted_text = email.get('full_text', '')
+
+        # それでもない場合は、metadataのextracted_textを試す
+        if not extracted_text:
+            extracted_text = metadata.get('extracted_text', '')
 
         if extracted_text:
             # From, To, Date行と画像表示についての注意書きを除外
@@ -210,7 +220,18 @@ def render_email_detail(email: Dict[str, Any]):
             # テキストエリアで表示（スクロール可能、コピペ可能）
             st.text_area("", body_text, height=500, label_visibility="collapsed", key="email_body_text")
         else:
-            st.info("本文がありません")
+            # デバッグ情報を表示
+            st.warning("本文が見つかりません")
+            with st.expander("🔍 デバッグ情報", expanded=False):
+                st.markdown("**email_dataのキー:**")
+                st.code(str(list(email_data.keys())))
+                st.markdown("**emailのキー:**")
+                st.code(str(list(email.keys())))
+                st.markdown("**metadataのキー:**")
+                st.code(str(list(metadata.keys())))
+                if summary:
+                    st.markdown("**summary (最初の500文字):**")
+                    st.code(summary[:500])
 
     with tab3:
         st.markdown("#### 重要な情報")
