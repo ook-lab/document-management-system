@@ -122,18 +122,56 @@ def render_email_detail(email: Dict[str, Any]):
                 email_data = json.loads(json_str)
                 parse_success = True
             except json.JSONDecodeError as e:
-                # JSONが不完全な可能性があるため、エラーの詳細を表示
-                st.error(f"⚠️ メールデータのJSON解析に失敗しました: {str(e)[:100]}")
-                # 部分的なJSONでも読み取れる場合は読み取る
-                try:
-                    # 不完全なJSONの場合、最後の部分を補完して再試行
-                    if not json_str.endswith('}'):
-                        json_str = json_str.rsplit(',', 1)[0] + '\n}'
-                        email_data = json.loads(json_str)
+                # エスケープシーケンスエラーの場合、修正を試みる
+                error_msg = str(e)
+                if 'escape' in error_msg.lower():
+                    try:
+                        # 不正なエスケープシーケンスを修正
+                        # raw_unicode_escapeでデコードしてから再エンコード
+                        import re
+                        # バックスラッシュを二重エスケープ
+                        fixed_str = json_str.replace('\\', '\\\\')
+                        # 正しいエスケープシーケンスを元に戻す
+                        fixed_str = fixed_str.replace('\\\\n', '\\n')
+                        fixed_str = fixed_str.replace('\\\\t', '\\t')
+                        fixed_str = fixed_str.replace('\\\\r', '\\r')
+                        fixed_str = fixed_str.replace('\\\\"', '\\"')
+                        fixed_str = re.sub(r'\\\\u([0-9a-fA-F]{4})', r'\\u\1', fixed_str)
+                        # \\\\ -> \\ (二重バックスラッシュを単一に)
+                        fixed_str = fixed_str.replace('\\\\\\\\', '\\\\')
+
+                        email_data = json.loads(fixed_str)
                         parse_success = True
-                        st.info("部分的なデータを読み込みました")
-                except:
-                    pass
+                        st.success("✅ エスケープエラーを修正してデータを読み込みました")
+                    except:
+                        pass
+
+                # それでも失敗した場合、正規表現で重要フィールドを抽出
+                if not parse_success:
+                    st.warning(f"⚠️ JSON解析に失敗しました。重要なフィールドのみ抽出します。")
+                    import re
+
+                    # "summary": "..." を抽出（改行を含む可能性を考慮）
+                    summary_match = re.search(r'"summary"\s*:\s*"([^"]+)"', json_str, re.DOTALL)
+                    if summary_match:
+                        email_data['summary'] = summary_match.group(1).replace('\\n', '\n')
+
+                    # "extracted_text": "..." を抽出（最初の1000文字まで）
+                    extracted_match = re.search(r'"extracted_text"\s*:\s*"(.{1,3000}?)"(?:\s*,|\s*})', json_str, re.DOTALL)
+                    if extracted_match:
+                        email_data['extracted_text'] = extracted_match.group(1).replace('\\n', '\n')
+
+                    # "key_information": [...] を抽出
+                    key_info_match = re.search(r'"key_information"\s*:\s*\[(.*?)\]', json_str, re.DOTALL)
+                    if key_info_match:
+                        try:
+                            key_info_str = '[' + key_info_match.group(1) + ']'
+                            email_data['key_information'] = json.loads(key_info_str)
+                        except:
+                            pass
+
+                    if email_data:
+                        parse_success = True
 
     # パースに失敗した場合はmetadataを使用
     if not parse_success or not email_data:
