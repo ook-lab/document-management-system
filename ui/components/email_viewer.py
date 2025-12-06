@@ -178,10 +178,22 @@ def render_email_html_preview(email: Dict[str, Any], drive_connector=None):
     """
     st.markdown("### 📧 メールプレビュー")
 
+    # メールドキュメントの検証
+    if not email:
+        st.warning("メールデータが見つかりません")
+        return
+
     drive_file_id = email.get('drive_file_id') or email.get('source_id')
 
     if not drive_file_id:
         st.info("プレビュー可能なHTMLファイルがありません")
+        # デバッグ情報
+        with st.expander("🔍 デバッグ情報"):
+            st.json({
+                "email_keys": list(email.keys()),
+                "drive_file_id": drive_file_id,
+                "source_id": email.get('source_id')
+            })
         return
 
     # Google DriveからHTMLをダウンロードして表示
@@ -192,7 +204,10 @@ def render_email_html_preview(email: Dict[str, Any], drive_connector=None):
 
         import tempfile
         temp_dir = tempfile.gettempdir()
-        file_name = email.get('file_name', f"{email['id']}.html")
+
+        # より安全なファイル名の取得
+        email_id = email.get('id', 'unknown')
+        file_name = email.get('file_name', f"email_{email_id}.html")
 
         with st.spinner("メールHTMLを読み込み中..."):
             file_path = drive_connector.download_file(drive_file_id, file_name, temp_dir)
@@ -214,21 +229,35 @@ def render_email_html_preview(email: Dict[str, Any], drive_connector=None):
     except Exception as e:
         st.error(f"HTMLプレビューの表示中にエラーが発生しました: {e}")
 
+        # デバッグ情報を表示
+        with st.expander("🔍 エラー詳細"):
+            import traceback
+            st.code(traceback.format_exc())
+            st.json({
+                "email_data": {
+                    "id": email.get('id'),
+                    "drive_file_id": drive_file_id,
+                    "file_name": email.get('file_name'),
+                    "available_keys": list(email.keys())
+                }
+            })
+
         # フォールバック：リンクボタンを表示
-        st.markdown("---")
-        col1, col2 = st.columns(2)
-        with col1:
-            st.link_button(
-                "📥 元のHTMLをダウンロード",
-                f"https://drive.google.com/uc?export=download&id={drive_file_id}",
-                use_container_width=True
-            )
-        with col2:
-            st.link_button(
-                "👁️ Google Driveで表示",
-                f"https://drive.google.com/file/d/{drive_file_id}/view",
-                use_container_width=True
-            )
+        if drive_file_id:
+            st.markdown("---")
+            col1, col2 = st.columns(2)
+            with col1:
+                st.link_button(
+                    "📥 元のHTMLをダウンロード",
+                    f"https://drive.google.com/uc?export=download&id={drive_file_id}",
+                    use_container_width=True
+                )
+            with col2:
+                st.link_button(
+                    "👁️ Google Driveで表示",
+                    f"https://drive.google.com/file/d/{drive_file_id}/view",
+                    use_container_width=True
+                )
 
 
 def render_email_filters() -> Dict[str, Any]:
