@@ -114,6 +114,11 @@ def render_email_detail(email: Dict[str, Any]):
         st.code(str(meta_summary)[:500] if meta_summary else "なし")
         st.markdown(f"長さ: {len(str(meta_summary)) if meta_summary else 0} 文字")
 
+        st.markdown("**full_text (最初の1000文字):**")
+        full_text = email.get('full_text', '')
+        st.code(str(full_text)[:1000] if full_text else "なし")
+        st.markdown(f"長さ: {len(str(full_text)) if full_text else 0} 文字")
+
     # summaryフィールドからJSONデータを抽出
     # 優先順位: documents.summary > metadata.summary
     email_data = {}
