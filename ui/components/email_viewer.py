@@ -2,7 +2,7 @@
 Email Viewer Component
 
 メール専用の表示コンポーネント
-- メール一覧（受信トレイ風）
+- メール一覧（表形式）
 - メール詳細表示（メールらしい見た目）
 """
 import streamlit as st
@@ -10,29 +10,27 @@ from datetime import datetime
 from typing import Dict, List, Any, Optional
 import json
 import html
+import pandas as pd
 
 
 def render_email_list(emails: List[Dict[str, Any]]) -> Optional[str]:
     """
-    メール一覧を受信トレイ風に表示
+    メール一覧を表形式で表示（PDFレビューと同様）
 
     Args:
         emails: メールドキュメントのリスト
 
     Returns:
-        選択されたメールのID（クリックされた場合）
+        選択されたメールのインデックス（None の場合は未選択）
     """
-    st.markdown("### 📬 受信メール一覧")
+    st.subheader("📬 受信メール一覧")
 
     if not emails:
         st.info("メールがありません")
         return None
 
-    # メール件数表示
-    st.caption(f"全 {len(emails)} 件のメール")
-
-    selected_email_id = None
-
+    # メールのDataFrameを作成
+    df_data = []
     for email in emails:
         metadata = email.get('metadata', {})
 
@@ -40,7 +38,6 @@ def render_email_list(emails: List[Dict[str, Any]]) -> Optional[str]:
         sender = metadata.get('from', '送信者不明')
         subject = metadata.get('subject', '(件名なし)')
         date_str = metadata.get('date', '')
-        summary = email.get('summary', '')
 
         # 送信者から名前とメールアドレスを抽出
         sender_name = sender
@@ -50,70 +47,42 @@ def render_email_list(emails: List[Dict[str, Any]]) -> Optional[str]:
 
         # 日付をフォーマット
         try:
-            # ここで日付パースを試みる（フォーマットは調整が必要かも）
             display_date = date_str[:10] if date_str else ""
         except:
             display_date = date_str
 
-        # メールカード
-        with st.container():
-            col1, col2 = st.columns([4, 1])
+        df_data.append({
+            '件名': subject,
+            '送信者': sender_name,
+            '送信日時': display_date
+        })
 
-            with col1:
-                # 件名をボタンとして表示（クリック可能）
-                if st.button(
-                    f"**{subject}**",
-                    key=f"email_{email['id']}",
-                    use_container_width=True
-                ):
-                    selected_email_id = email['id']
+    df = pd.DataFrame(df_data)
 
-                # 送信者と要約を小さく表示
-                st.caption(f"👤 {sender_name}")
-                if summary:
-                    # 要約を最初の100文字だけ表示
-                    preview = summary[:100] + "..." if len(summary) > 100 else summary
-                    st.caption(f"📝 {preview}")
+    # DataFrameを表示
+    st.dataframe(df, use_container_width=True, height=200)
 
-            with col2:
-                # 日付を右側に表示
-                st.caption(display_date)
+    # セレクトボックスでメールを選択
+    selected_index = st.selectbox(
+        "表示するメールを選択",
+        range(len(emails)),
+        format_func=lambda i: f"{df_data[i]['件名']} ({df_data[i]['送信者']})",
+        key="email_selector"
+    )
 
-            st.divider()
-
-    return selected_email_id
+    return selected_index
 
 
 def render_email_detail(email: Dict[str, Any]):
     """
-    メール詳細を表示
+    メール詳細をタブ形式で表示（PDFレビューと同じスタイル）
 
     Args:
         email: メールドキュメント
     """
     metadata = email.get('metadata', {})
 
-    # ヘッダー部分
-    st.markdown("### 📧 メール詳細")
-
-    # メールヘッダー（見やすく整形）
-    with st.container():
-        # HTMLエスケープして安全に表示
-        subject_escaped = html.escape(metadata.get('subject', '(件名なし)'))
-        from_escaped = html.escape(metadata.get('from', '不明'))
-        to_escaped = html.escape(metadata.get('to', '不明'))
-        date_escaped = html.escape(metadata.get('date', '不明'))
-
-        st.markdown(f"""
-        <div style="background-color: #f0f2f6; padding: 20px; border-radius: 10px; margin-bottom: 20px;">
-            <h3 style="margin: 0 0 15px 0;">{subject_escaped}</h3>
-            <div style="display: flex; flex-direction: column; gap: 8px;">
-                <div><strong>送信者:</strong> {from_escaped}</div>
-                <div><strong>宛先:</strong> {to_escaped}</div>
-                <div><strong>日時:</strong> {date_escaped}</div>
-            </div>
-        </div>
-        """, unsafe_allow_html=True)
+    st.markdown("### ✏️ メール情報")
 
     # タブで情報を整理
     tab1, tab2, tab3, tab4 = st.tabs(["📄 本文", "📊 要約", "🔍 重要情報", "⚙️ メタデータ"])
@@ -184,6 +153,69 @@ def render_email_detail(email: Dict[str, Any]):
     st.divider()
     drive_file_id = email.get('drive_file_id') or email.get('source_id')
     if drive_file_id:
+        col1, col2 = st.columns(2)
+        with col1:
+            st.link_button(
+                "📥 元のHTMLをダウンロード",
+                f"https://drive.google.com/uc?export=download&id={drive_file_id}",
+                use_container_width=True
+            )
+        with col2:
+            st.link_button(
+                "👁️ Google Driveで表示",
+                f"https://drive.google.com/file/d/{drive_file_id}/view",
+                use_container_width=True
+            )
+
+
+def render_email_html_preview(email: Dict[str, Any], drive_connector=None):
+    """
+    メールのHTMLプレビューを表示
+
+    Args:
+        email: メールドキュメント
+        drive_connector: GoogleDriveConnector インスタンス（オプション）
+    """
+    st.markdown("### 📧 メールプレビュー")
+
+    drive_file_id = email.get('drive_file_id') or email.get('source_id')
+
+    if not drive_file_id:
+        st.info("プレビュー可能なHTMLファイルがありません")
+        return
+
+    # Google DriveからHTMLをダウンロードして表示
+    try:
+        if drive_connector is None:
+            from core.connectors.google_drive import GoogleDriveConnector
+            drive_connector = GoogleDriveConnector()
+
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        file_name = email.get('file_name', f"{email['id']}.html")
+
+        with st.spinner("メールHTMLを読み込み中..."):
+            file_path = drive_connector.download_file(drive_file_id, file_name, temp_dir)
+
+            if file_path:
+                # HTMLファイルを読み込み
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    html_content = f.read()
+
+                # iframeでHTMLを表示（セキュリティを考慮してサンドボックス化）
+                st.components.v1.html(
+                    html_content,
+                    height=700,
+                    scrolling=True
+                )
+            else:
+                st.warning("HTMLファイルのダウンロードに失敗しました")
+
+    except Exception as e:
+        st.error(f"HTMLプレビューの表示中にエラーが発生しました: {e}")
+
+        # フォールバック：リンクボタンを表示
+        st.markdown("---")
         col1, col2 = st.columns(2)
         with col1:
             st.link_button(

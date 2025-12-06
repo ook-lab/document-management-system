@@ -14,7 +14,7 @@ root_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(root_dir))
 
 from core.database.client import DatabaseClient
-from ui.components.email_viewer import render_email_list, render_email_detail, render_email_filters
+from ui.components.email_viewer import render_email_list, render_email_detail, render_email_filters, render_email_html_preview
 
 def load_emails(filters: dict = None):
     """
@@ -52,7 +52,7 @@ def load_emails(filters: dict = None):
 
 
 def email_inbox_ui():
-    """メール受信トレイUI"""
+    """メール受信トレイUI（PDFレビューと同じ構成）"""
     st.markdown("#### 📬 メール受信トレイ")
     st.caption("Gmail Vision処理されたメール一覧")
 
@@ -63,56 +63,66 @@ def email_inbox_ui():
     with st.spinner("メールを読み込み中..."):
         emails = load_emails(filters)
 
-    # セッションステートで選択されたメールを管理
-    if 'selected_email_id' not in st.session_state:
-        st.session_state.selected_email_id = None
+    if not emails:
+        st.info("メールがありません")
+        return
 
-    # レイアウト: 2カラム
-    col1, col2 = st.columns([1, 2])
-
-    with col1:
-        # メール一覧
-        selected_id = render_email_list(emails)
-        if selected_id:
-            st.session_state.selected_email_id = selected_id
-            st.rerun()
-
-    with col2:
-        # メール詳細
-        if st.session_state.selected_email_id:
-            # 選択されたメールを取得
-            selected_email = next(
-                (email for email in emails if email['id'] == st.session_state.selected_email_id),
-                None
-            )
-
-            if selected_email:
-                render_email_detail(selected_email)
-            else:
-                st.info("メールを選択してください")
-
-                # 戻るボタン
-                if st.button("← 一覧に戻る"):
-                    st.session_state.selected_email_id = None
-                    st.rerun()
-        else:
-            st.info("📩 左のリストからメールを選択してください")
-
-    # 統計情報
+    # 統計情報（サイドバー）
     st.sidebar.divider()
     st.sidebar.markdown("### 📊 統計")
     st.sidebar.metric("総メール数", len(emails))
 
     # workspace別の件数
-    if emails:
-        workspace_counts = {}
-        for email in emails:
-            ws = email.get('workspace', 'unknown')
-            workspace_counts[ws] = workspace_counts.get(ws, 0) + 1
+    workspace_counts = {}
+    for email in emails:
+        ws = email.get('workspace', 'unknown')
+        workspace_counts[ws] = workspace_counts.get(ws, 0) + 1
 
-        st.sidebar.markdown("#### Workspace別")
-        for ws, count in sorted(workspace_counts.items(), key=lambda x: x[1], reverse=True):
-            st.sidebar.caption(f"{ws}: {count}件")
+    st.sidebar.markdown("#### Workspace別")
+    for ws, count in sorted(workspace_counts.items(), key=lambda x: x[1], reverse=True):
+        st.sidebar.caption(f"{ws}: {count}件")
+
+    # リスト更新ボタン
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 リストを更新", use_container_width=True):
+        st.rerun()
+
+    # メール一覧を表形式で表示（上部）
+    selected_index = render_email_list(emails)
+
+    if selected_index is None:
+        st.info("メールを選択してください")
+        return
+
+    selected_email = emails[selected_index]
+
+    # 基本情報表示
+    metadata = selected_email.get('metadata', {})
+    st.markdown("---")
+    col1, col2, col3 = st.columns([2, 1, 1])
+    with col1:
+        st.markdown(f"**件名**: {metadata.get('subject', '(件名なし)')}")
+    with col2:
+        sender = metadata.get('from', '送信者不明')
+        sender_name = sender
+        if '<' in sender and '>' in sender:
+            sender_name = sender.split('<')[0].strip().strip('"')
+        st.markdown(f"**送信者**: {sender_name}")
+    with col3:
+        st.markdown(f"**日時**: {metadata.get('date', '')[:10]}")
+
+    st.markdown("---")
+
+    # レイアウト: 左にHTMLプレビュー、右にメール詳細（PDFレビューと同じ構成）
+    col_left, col_right = st.columns([1, 1.2])
+
+    with col_left:
+        # HTMLプレビュー
+        render_email_html_preview(selected_email)
+
+    with col_right:
+        # メール詳細（タブ形式）
+        render_email_detail(selected_email)
 
 
 def main():
