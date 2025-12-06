@@ -153,6 +153,14 @@ def pdf_review_ui():
     # サイドバー: 検索とフィルタ設定
     st.sidebar.header("🔍 検索 & フィルタ")
 
+    # Workspaceフィルタ
+    workspace_filter = st.sidebar.selectbox(
+        "Workspace",
+        options=["全て", "business", "personal"],
+        index=0,
+        help="ワークスペースでフィルタリング"
+    )
+
     # 検索ボックス
     search_query = st.sidebar.text_input(
         "IDやファイル名で検索",
@@ -197,9 +205,13 @@ def pdf_review_ui():
 
     # レビュー対象ドキュメントを取得
     with st.spinner("ドキュメントを取得中..."):
+        # Workspaceフィルタの値を変換（"全て"の場合はNone）
+        workspace_value = workspace_filter if workspace_filter != "全て" else None
+
         documents = db_client.get_documents_for_review(
             limit=limit,
-            search_query=search_query if search_query else None
+            search_query=search_query if search_query else None,
+            workspace=workspace_value
         )
 
     # デバッグログ: 取得後の確認
@@ -211,23 +223,110 @@ def pdf_review_ui():
 
     st.sidebar.success(f"✅ {len(documents)}件のドキュメント")
 
-    # ドキュメントリストをDataFrameで表示
-    df = pd.DataFrame([
-        {
+    # ドキュメントリストをDataFrameで表示（チェックボックス付き）
+    df_data = []
+    for idx, doc in enumerate(documents):
+        df_data.append({
+            '選択': False,  # チェックボックス用
             'ID': doc.get('id', '')[:8],
             'ファイル名': doc.get('file_name', ''),
             '文書タイプ': doc.get('doc_type', ''),
             '信頼度': round(doc.get('confidence') or 0, 3),
             '作成日時': doc.get('created_at', '')[:10]
-        }
-        for doc in documents
-    ])
+        })
+
+    df = pd.DataFrame(df_data)
 
     # デバッグログ: DataFrame作成後の確認
     logger.info(f"表示用DataFrameの行数: {len(df)}件")
 
     st.subheader("📁 レビュー対象ドキュメント一覧")
-    st.dataframe(df, use_container_width=True, height=200)
+
+    # まとめて削除機能
+    col_list_header, col_bulk_delete = st.columns([3, 1])
+    with col_list_header:
+        st.markdown("一覧から選択してまとめて削除できます")
+    with col_bulk_delete:
+        # セッション状態でチェックボックスの状態を管理
+        if 'selected_docs' not in st.session_state:
+            st.session_state.selected_docs = []
+
+    # データエディタでチェックボックス付きの表を表示
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        height=200,
+        hide_index=True,
+        column_config={
+            "選択": st.column_config.CheckboxColumn(
+                "選択",
+                help="削除するドキュメントを選択",
+                default=False,
+            )
+        },
+        disabled=["ID", "ファイル名", "文書タイプ", "信頼度", "作成日時"],
+        key="document_list_editor"
+    )
+
+    # 選択されたドキュメントを取得
+    selected_indices = edited_df[edited_df['選択'] == True].index.tolist()
+    selected_count = len(selected_indices)
+
+    # まとめて削除ボタン
+    if selected_count > 0:
+        col_bulk1, col_bulk2, col_spacer = st.columns([1, 1, 2])
+
+        with col_bulk1:
+            st.warning(f"⚠️ {selected_count}件のドキュメントが選択されています")
+
+        with col_bulk2:
+            # 一括削除確認用のセッション状態
+            if 'bulk_delete_confirm' not in st.session_state:
+                st.session_state.bulk_delete_confirm = False
+
+            if not st.session_state.bulk_delete_confirm:
+                if st.button(f"🗑️ {selected_count}件をまとめて削除", use_container_width=True, type="secondary"):
+                    st.session_state.bulk_delete_confirm = True
+                    st.rerun()
+            else:
+                if st.button(f"✅ {selected_count}件の削除を実行", use_container_width=True, type="primary"):
+                    with st.spinner(f"{selected_count}件のドキュメントを削除中..."):
+                        success_count = 0
+                        fail_count = 0
+
+                        for idx in selected_indices:
+                            doc = documents[idx]
+                            doc_id = doc.get('id')
+                            file_id = doc.get('drive_file_id') or doc.get('source_id')
+
+                            # Google Driveから削除
+                            if file_id:
+                                try:
+                                    drive_connector = GoogleDriveConnector()
+                                    drive_connector.trash_file(file_id)
+                                except Exception as e:
+                                    logger.error(f"Google Drive削除エラー: {e}")
+
+                            # データベースから削除
+                            if db_client.delete_document(doc_id):
+                                success_count += 1
+                            else:
+                                fail_count += 1
+
+                        if success_count > 0:
+                            st.success(f"✅ {success_count}件のドキュメントを削除しました")
+                        if fail_count > 0:
+                            st.error(f"❌ {fail_count}件の削除に失敗しました")
+
+                        st.session_state.bulk_delete_confirm = False
+                        st.balloons()
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+
+                if st.button("❌ キャンセル", use_container_width=True):
+                    st.session_state.bulk_delete_confirm = False
+                    st.rerun()
 
     # ドキュメント選択
     st.subheader("🔍 ドキュメント詳細")
@@ -592,6 +691,65 @@ def pdf_review_ui():
 
         with col_cancel:
             if st.button("🔄 リセット", use_container_width=True):
+                st.rerun()
+
+    # 削除機能（危険な操作のため、別セクションに配置）
+    st.markdown("---")
+    st.markdown("### ⚠️ 危険な操作")
+
+    # 削除確認用のセッション状態
+    delete_confirm_key = f"delete_confirm_{doc_id}"
+    if delete_confirm_key not in st.session_state:
+        st.session_state[delete_confirm_key] = False
+
+    col_delete1, col_delete2, col_spacer = st.columns([1, 1, 2])
+
+    with col_delete1:
+        if not st.session_state[delete_confirm_key]:
+            if st.button("🗑️ データを削除", use_container_width=True, type="secondary"):
+                st.session_state[delete_confirm_key] = True
+                st.rerun()
+        else:
+            st.warning("本当に削除しますか？")
+
+    with col_delete2:
+        if st.session_state[delete_confirm_key]:
+            if st.button("✅ 削除を実行", use_container_width=True, type="primary"):
+                with st.spinner("削除中..."):
+                    # 1. まずGoogle Driveからファイルをゴミ箱に移動
+                    drive_success = False
+                    if file_id:
+                        try:
+                            drive_connector = GoogleDriveConnector()
+                            drive_success = drive_connector.trash_file(file_id)
+                            if drive_success:
+                                st.success(f"✅ Google Driveのファイルをゴミ箱に移動しました")
+                            else:
+                                st.warning(f"⚠️ Google Driveファイルの削除に失敗しましたが、データベースからは削除します")
+                        except Exception as e:
+                            st.error(f"Google Drive削除エラー: {e}")
+                            st.warning(f"⚠️ Google Driveファイルの削除に失敗しましたが、データベースからは削除します")
+                    else:
+                        st.warning("Google DriveのファイルIDが見つかりません。データベースのみ削除します。")
+
+                    # 2. データベースから削除
+                    db_success = db_client.delete_document(doc_id)
+
+                    if db_success:
+                        st.success("✅ データベースからドキュメントを削除しました")
+                        st.balloons()
+                        # 削除確認状態をリセット
+                        st.session_state[delete_confirm_key] = False
+                        # 少し待ってからリロード
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ データベースからの削除に失敗しました")
+                        st.session_state[delete_confirm_key] = False
+
+            if st.button("❌ キャンセル", use_container_width=True):
+                st.session_state[delete_confirm_key] = False
                 st.rerun()
 
     # フッター

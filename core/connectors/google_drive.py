@@ -348,3 +348,51 @@ class GoogleDriveConnector:
         except Exception as e:
             logger.error(f"ファイルアップロードエラー ({file_path}): {e}")
             return None
+
+    def trash_file(self, file_id: str) -> bool:
+        """
+        ファイルをゴミ箱に移動（安全な削除）
+
+        Args:
+            file_id: ゴミ箱に移動するファイルのID
+
+        Returns:
+            成功した場合True、失敗した場合False
+        """
+        try:
+            # trashedフラグをTrueに設定してゴミ箱に移動
+            self.service.files().update(
+                fileId=file_id,
+                body={'trashed': True},
+                supportsAllDrives=True
+            ).execute()
+
+            logger.info(f"ファイルをゴミ箱に移動しました: {file_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"ファイルのゴミ箱移動エラー ({file_id}): {e}")
+            return False
+
+    def delete_file_permanently(self, file_id: str) -> bool:
+        """
+        ファイルを完全に削除（復元不可能）
+
+        Args:
+            file_id: 完全に削除するファイルのID
+
+        Returns:
+            成功した場合True、失敗した場合False
+        """
+        try:
+            self.service.files().delete(
+                fileId=file_id,
+                supportsAllDrives=True
+            ).execute()
+
+            logger.info(f"ファイルを完全に削除しました: {file_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"ファイルの完全削除エラー ({file_id}): {e}")
+            return False

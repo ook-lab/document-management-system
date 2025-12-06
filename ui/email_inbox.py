@@ -44,8 +44,8 @@ def load_emails(filters: dict = None):
     # 日付順にソート（新しい順）
     query = query.order('created_at', desc=True)
 
-    # 最大100件取得
-    query = query.limit(100)
+    # 最大20件取得
+    query = query.limit(20)
 
     result = query.execute()
     return result.data
@@ -87,12 +87,76 @@ def email_inbox_ui():
     if st.sidebar.button("🔄 リストを更新", use_container_width=True, key="refresh_email_list"):
         st.rerun()
 
-    # メール一覧を表形式で表示（上部）
-    selected_index = render_email_list(emails)
+    # メール一覧を表形式で表示（上部、チェックボックス付き）
+    selected_index, edited_df = render_email_list(emails)
 
     if selected_index is None:
         st.info("メールを選択してください")
         return
+
+    # まとめて削除機能
+    if edited_df is not None:
+        selected_indices = edited_df[edited_df['選択'] == True].index.tolist()
+        selected_count = len(selected_indices)
+
+        if selected_count > 0:
+            col_bulk1, col_bulk2, col_spacer = st.columns([1, 1, 2])
+
+            with col_bulk1:
+                st.warning(f"⚠️ {selected_count}件のメールが選択されています")
+
+            with col_bulk2:
+                # 一括削除確認用のセッション状態
+                if 'email_bulk_delete_confirm' not in st.session_state:
+                    st.session_state.email_bulk_delete_confirm = False
+
+                if not st.session_state.email_bulk_delete_confirm:
+                    if st.button(f"🗑️ {selected_count}件をまとめて削除", use_container_width=True, type="secondary", key="email_bulk_delete_btn"):
+                        st.session_state.email_bulk_delete_confirm = True
+                        st.rerun()
+                else:
+                    if st.button(f"✅ {selected_count}件の削除を実行", use_container_width=True, type="primary", key="email_bulk_delete_execute"):
+                        from core.connectors.google_drive import GoogleDriveConnector
+                        db = DatabaseClient()
+
+                        with st.spinner(f"{selected_count}件のメールを削除中..."):
+                            success_count = 0
+                            fail_count = 0
+
+                            for idx in selected_indices:
+                                email = emails[idx]
+                                doc_id = email.get('id')
+                                file_id = email.get('drive_file_id') or email.get('source_id')
+
+                                # Google Driveから削除（メールのHTMLファイル）
+                                if file_id:
+                                    try:
+                                        drive_connector = GoogleDriveConnector()
+                                        drive_connector.trash_file(file_id)
+                                    except Exception as e:
+                                        import logging
+                                        logging.error(f"Google Drive削除エラー: {e}")
+
+                                # データベースから削除
+                                if db.delete_document(doc_id):
+                                    success_count += 1
+                                else:
+                                    fail_count += 1
+
+                            if success_count > 0:
+                                st.success(f"✅ {success_count}件のメールを削除しました")
+                            if fail_count > 0:
+                                st.error(f"❌ {fail_count}件の削除に失敗しました")
+
+                            st.session_state.email_bulk_delete_confirm = False
+                            st.balloons()
+                            import time
+                            time.sleep(1)
+                            st.rerun()
+
+                    if st.button("❌ キャンセル", use_container_width=True, key="email_bulk_delete_cancel"):
+                        st.session_state.email_bulk_delete_confirm = False
+                        st.rerun()
 
     selected_email = emails[selected_index]
 

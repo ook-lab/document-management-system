@@ -13,23 +13,23 @@ import html
 import pandas as pd
 
 
-def render_email_list(emails: List[Dict[str, Any]]) -> Optional[str]:
+def render_email_list(emails: List[Dict[str, Any]]) -> tuple[Optional[int], pd.DataFrame]:
     """
-    メール一覧を表形式で表示（PDFレビューと同様）
+    メール一覧を表形式で表示（チェックボックス付き）
 
     Args:
         emails: メールドキュメントのリスト
 
     Returns:
-        選択されたメールのインデックス（None の場合は未選択）
+        選択されたメールのインデックス（None の場合は未選択）と編集されたDataFrame
     """
     st.subheader("📬 受信メール一覧")
 
     if not emails:
         st.info("メールがありません")
-        return None
+        return None, None
 
-    # メールのDataFrameを作成
+    # メールのDataFrameを作成（チェックボックス付き）
     df_data = []
     for email in emails:
         metadata = email.get('metadata', {})
@@ -52,6 +52,7 @@ def render_email_list(emails: List[Dict[str, Any]]) -> Optional[str]:
             display_date = date_str
 
         df_data.append({
+            '選択': False,  # チェックボックス用
             '件名': subject,
             '送信者': sender_name,
             '送信日時': display_date
@@ -59,8 +60,27 @@ def render_email_list(emails: List[Dict[str, Any]]) -> Optional[str]:
 
     df = pd.DataFrame(df_data)
 
-    # DataFrameを表示
-    st.dataframe(df, use_container_width=True, height=200)
+    # まとめて削除機能のヘッダー
+    col_list_header, col_bulk_delete = st.columns([3, 1])
+    with col_list_header:
+        st.markdown("一覧から選択してまとめて削除できます")
+
+    # データエディタでチェックボックス付きの表を表示
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        height=200,
+        hide_index=True,
+        column_config={
+            "選択": st.column_config.CheckboxColumn(
+                "選択",
+                help="削除するメールを選択",
+                default=False,
+            )
+        },
+        disabled=["件名", "送信者", "送信日時"],
+        key="email_list_editor"
+    )
 
     # セレクトボックスでメールを選択
     selected_index = st.selectbox(
@@ -70,7 +90,7 @@ def render_email_list(emails: List[Dict[str, Any]]) -> Optional[str]:
         key="email_selector"
     )
 
-    return selected_index
+    return selected_index, edited_df
 
 
 def render_email_detail(email: Dict[str, Any]):

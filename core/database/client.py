@@ -369,7 +369,8 @@ class DatabaseClient:
     def get_documents_for_review(
         self,
         limit: int = 100,
-        search_query: Optional[str] = None
+        search_query: Optional[str] = None,
+        workspace: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         レビュー対象のドキュメントを取得
@@ -380,12 +381,17 @@ class DatabaseClient:
         Args:
             limit: 取得する最大件数
             search_query: 検索クエリ（IDまたはファイル名で部分一致）
+            workspace: ワークスペースフィルタ（'business', 'personal', またはNone）
 
         Returns:
             ドキュメントのリスト（更新日時降順）
         """
         try:
             query = self.client.table('documents').select('*')
+
+            # Workspaceフィルタを適用
+            if workspace:
+                query = query.eq('workspace', workspace)
 
             if search_query:
                 # 検索モード: レビュー状態に関係なく検索
@@ -830,4 +836,35 @@ class DatabaseClient:
         except Exception as e:
             print(f"Error checking duplicate hash: {e}")
             # エラー時は安全側に倒して重複なしとして扱う
+            return False
+
+    def delete_document(self, doc_id: str) -> bool:
+        """
+        ドキュメントをデータベースから削除
+
+        Args:
+            doc_id: 削除するドキュメントのID
+
+        Returns:
+            True: 削除成功
+            False: 削除失敗
+        """
+        try:
+            # ドキュメントを削除（ON DELETE CASCADEにより関連データも削除される）
+            response = (
+                self.client.table('documents')
+                .delete()
+                .eq('id', doc_id)
+                .execute()
+            )
+
+            if response.data:
+                print(f"✅ ドキュメントを削除しました: {doc_id}")
+                return True
+            else:
+                print(f"⚠️  ドキュメントが見つかりませんでした: {doc_id}")
+                return False
+
+        except Exception as e:
+            print(f"❌ ドキュメント削除エラー: {e}")
             return False
