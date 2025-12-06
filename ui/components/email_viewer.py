@@ -103,27 +103,41 @@ def render_email_detail(email: Dict[str, Any]):
     metadata = email.get('metadata', {})
 
     # summaryフィールドからJSONデータを抽出
-    email_data = None
-    summary = email.get('summary', metadata.get('summary', ''))
+    email_data = {}
+    summary_raw = email.get('summary', metadata.get('summary', ''))
 
-    if summary:
-        try:
-            # ```json形式の場合
-            if summary.startswith('```json'):
-                json_str = summary.replace('```json', '').replace('```', '').strip()
+    # JSONパースを試みる
+    parse_success = False
+    if summary_raw and isinstance(summary_raw, str):
+        # ```jsonマーカーを削除
+        json_str = summary_raw
+        if json_str.startswith('```json'):
+            json_str = json_str.replace('```json', '').replace('```', '').strip()
+        elif json_str.startswith('```'):
+            json_str = json_str.replace('```', '').strip()
+
+        # JSONとしてパース
+        if json_str.startswith('{'):
+            try:
                 email_data = json.loads(json_str)
-            # 直接JSON文字列の場合
-            elif summary.startswith('{'):
-                email_data = json.loads(summary)
-        except Exception as e:
-            # パースに失敗した場合はログに出力
-            import logging
-            logging.warning(f"Failed to parse summary JSON: {e}")
-            logging.debug(f"Summary content: {summary[:200]}...")
+                parse_success = True
+            except json.JSONDecodeError as e:
+                # JSONが不完全な可能性があるため、エラーの詳細を表示
+                st.error(f"⚠️ メールデータのJSON解析に失敗しました: {str(e)[:100]}")
+                # 部分的なJSONでも読み取れる場合は読み取る
+                try:
+                    # 不完全なJSONの場合、最後の部分を補完して再試行
+                    if not json_str.endswith('}'):
+                        json_str = json_str.rsplit(',', 1)[0] + '\n}'
+                        email_data = json.loads(json_str)
+                        parse_success = True
+                        st.info("部分的なデータを読み込みました")
+                except:
+                    pass
 
-    # email_dataがない場合はmetadataを使用
-    if not email_data:
-        email_data = metadata
+    # パースに失敗した場合はmetadataを使用
+    if not parse_success or not email_data:
+        email_data = metadata.copy() if metadata else {}
 
     st.markdown("### ✏️ メール情報")
 
@@ -169,11 +183,25 @@ def render_email_detail(email: Dict[str, Any]):
 
         # 本文要約
         st.markdown("**📝 本文要約**")
+        # パース済みのemail_dataから要約を取得
         summary_text = email_data.get('summary', '')
-        if summary_text:
+
+        # summary_textがJSON文字列の場合は使用しない
+        if summary_text and not (summary_text.startswith('{') or summary_text.startswith('```')):
             st.info(summary_text)
         else:
-            st.info("要約がありません")
+            # 要約が見つからない場合は、extracted_textの先頭を要約として表示
+            extracted = email_data.get('extracted_text', '')
+            if extracted:
+                # 最初の200文字を要約として表示
+                summary_preview = extracted[:200] + "..." if len(extracted) > 200 else extracted
+                # From:, To:などのメタデータ行を除外
+                lines = summary_preview.split('\n')
+                clean_lines = [line for line in lines if not (line.startswith('From:') or line.startswith('To:') or line.startswith('Date:'))]
+                summary_preview = '\n'.join(clean_lines).strip()
+                st.info(summary_preview)
+            else:
+                st.info("要約がありません")
 
         # 画像の説明がある場合
         image_descriptions = email_data.get('image_descriptions', [])
@@ -185,16 +213,19 @@ def render_email_detail(email: Dict[str, Any]):
     with tab2:
         st.markdown("#### メール本文（全文）")
 
-        # extracted_textを取得（複数の場所から試す）
+        # extracted_textを取得
         extracted_text = email_data.get('extracted_text', '')
 
-        # extracted_textがない場合は、full_textを試す
-        if not extracted_text:
-            extracted_text = email.get('full_text', '')
-
-        # それでもない場合は、metadataのextracted_textを試す
+        # extracted_textがない場合は、metadataから取得
         if not extracted_text:
             extracted_text = metadata.get('extracted_text', '')
+
+        # full_textは最後の手段（構造化されたテキストが含まれている可能性がある）
+        if not extracted_text:
+            full_text = email.get('full_text', '')
+            # full_textに「要約:」などの構造が含まれている場合は除外
+            if full_text and '要約:' not in full_text[:100]:
+                extracted_text = full_text
 
         if extracted_text:
             # From, To, Date行と画像表示についての注意書きを除外
