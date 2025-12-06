@@ -102,72 +102,188 @@ def render_email_detail(email: Dict[str, Any]):
     """
     metadata = email.get('metadata', {})
 
+    # summaryフィールドからJSONデータを抽出
+    email_data = None
+    summary = email.get('summary', metadata.get('summary', ''))
+
+    if summary:
+        try:
+            # ```json形式の場合
+            if summary.startswith('```json'):
+                json_str = summary.replace('```json', '').replace('```', '').strip()
+                email_data = json.loads(json_str)
+            # 直接JSON文字列の場合
+            elif summary.startswith('{'):
+                email_data = json.loads(summary)
+        except:
+            # パースに失敗した場合は元のデータを使用
+            pass
+
+    # email_dataがない場合はmetadataを使用
+    if not email_data:
+        email_data = metadata
+
     st.markdown("### ✏️ メール情報")
 
-    # タブで情報を整理
-    tab1, tab2, tab3, tab4 = st.tabs(["📄 本文", "📊 要約", "🔍 重要情報", "⚙️ メタデータ"])
+    # タブで情報を整理（要約を最初に）
+    tab1, tab2, tab3, tab4 = st.tabs(["📊 要約", "📄 本文", "🔍 重要情報", "⚙️ メタデータ"])
 
     with tab1:
-        st.markdown("#### メール本文")
-        full_text = email.get('full_text', '')
+        st.markdown("#### メール要約")
 
-        if full_text:
-            # 「メール情報:」以降の本文部分を抽出
-            if '本文:' in full_text:
-                body_text = full_text.split('本文:')[1]
-                # 「重要な情報:」があればそこまで
-                if '重要な情報:' in body_text:
-                    body_text = body_text.split('重要な情報:')[0]
-                st.text_area("", body_text.strip(), height=400, label_visibility="collapsed")
-            else:
-                st.text_area("", full_text, height=400, label_visibility="collapsed")
-        else:
-            st.info("本文がありません")
+        # 送信元
+        st.markdown("**📤 送信元**")
+        sender = metadata.get('from', '不明')
+        # 送信者名とメールアドレスを抽出
+        sender_display = sender
+        if '<' in sender and '>' in sender:
+            sender_display = sender.split('<')[0].strip().strip('"')
+            sender_email = sender.split('<')[1].split('>')[0]
+            sender_display = f"{sender_display} ({sender_email})"
+        st.info(sender_display)
 
-    with tab2:
-        st.markdown("#### AI要約")
-        summary = email.get('summary', metadata.get('summary', ''))
+        # 宛先
+        st.markdown("**📥 宛先**")
+        recipient = metadata.get('to', '不明')
+        st.info(recipient)
 
-        if summary:
-            # summaryがJSON文字列の場合はパースを試みる
-            if summary.startswith('```json'):
-                try:
-                    # ```json と ``` を削除
-                    json_str = summary.replace('```json', '').replace('```', '').strip()
-                    summary_data = json.loads(json_str)
-                    st.json(summary_data)
-                except:
-                    st.write(summary)
-            else:
-                st.write(summary)
+        # 送信日
+        st.markdown("**📅 送信日**")
+        send_date = metadata.get('date', '不明')
+        st.info(send_date)
+
+        # 受信日（created_atを使用）
+        st.markdown("**📩 受信日**")
+        received_date = email.get('created_at', '不明')
+        # ISO形式の日時を読みやすく整形
+        if received_date and received_date != '不明':
+            try:
+                from datetime import datetime
+                dt = datetime.fromisoformat(received_date.replace('Z', '+00:00'))
+                received_date = dt.strftime('%Y-%m-%d %H:%M:%S')
+            except:
+                pass
+        st.info(received_date)
+
+        # 本文要約
+        st.markdown("**📝 本文要約**")
+        summary_text = email_data.get('summary', '')
+        if summary_text:
+            st.info(summary_text)
         else:
             st.info("要約がありません")
 
+        # 画像の説明がある場合
+        image_descriptions = email_data.get('image_descriptions', [])
+        if image_descriptions:
+            st.markdown("**📷 画像の説明**")
+            for desc in image_descriptions:
+                st.info(f"• {desc}")
+
+    with tab2:
+        st.markdown("#### メール本文（全文）")
+
+        # extracted_textを表示
+        extracted_text = email_data.get('extracted_text', '')
+
+        if extracted_text:
+            # From, To, Date行と画像表示についての注意書きを除外
+            lines = extracted_text.split('\n')
+            body_lines = []
+            skip_next = False
+
+            for line in lines:
+                # メタデータ行をスキップ
+                if line.startswith('From:') or line.startswith('To:') or line.startswith('Date:'):
+                    continue
+                if '!画像表示について:' in line:
+                    skip_next = True
+                    continue
+                if skip_next and ('End' in line or 'すべての画像を表示' in line):
+                    skip_next = False
+                    continue
+                if not skip_next:
+                    body_lines.append(line)
+
+            body_text = '\n'.join(body_lines).strip()
+
+            # テキストエリアで表示（スクロール可能、コピペ可能）
+            st.text_area("", body_text, height=500, label_visibility="collapsed", key="email_body_text")
+        else:
+            st.info("本文がありません")
+
     with tab3:
         st.markdown("#### 重要な情報")
-        key_info = metadata.get('key_information', [])
 
-        if key_info and isinstance(key_info, list):
+        # key_informationを表示
+        key_info = email_data.get('key_information', [])
+
+        if key_info and isinstance(key_info, list) and len(key_info) > 0:
             for i, info in enumerate(key_info, 1):
                 st.markdown(f"{i}. {info}")
         else:
             st.info("重要な情報が抽出されていません")
 
         # リンクがある場合
-        links = metadata.get('links', [])
-        if links:
+        links = email_data.get('links', metadata.get('links', []))
+        if links and len(links) > 0:
+            st.markdown("---")
             st.markdown("#### 🔗 リンク")
-            for link in links:
-                st.markdown(f"- {link}")
+
+            # リンクが多い場合は折りたたみ可能にする
+            if len(links) > 5:
+                with st.expander(f"リンク一覧 ({len(links)}件)", expanded=False):
+                    for i, link in enumerate(links, 1):
+                        # リンク形式を判定
+                        if link.startswith('http'):
+                            st.markdown(f"{i}. [{link}]({link})")
+                        else:
+                            st.markdown(f"{i}. {link}")
+            else:
+                for i, link in enumerate(links, 1):
+                    if link.startswith('http'):
+                        st.markdown(f"{i}. [{link}]({link})")
+                    else:
+                        st.markdown(f"{i}. {link}")
 
         # 画像がある場合
-        has_images = metadata.get('has_images', False)
+        has_images = email_data.get('has_images', False)
         if has_images:
-            st.info("📷 このメールには画像が含まれています")
+            st.info("📷 このメールには画像が含まれています（HTMLプレビューで確認できます）")
 
     with tab4:
-        st.markdown("#### メタデータ（JSON）")
-        st.json(metadata)
+        st.markdown("#### メタデータ")
+
+        # 主要なメタデータを読みやすく表示
+        col1, col2 = st.columns(2)
+
+        with col1:
+            st.markdown("**送信者**")
+            st.code(metadata.get('from', '不明'), language=None)
+
+            st.markdown("**宛先**")
+            st.code(metadata.get('to', '不明'), language=None)
+
+        with col2:
+            st.markdown("**件名**")
+            st.code(metadata.get('subject', '(件名なし)'), language=None)
+
+            st.markdown("**送信日時**")
+            st.code(metadata.get('date', '不明'), language=None)
+
+        # Workspace情報
+        st.markdown("**Workspace**")
+        st.code(email.get('workspace', 'unknown'), language=None)
+
+        # Gmail Label
+        gmail_label = metadata.get('gmail_label') or email.get('gmail_label')
+        if gmail_label:
+            st.markdown("**Gmail Label**")
+            st.code(gmail_label, language=None)
+
+        # 完全なメタデータJSONは折りたたみで表示
+        with st.expander("🔍 完全なメタデータ（JSON）", expanded=False):
+            st.json(metadata)
 
     # Google Drive HTMLファイルへのリンク
     st.divider()
