@@ -102,7 +102,20 @@ def render_email_detail(email: Dict[str, Any]):
     """
     metadata = email.get('metadata', {})
 
+    # デバッグ: データソースを確認
+    with st.expander("🔍 データソース確認", expanded=False):
+        st.markdown("**documents.summary (最初の500文字):**")
+        doc_summary = email.get('summary', '')
+        st.code(str(doc_summary)[:500] if doc_summary else "なし")
+        st.markdown(f"長さ: {len(str(doc_summary)) if doc_summary else 0} 文字")
+
+        st.markdown("**metadata.summary (最初の500文字):**")
+        meta_summary = metadata.get('summary', '')
+        st.code(str(meta_summary)[:500] if meta_summary else "なし")
+        st.markdown(f"長さ: {len(str(meta_summary)) if meta_summary else 0} 文字")
+
     # summaryフィールドからJSONデータを抽出
+    # 優先順位: documents.summary > metadata.summary
     email_data = {}
     summary_raw = email.get('summary', metadata.get('summary', ''))
 
@@ -204,6 +217,20 @@ def render_email_detail(email: Dict[str, Any]):
     # パースに失敗した場合はmetadataを使用
     if not parse_success or not email_data:
         email_data = metadata.copy() if metadata else {}
+
+        # metadataに直接extracted_textやsummaryがある場合は使用
+        # ただし、JSON文字列の場合は除外
+        if 'summary' in metadata:
+            meta_summary = metadata.get('summary', '')
+            if meta_summary and not (isinstance(meta_summary, str) and (meta_summary.startswith('{') or meta_summary.startswith('```'))):
+                email_data['summary'] = meta_summary
+
+        # extracted_textがmetadataに直接ある場合
+        if 'extracted_text' not in email_data or not email_data.get('extracted_text'):
+            # full_textをextracted_textとして使用（構造化されていない場合のみ）
+            full_text = email.get('full_text', '')
+            if full_text and '要約:' not in full_text[:200]:
+                email_data['extracted_text'] = full_text
 
     st.markdown("### ✏️ メール情報")
 
