@@ -370,7 +370,8 @@ class DatabaseClient:
         self,
         limit: int = 100,
         search_query: Optional[str] = None,
-        workspace: Optional[str] = None
+        workspace: Optional[str] = None,
+        file_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         レビュー対象のドキュメントを取得
@@ -382,12 +383,17 @@ class DatabaseClient:
             limit: 取得する最大件数
             search_query: 検索クエリ（IDまたはファイル名で部分一致）
             workspace: ワークスペースフィルタ（'business', 'personal', またはNone）
+            file_type: ファイルタイプフィルタ（'pdf', 'email', またはNone）
 
         Returns:
             ドキュメントのリスト（更新日時降順）
         """
         try:
             query = self.client.table('documents').select('*')
+
+            # File typeフィルタを適用
+            if file_type:
+                query = query.eq('file_type', file_type)
 
             # Workspaceフィルタを適用
             if workspace:

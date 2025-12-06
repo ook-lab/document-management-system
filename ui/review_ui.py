@@ -203,7 +203,7 @@ def pdf_review_ui():
     if st.sidebar.button("🔄 リストを更新", use_container_width=True, key="refresh_pdf_list"):
         st.rerun()
 
-    # レビュー対象ドキュメントを取得
+    # レビュー対象ドキュメントを取得（PDFのみ）
     with st.spinner("ドキュメントを取得中..."):
         # Workspaceフィルタの値を変換（"全て"の場合はNone）
         workspace_value = workspace_filter if workspace_filter != "全て" else None
@@ -211,7 +211,8 @@ def pdf_review_ui():
         documents = db_client.get_documents_for_review(
             limit=limit,
             search_query=search_query if search_query else None,
-            workspace=workspace_value
+            workspace=workspace_value,
+            file_type='pdf'  # PDFのみを取得
         )
 
     # デバッグログ: 取得後の確認
