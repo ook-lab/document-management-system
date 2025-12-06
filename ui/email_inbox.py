@@ -16,13 +16,6 @@ sys.path.insert(0, str(root_dir))
 from core.database.client import DatabaseClient
 from ui.components.email_viewer import render_email_list, render_email_detail, render_email_filters
 
-# ページ設定
-st.set_page_config(
-    page_title="📬 メール受信トレイ",
-    page_icon="📬",
-    layout="wide"
-)
-
 def load_emails(filters: dict = None):
     """
     Supabaseからメールデータを取得
@@ -58,8 +51,9 @@ def load_emails(filters: dict = None):
     return result.data
 
 
-def main():
-    st.title("📬 メール受信トレイ")
+def email_inbox_ui():
+    """メール受信トレイUI"""
+    st.markdown("#### 📬 メール受信トレイ")
     st.caption("Gmail Vision処理されたメール一覧")
 
     # サイドバーでフィルター
@@ -119,6 +113,17 @@ def main():
         st.sidebar.markdown("#### Workspace別")
         for ws, count in sorted(workspace_counts.items(), key=lambda x: x[1], reverse=True):
             st.sidebar.caption(f"{ws}: {count}件")
+
+
+def main():
+    """スタンドアロン実行用のmain関数"""
+    st.set_page_config(
+        page_title="📬 メール受信トレイ",
+        page_icon="📬",
+        layout="wide"
+    )
+    st.title("📬 メール受信トレイ")
+    email_inbox_ui()
 
 
 if __name__ == "__main__":

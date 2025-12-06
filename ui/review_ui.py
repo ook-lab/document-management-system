@@ -137,16 +137,10 @@ def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
         return None
 
 
-def main():
-    """メインUIロジック"""
-    st.set_page_config(
-        page_title="Document Review UI v2.0",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-
-    st.title("📋 Document Review UI v2.0")
-    st.markdown("AIが抽出したメタデータを**3つのタブ**で確認・修正できます")
+def pdf_review_ui():
+    """PDFレビューUIロジック"""
+    st.markdown("#### 📋 PDFドキュメントレビュー")
+    st.caption("AIが抽出したメタデータを確認・修正できます")
 
     # データベースクライアントとスキーマ検出器の初期化
     try:
@@ -607,6 +601,30 @@ def main():
         st.caption("Document Management System - Review UI v2.0 (Tab Edition)")
     with col_footer2:
         st.caption(f"🎨 検出スキーマ: {detected_schema or 'N/A'}")
+
+
+def main():
+    """メインUIロジック - タブ切り替え"""
+    st.set_page_config(
+        page_title="Document Management System",
+        page_icon="📚",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
+    st.title("📚 Document Management System")
+    st.markdown("PDFレビューとメール受信トレイを統合管理")
+
+    # トップレベルのタブ
+    tab1, tab2 = st.tabs(["📋 PDFレビュー", "📬 メール受信トレイ"])
+
+    with tab1:
+        pdf_review_ui()
+
+    with tab2:
+        # メールUIをインポートして表示
+        from ui.email_inbox import email_inbox_ui
+        email_inbox_ui()
 
 
 if __name__ == "__main__":
