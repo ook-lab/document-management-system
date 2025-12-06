@@ -248,7 +248,7 @@ class GoogleDriveConnector:
         folder_id: Optional[str] = None
     ) -> Optional[str]:
         """
-        ファイルをGoogle Driveにアップロード
+        ファイルをGoogle Driveにアップロード（共有ドライブ対応）
 
         Args:
             file_content: ファイルの内容（バイトまたは文字列）
@@ -276,10 +276,12 @@ class GoogleDriveConnector:
                 resumable=True
             )
 
+            # 共有ドライブ対応: supportsAllDrives=True を追加
             file = self.service.files().create(
                 body=file_metadata,
                 media_body=media,
-                fields='id, name, webViewLink'
+                fields='id, name, webViewLink',
+                supportsAllDrives=True
             ).execute()
 
             logger.info(f"ファイルアップロード成功: {file_name} (ID: {file['id']})")
@@ -296,7 +298,7 @@ class GoogleDriveConnector:
         mime_type: Optional[str] = None
     ) -> Optional[str]:
         """
-        ローカルファイルをGoogle Driveにアップロード
+        ローカルファイルをGoogle Driveにアップロード（共有ドライブ対応）
 
         Args:
             file_path: ローカルファイルのパス
@@ -330,10 +332,12 @@ class GoogleDriveConnector:
                 resumable=True
             )
 
+            # 共有ドライブ対応: supportsAllDrives=True を追加
             file = self.service.files().create(
                 body=file_metadata,
                 media_body=media,
-                fields='id, name, webViewLink'
+                fields='id, name, webViewLink',
+                supportsAllDrives=True
             ).execute()
 
             logger.info(f"ファイルアップロード成功: {file_path.name} (ID: {file['id']})")

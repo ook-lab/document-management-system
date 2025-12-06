@@ -25,6 +25,17 @@ class ModelTier:
         "max_tokens": 2048,
         "cost_per_1k_tokens": 0.00015
     }
+
+    # Email Vision処理（超高速・超低コスト）
+    # Gemini 2.5 Flash-LiteでHTMLメールスクリーンショットを解析
+    EMAIL_VISION = {
+        "provider": AIProvider.GEMINI,
+        "model": "gemini-2.0-flash-lite",
+        "description": "メールスクリーンショット解析（大量処理向け）",
+        "temperature": 0.0,
+        "max_tokens": 8192,  # 長いメールに対応するため8192に増加
+        "cost_per_1k_tokens": 0.00005  # Flash-Liteは超低コスト
+    }
     
     # Stage 2: 詳細抽出（速度・コスト重視）
     # Claude Haiku 4.5に変更（コスト効率と速度向上）
@@ -62,6 +73,7 @@ class ModelTier:
         """タスクに応じた最適なモデルを返す"""
         task_mapping = {
             "stage1_classification": cls.STAGE1_CLASSIFIER,
+            "email_vision": cls.EMAIL_VISION,
             "stage2_extraction": cls.STAGE2_EXTRACTOR,
             "ui_response": cls.UI_RESPONSE_GENERATOR,
             "embeddings": cls.EMBEDDING

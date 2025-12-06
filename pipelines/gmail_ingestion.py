@@ -33,6 +33,8 @@ from core.connectors.gmail_connector import GmailConnector
 from core.connectors.google_drive import GoogleDriveConnector
 from core.database.client import DatabaseClient
 from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
+from core.processors.email_vision import EmailVisionProcessor
+from config.workspaces import get_workspace_from_gmail_label
 
 
 class GmailIngestionPipeline:
@@ -62,12 +64,107 @@ class GmailIngestionPipeline:
         self.drive = GoogleDriveConnector()
         self.db = DatabaseClient()
         self.ingestion_pipeline = TwoStageIngestionPipeline()
+        self.email_vision_processor = EmailVisionProcessor()
 
         logger.info(f"GmailIngestionPipeline初期化完了")
         logger.info(f"  - Gmail: {gmail_user_email}")
         logger.info(f"  - Label: {self.gmail_label}")
         logger.info(f"  - Email folder: {self.email_folder_id}")
         logger.info(f"  - Attachment folder: {self.attachment_folder_id}")
+
+    def _embed_images_as_base64(self, soup) -> None:
+        """
+        HTMLの画像URLをBase64エンコードして埋め込む
+
+        Args:
+            soup: BeautifulSoupオブジェクト（直接編集される）
+        """
+        import base64
+        import requests
+        from urllib.parse import urlparse
+
+        img_tags = soup.find_all('img')
+        if not img_tags:
+            return
+
+        logger.info(f"画像を Base64 エンコード中: {len(img_tags)} 枚")
+
+        success_count = 0
+        skip_count = 0
+        error_count = 0
+
+        for img in img_tags:
+            src = img.get('src', '')
+
+            # すでにBase64の場合はスキップ
+            if src.startswith('data:'):
+                skip_count += 1
+                continue
+
+            # CID画像はスキップ（添付ファイルからの取得が必要）
+            if src.startswith('cid:'):
+                logger.debug(f"CID画像をスキップ: {src}")
+                skip_count += 1
+                continue
+
+            # HTTP/HTTPS画像のみ処理
+            if not (src.startswith('http://') or src.startswith('https://')):
+                skip_count += 1
+                continue
+
+            try:
+                # 画像をダウンロード（タイムアウト10秒、最大1MB）
+                response = requests.get(
+                    src,
+                    timeout=10,
+                    headers={'User-Agent': 'Mozilla/5.0'},
+                    stream=True
+                )
+                response.raise_for_status()
+
+                # Content-Lengthチェック（1MB制限）
+                content_length = response.headers.get('Content-Length')
+                if content_length and int(content_length) > 1024 * 1024:
+                    logger.warning(f"画像が大きすぎるためスキップ: {src} ({content_length} bytes)")
+                    skip_count += 1
+                    continue
+
+                # 画像データを取得
+                image_data = b''
+                total_size = 0
+                for chunk in response.iter_content(chunk_size=8192):
+                    total_size += len(chunk)
+                    if total_size > 1024 * 1024:  # 1MB超えたら中断
+                        logger.warning(f"画像が大きすぎるためスキップ: {src}")
+                        skip_count += 1
+                        break
+                    image_data += chunk
+                else:
+                    # MIMEタイプを取得
+                    content_type = response.headers.get('Content-Type', 'image/jpeg')
+                    if ';' in content_type:
+                        content_type = content_type.split(';')[0].strip()
+
+                    # Base64エンコード
+                    base64_data = base64.b64encode(image_data).decode('utf-8')
+                    data_uri = f"data:{content_type};base64,{base64_data}"
+
+                    # src属性を置き換え
+                    img['src'] = data_uri
+                    success_count += 1
+                    logger.debug(f"✓ Base64化成功: {src[:50]}... ({len(image_data)} bytes)")
+
+            except requests.exceptions.Timeout:
+                logger.warning(f"画像ダウンロードタイムアウト: {src}")
+                error_count += 1
+            except requests.exceptions.RequestException as e:
+                logger.warning(f"画像ダウンロード失敗: {src} - {e}")
+                error_count += 1
+            except Exception as e:
+                logger.error(f"画像処理エラー: {src} - {e}")
+                error_count += 1
+
+        logger.info(f"Base64エンコード完了: 成功={success_count}, スキップ={skip_count}, エラー={error_count}")
 
     def convert_email_to_html(
         self,
@@ -76,7 +173,7 @@ class GmailIngestionPipeline:
         parts: Dict[str, Any]
     ) -> str:
         """
-        メールをHTML形式に変換（画像埋め込み）
+        メールをHTML形式に変換（画像Base64埋め込み）
 
         Args:
             message: Gmailのメッセージオブジェクト
@@ -86,32 +183,224 @@ class GmailIngestionPipeline:
         Returns:
             完全なHTML文字列
         """
-        # HTML本文がある場合はそれを使用
-        if parts['text_html']:
-            html_body = parts['text_html']
-        elif parts['text_plain']:
-            # テキストのみの場合は簡易HTML化
-            text = parts['text_plain']
-            html_body = f"<html><body><pre>{text}</pre></body></html>"
-        else:
-            html_body = "<html><body><p>本文がありません</p></body></html>"
+        import html as html_module
 
-        # BeautifulSoupで解析
-        soup = BeautifulSoup(html_body, 'html.parser')
+        # メールヘッダーを作成（HTMLエスケープ）
+        from_escaped = html_module.escape(headers.get('From', 'Unknown'))
+        to_escaped = html_module.escape(headers.get('To', 'Unknown'))
+        subject_escaped = html_module.escape(headers.get('Subject', 'No Subject'))
+        date_escaped = html_module.escape(headers.get('Date', 'Unknown'))
 
-        # メールヘッダーを追加
         header_html = f"""
-        <div style="border-bottom: 2px solid #ccc; padding: 10px; margin-bottom: 20px; font-family: Arial, sans-serif;">
-            <p><strong>From:</strong> {headers.get('From', 'Unknown')}</p>
-            <p><strong>To:</strong> {headers.get('To', 'Unknown')}</p>
-            <p><strong>Subject:</strong> {headers.get('Subject', 'No Subject')}</p>
-            <p><strong>Date:</strong> {headers.get('Date', 'Unknown')}</p>
+        <div class="email-header" style="background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+                    color: white;
+                    padding: 20px;
+                    margin-bottom: 20px;
+                    border-radius: 8px;
+                    box-shadow: 0 2px 4px rgba(0,0,0,0.1);">
+            <h2 style="margin: 0 0 15px 0; font-size: 20px; font-weight: 600;">
+                {subject_escaped}
+            </h2>
+            <div style="font-size: 14px; opacity: 0.95;">
+                <p style="margin: 5px 0;"><strong>From:</strong> {from_escaped}</p>
+                <p style="margin: 5px 0;"><strong>To:</strong> {to_escaped}</p>
+                <p style="margin: 5px 0;"><strong>Date:</strong> {date_escaped}</p>
+            </div>
         </div>
         """
-        header_tag = BeautifulSoup(header_html, 'html.parser')
-        soup.body.insert(0, header_tag)
 
-        return str(soup)
+        # HTML本文がある場合
+        if parts['text_html']:
+            logger.info("HTML版を使用")
+
+            # BeautifulSoupで元のHTMLを解析
+            from bs4 import BeautifulSoup
+            original_soup = BeautifulSoup(parts['text_html'], 'html.parser')
+
+            # 古いmeta charsetタグをすべて削除（UTF-8に統一するため）
+            for meta in original_soup.find_all('meta'):
+                if meta.get('http-equiv') == 'Content-Type' or meta.get('charset'):
+                    meta.decompose()
+
+            # headタグ内のstyleやscriptを抽出
+            head_content = ''
+            if original_soup.head:
+                # headからtitleとmeta以外を抽出（style, script等）
+                for child in original_soup.head.children:
+                    if child.name in ['style', 'script', 'link']:
+                        head_content += str(child) + '\n'
+
+            # 画像をBase64エンコードして埋め込む（body抽出の前に実行）
+            self._embed_images_as_base64(original_soup)
+
+            # body部分の中身を抽出（Base64化後）
+            if original_soup.body:
+                # body内の全要素を文字列化
+                email_body_content = ''.join(str(child) for child in original_soup.body.children)
+            else:
+                # bodyタグがない場合は全体を使用
+                email_body_content = parts['text_html']
+
+            # 画像が正しく埋め込まれたか確認
+            base64_images = original_soup.find_all('img', src=lambda x: x and x.startswith('data:'))
+            external_images = original_soup.find_all('img', src=lambda x: x and (x.startswith('http://') or x.startswith('https://')))
+
+            image_notice = ""
+            if base64_images and not external_images:
+                # すべての画像がBase64化された
+                image_notice = """
+        <div class="image-notice" style="background: #d4edda; border-left: 4px solid #28a745; padding: 15px; margin: 20px; border-radius: 4px;">
+            <p style="margin: 0; color: #155724;">
+                <strong>✅ 画像埋め込み完了：</strong><br>
+                すべての画像をBase64形式で埋め込みました。Google Driveのプレビューでも正しく表示されます。
+            </p>
+        </div>
+        """
+            elif external_images:
+                # まだ外部画像が残っている
+                image_notice = f"""
+        <div class="image-notice" style="background: #fff3cd; border-left: 4px solid #ffc107; padding: 15px; margin: 20px; border-radius: 4px;">
+            <p style="margin: 0; color: #856404;">
+                <strong>⚠️ 画像表示について：</strong><br>
+                一部の画像（{len(external_images)}枚）がBase64化できませんでした（大きすぎる、またはダウンロードエラー）。<br>
+                すべての画像を表示するには、このファイルを<strong>ダウンロード</strong>してブラウザで開いてください。
+            </p>
+        </div>
+        """
+
+            final_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{subject_escaped}</title>
+    {head_content}
+    <style>
+        body {{
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }}
+        .email-container {{
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }}
+        .email-body-wrapper {{
+            padding: 20px;
+            overflow-x: auto;
+        }}
+        /* 画像のスタイル */
+        img {{
+            max-width: 100%;
+            height: auto;
+        }}
+        img[src^="cid:"] {{
+            border: 2px dashed #ccc;
+            background-color: #f9f9f9;
+            padding: 10px;
+        }}
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        {header_html}
+        {image_notice}
+        <div class="email-body-wrapper">
+            {email_body_content}
+        </div>
+    </div>
+</body>
+</html>"""
+            return final_html
+
+        elif parts['text_plain']:
+            logger.info("プレーンテキスト版をHTML化")
+            # テキストのみの場合は見やすくHTML化
+            import re
+
+            text = parts['text_plain']
+
+            # 先にHTMLエスケープ
+            text_escaped = html_module.escape(text)
+
+            # その後でURLをリンクに変換
+            text_html = re.sub(
+                r'(https?://[^\s]+)',
+                r'<a href="\1" target="_blank">\1</a>',
+                text_escaped
+            )
+
+            # 改行を<br>に変換
+            text_html = text_html.replace('\n', '<br>\n')
+
+            final_html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{subject_escaped}</title>
+    <style>
+        body {{
+            font-family: 'Helvetica Neue', Arial, 'Hiragino Kaku Gothic ProN', 'Hiragino Sans', Meiryo, sans-serif;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }}
+        .email-container {{
+            max-width: 900px;
+            margin: 0 auto;
+            background-color: white;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }}
+        .email-body {{
+            padding: 30px;
+            line-height: 1.8;
+            color: #333;
+        }}
+        a {{
+            color: #0066cc;
+            text-decoration: none;
+        }}
+        a:hover {{
+            text-decoration: underline;
+        }}
+    </style>
+</head>
+<body>
+    <div class="email-container">
+        {header_html}
+        <div class="email-body">
+            {text_html}
+        </div>
+    </div>
+</body>
+</html>"""
+            return final_html
+
+        else:
+            return f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>No Content</title>
+</head>
+<body>
+    <div class="email-container">
+        {header_html}
+        <div class="email-body">
+            <p>本文がありません</p>
+        </div>
+    </div>
+</body>
+</html>"""
 
     def save_email_to_drive(
         self,
@@ -270,7 +559,103 @@ class GmailIngestionPipeline:
                 except Exception as e:
                     logger.error(f"  添付ファイルのIngestion失敗: {e}")
 
-            # 4. メールを既読にマーク
+            # 4. メール本文をVision処理してSupabaseに登録
+            try:
+                logger.info(f"  メール本文のVision処理開始")
+
+                # メタデータを準備
+                email_metadata = {
+                    'from': headers.get('From', ''),
+                    'to': headers.get('To', ''),
+                    'subject': subject,
+                    'date': headers.get('Date', '')
+                }
+
+                # HTMLメールをVision処理
+                vision_result = await self.email_vision_processor.extract_email_content(
+                    html_content=html_content,
+                    email_metadata=email_metadata
+                )
+
+                logger.info(f"  Vision処理完了: {len(vision_result.get('extracted_text', ''))} 文字抽出")
+
+                # メール内容をSupabaseに直接保存
+                # メールテキストを整形
+                email_text_content = f"""メール情報:
+送信者: {email_metadata['from']}
+受信者: {email_metadata['to']}
+件名: {email_metadata['subject']}
+日時: {email_metadata['date']}
+
+要約:
+{vision_result.get('summary', '')}
+
+本文:
+{vision_result.get('extracted_text', '')}
+
+重要な情報:
+{chr(10).join('- ' + info for info in vision_result.get('key_information', []))}
+"""
+
+                # Embeddingを生成
+                from core.ai.llm_client import LLMClient
+                llm_client = LLMClient()
+                embedding = llm_client.generate_embedding(email_text_content)
+
+                # Supabaseに保存（workspaceベースのスキーマ）
+                import hashlib
+                content_hash = hashlib.sha256(email_text_content.encode('utf-8')).hexdigest()
+
+                # Gmailラベルからworkspaceを判定
+                workspace = get_workspace_from_gmail_label(self.gmail_label)
+
+                email_doc = {
+                    'source_type': 'gmail',  # 技術的な出所
+                    'source_id': email_file_id,  # Google DriveのHTMLファイルID
+                    'source_url': f"https://drive.google.com/file/d/{email_file_id}/view",
+                    'drive_file_id': email_file_id,
+                    'file_name': f"{subject}_{message_id[:8]}.html",
+                    'file_type': 'email',  # ファイル形式
+                    'workspace': workspace,  # ★意味的な分類（メイン軸）
+                    'full_text': email_text_content,
+                    'summary': vision_result.get('summary', ''),
+                    'embedding': embedding,
+                    'metadata': {
+                        'from': email_metadata['from'],
+                        'to': email_metadata['to'],
+                        'subject': email_metadata['subject'],
+                        'date': email_metadata['date'],
+                        'gmail_label': self.gmail_label,  # 元のラベルも保存
+                        'workspace': workspace,  # workspaceも明示的に保存
+                        'summary': vision_result.get('summary', ''),
+                        'key_information': vision_result.get('key_information', []),
+                        'has_images': vision_result.get('has_images', False),
+                        'links': vision_result.get('links', [])
+                    },
+                    'extracted_tables': [],
+                    'content_hash': content_hash,
+                    'confidence': 1.0,
+                    'total_confidence': 1.0,
+                    'processing_status': 'completed',
+                    'processing_stage': 'email_vision',
+                    'stage1_model': 'gemini-2.0-flash-lite',
+                    'stage2_model': None
+                }
+
+                try:
+                    email_doc_result = await self.db.insert_document('documents', email_doc)
+                    logger.debug(f"  Supabase insert result type: {type(email_doc_result)}, keys: {email_doc_result.keys() if isinstance(email_doc_result, dict) else 'N/A'}")
+                    if email_doc_result:
+                        email_doc_id = email_doc_result.get('id')
+                        result['ingested_document_ids'].append(email_doc_id)
+                        logger.info(f"  メール本文のSupabase保存完了: {email_doc_id}")
+                except Exception as db_error:
+                    logger.error(f"  Supabase保存エラー: {type(db_error).__name__}: {db_error}", exc_info=True)
+
+            except Exception as e:
+                logger.error(f"  メール本文のVision処理失敗: {e}", exc_info=True)
+
+            # 5. メールを既読にマーク
             if mark_as_read:
                 self.gmail.mark_as_read(message_id)
 
@@ -347,17 +732,31 @@ async def main():
     results = await pipeline.process_emails(max_emails=10, mark_as_read=False)
 
     # 結果を表示
+    print("\n" + "=" * 80)
+    print("📧 Gmail取り込み結果")
+    print("=" * 80)
+
     for result in results:
-        print(f"Message ID: {result['message_id']}")
+        print(f"\nMessage ID: {result['message_id']}")
         print(f"  Success: {result['success']}")
         if result['email_html_file_id']:
-            print(f"  Email HTML: {result['email_html_file_id']}")
+            file_id = result['email_html_file_id']
+            print(f"  Email HTML ID: {file_id}")
+            print(f"  📥 ダウンロードリンク:")
+            print(f"     https://drive.google.com/uc?export=download&id={file_id}")
+            print(f"  👁️  プレビュー:")
+            print(f"     https://drive.google.com/file/d/{file_id}/view")
         if result['attachment_file_ids']:
             print(f"  Attachments: {len(result['attachment_file_ids'])} files")
         if result['ingested_document_ids']:
             print(f"  Ingested: {len(result['ingested_document_ids'])} documents")
         if result['error']:
-            print(f"  Error: {result['error']}")
+            print(f"  ❌ Error: {result['error']}")
+
+    print("\n" + "=" * 80)
+    print("💡 ヒント: プレビューで正しく表示されない場合は、ダウンロードリンクから")
+    print("   ファイルをダウンロードしてブラウザで開いてください。")
+    print("=" * 80 + "\n")
 
 
 if __name__ == "__main__":
