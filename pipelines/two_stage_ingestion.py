@@ -26,6 +26,76 @@ from core.ai.llm_client import LLMClient
 from core.utils.chunking import chunk_document, chunk_document_parent_child
 from config.yaml_loader import get_classification_yaml_string
 
+
+def flatten_metadata_to_text(metadata: Dict[str, Any]) -> str:
+    """
+    メタデータを検索可能なテキストに変換
+    weekly_schedule、text_blocks、special_eventsなどを平坦化して検索対象にする
+    """
+    searchable_parts = []
+
+    # weekly_schedule の展開
+    if 'weekly_schedule' in metadata and metadata['weekly_schedule']:
+        for day_schedule in metadata['weekly_schedule']:
+            # 日付と曜日
+            if 'date' in day_schedule:
+                searchable_parts.append(day_schedule['date'])
+            if 'day_of_week' in day_schedule:
+                searchable_parts.append(day_schedule['day_of_week'])
+            if 'day' in day_schedule:
+                searchable_parts.append(f"{day_schedule['day']}曜日")
+
+            # イベント
+            if 'events' in day_schedule and day_schedule['events']:
+                searchable_parts.extend(day_schedule['events'])
+
+            # ノート
+            if 'note' in day_schedule and day_schedule['note']:
+                searchable_parts.append(day_schedule['note'])
+
+            # クラススケジュール
+            if 'class_schedules' in day_schedule:
+                for class_schedule in day_schedule['class_schedules']:
+                    if 'class' in class_schedule:
+                        searchable_parts.append(class_schedule['class'])
+
+                    # subjects配列
+                    if 'subjects' in class_schedule and class_schedule['subjects']:
+                        searchable_parts.extend(class_schedule['subjects'])
+
+                    # periods配列
+                    if 'periods' in class_schedule and class_schedule['periods']:
+                        for period in class_schedule['periods']:
+                            if 'subject' in period:
+                                searchable_parts.append(period['subject'])
+                            if 'time' in period:
+                                searchable_parts.append(period['time'])
+
+    # text_blocks の展開
+    if 'text_blocks' in metadata and metadata['text_blocks']:
+        for block in metadata['text_blocks']:
+            if 'title' in block and block['title']:
+                searchable_parts.append(block['title'])
+            if 'content' in block and block['content']:
+                searchable_parts.append(block['content'])
+
+    # special_events の展開
+    if 'special_events' in metadata and metadata['special_events']:
+        searchable_parts.extend(metadata['special_events'])
+
+    # important_notes の展開
+    if 'important_notes' in metadata and metadata['important_notes']:
+        searchable_parts.extend(metadata['important_notes'])
+
+    # basic_info の展開
+    if 'basic_info' in metadata and metadata['basic_info']:
+        basic_info = metadata['basic_info']
+        for key, value in basic_info.items():
+            if value:
+                searchable_parts.append(str(value))
+
+    return ' '.join(searchable_parts)
+
 PROCESSING_STATUS = {
     "PENDING": "pending",
     "COMPLETED": "completed",
@@ -314,7 +384,16 @@ class TwoStageIngestionPipeline:
             # Embedding生成（OpenAI text-embedding-3-small、1536次元）
             # ============================================
             if extracted_text:
-                embedding = self.llm_client.generate_embedding(extracted_text[:8000])
+                # メタデータを検索可能なテキストに変換
+                metadata_text = flatten_metadata_to_text(metadata) if metadata else ""
+
+                # 本文とメタデータを結合してembedding生成
+                combined_text = extracted_text[:7000]  # 本文を7000文字に制限
+                if metadata_text:
+                    combined_text += "\n\n[メタデータ]\n" + metadata_text[:1000]  # メタデータを1000文字追加
+
+                embedding = self.llm_client.generate_embedding(combined_text)
+                logger.info(f"[Embedding] 生成完了: 本文{len(extracted_text[:7000])}文字 + メタデータ{len(metadata_text[:1000])}文字")
             else:
                 embedding = None
             
@@ -411,9 +490,11 @@ class TwoStageIngestionPipeline:
                         large_chunk_success_count = 0
                         try:
                             # 全文を1つの大チャンクとして保存
+                            # chunk_indexは小チャンク数の次の値を使用（重複を避ける）
+                            large_chunk_index = len(small_chunks)
                             large_doc = {
                                 'document_id': document_id,
-                                'chunk_index': 0,
+                                'chunk_index': large_chunk_index,
                                 'chunk_text': extracted_text,  # 全文テキスト
                                 'chunk_size': len(extracted_text),
                                 'embedding': embedding  # 全文のembedding を使用

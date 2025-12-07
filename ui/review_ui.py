@@ -469,10 +469,10 @@ def pdf_review_ui():
                         col_before, col_after = st.columns(2)
                         with col_before:
                             st.markdown("**修正前**")
-                            st.json(correction.get('old_metadata', {}), expanded=False)
+                            st.json(correction.get('old_metadata', {}), expanded=True)
                         with col_after:
                             st.markdown("**修正後**")
-                            st.json(correction.get('new_metadata', {}), expanded=False)
+                            st.json(correction.get('new_metadata', {}), expanded=True)
 
                         st.markdown("---")
             else:

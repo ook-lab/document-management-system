@@ -327,7 +327,7 @@ def _render_single_structured_table(field_key: str, table_data: Dict[str, Any]) 
         use_container_width=True,
         num_rows="dynamic",
         key=f"table_{field_key}",
-        height=400
+        height=600  # 増加: より多くの行を表示
     )
 
     # データフレームを辞書のリストに戻す
@@ -419,7 +419,7 @@ def _render_extracted_table(field_key: str, table_data: Dict[str, Any]) -> Dict[
         use_container_width=True,
         num_rows="dynamic",
         key=f"table_{field_key}",
-        height=400
+        height=600  # 増加: より多くの行を表示
     )
 
     # データフレームを元の形式に戻す
@@ -612,7 +612,7 @@ def _render_array_table(field_name: str, array_value: List[Dict], label: str) ->
         use_container_width=True,
         num_rows="dynamic",  # 行の追加・削除を許可
         key=f"table_{field_name}",
-        height=400
+        height=600  # 増加: より多くの行を表示
     )
 
     # データフレームを辞書のリストに戻す
