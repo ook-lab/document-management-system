@@ -728,7 +728,8 @@ class GmailIngestionPipeline:
                                         if result:
                                             chunk_success_count += 1
                                     except Exception as chunk_insert_error:
-                                        logger.error(f"  チャンク{i+1}保存エラー: {chunk_insert_error}", exc_info=True)
+                                        logger.error(f"  チャンク{i+1}保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
+                                        logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
 
                                 logger.info(f"  チャンク保存完了: {chunk_success_count}/{len(chunks)}個")
                             else:

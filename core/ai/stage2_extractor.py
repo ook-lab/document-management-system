@@ -140,8 +140,13 @@ class Stage2Extractor:
         # 表構造抽出テンプレートをロード (Phase 2.2.2)
         table_extraction_guidelines = self._load_table_extraction_template()
 
-        # テキストを適切な長さに切り詰め (Claudeのコンテキスト制限を考慮)
-        max_text_length = 8000
+        # テキストを適切な長さに切り詰め
+        # メール用（email_stage2_extraction）は表テンプレート（8251文字）があるため短く
+        if tier == "email_stage2_extraction":
+            max_text_length = 5000  # メール用: 短めに設定
+        else:
+            max_text_length = 8000  # PDF用: Claudeのコンテキスト制限を考慮
+
         truncated_text = full_text[:max_text_length]
         if len(full_text) > max_text_length:
             truncated_text += "\n\n...(以下省略)..."
