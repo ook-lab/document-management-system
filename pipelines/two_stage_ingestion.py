@@ -23,6 +23,7 @@ from core.ai.json_validator import validate_metadata
 # from core.ai.embeddings import EmbeddingClient  # 768次元 - 使用しない
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
+from core.utils.chunking import chunk_document
 from config.yaml_loader import get_classification_yaml_string
 
 PROCESSING_STATUS = {
@@ -362,6 +363,71 @@ class TwoStageIngestionPipeline:
 
             try:
                 result = await self.db.insert_document('documents', document_data)
+                document_id = result.get('id')
+                logger.info(f"Document保存完了: {document_id}")
+
+                # ============================================
+                # チャンク化処理（Embedding生成 + document_chunksへの保存）
+                # ============================================
+                if extracted_text and document_id:
+                    logger.info(f"  ドキュメントのチャンク化開始")
+                    try:
+                        chunks = chunk_document(
+                            text=extracted_text,
+                            chunk_size=800,
+                            chunk_overlap=100
+                        )
+
+                        if chunks:
+                            logger.info(f"  チャンク作成完了: {len(chunks)}個のチャンク")
+
+                            # 各チャンクにembeddingを生成して保存
+                            chunk_success_count = 0
+                            for i, chunk in enumerate(chunks):
+                                try:
+                                    chunk_text = chunk.get('chunk_text', '')
+                                    chunk_embedding = self.llm_client.generate_embedding(chunk_text)
+
+                                    chunk_doc = {
+                                        'document_id': document_id,
+                                        'chunk_index': chunk.get('chunk_index', 0),
+                                        'chunk_text': chunk_text,
+                                        'chunk_size': chunk.get('chunk_size', len(chunk_text)),
+                                        'embedding': chunk_embedding
+                                    }
+
+                                    chunk_result = await self.db.insert_document('document_chunks', chunk_doc)
+                                    if chunk_result:
+                                        chunk_success_count += 1
+                                except Exception as chunk_insert_error:
+                                    logger.error(f"  チャンク{i+1}保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
+                                    logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
+
+                            logger.info(f"  チャンク保存完了: {chunk_success_count}/{len(chunks)}個")
+
+                            # document の chunk_count を更新
+                            try:
+                                update_data = {
+                                    'chunk_count': chunk_success_count,
+                                    'chunking_strategy': 'simple_split'
+                                }
+                                response = (
+                                    self.db.client.table('documents')
+                                    .update(update_data)
+                                    .eq('id', document_id)
+                                    .execute()
+                                )
+                                logger.info(f"  Document chunk_count更新完了: {chunk_success_count}")
+                            except Exception as update_error:
+                                logger.error(f"  Document chunk_count更新エラー: {update_error}")
+                        else:
+                            logger.warning(f"  チャンク作成失敗: テキストが短すぎる可能性")
+
+                    except Exception as chunk_error:
+                        logger.error(f"  チャンク化エラー: {chunk_error}", exc_info=True)
+                else:
+                    logger.warning(f"  チャンク化スキップ: extracted_text={bool(extracted_text)}, document_id={bool(document_id)}")
+
                 logger.info(f"=== 処理完了: {file_name} ({doc_type}, {processing_stage}) ===")
                 return result
             except Exception as db_error:
