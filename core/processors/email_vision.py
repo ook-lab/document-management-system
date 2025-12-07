@@ -272,18 +272,60 @@ class EmailVisionProcessor:
                 vision_result = json.loads(json_str)
                 logger.info("JSON解析成功")
             except json.JSONDecodeError as e:
-                # JSONパースに失敗した場合、テキストとして扱う
-                logger.warning(f"JSON解析失敗: {str(e)[:100]}")
-                logger.debug(f"失敗したJSON文字列（最初の500文字）: {json_str[:500]}")
-                vision_result = {
-                    'extracted_text': response,
-                    'summary': response[:200] + '...' if len(response) > 200 else response,
-                    'key_information': [],
-                    'has_images': False,
-                    'image_descriptions': [],
-                    'tables': [],
-                    'links': []
-                }
+                # エスケープシーケンスエラーの場合、修正を試みる
+                if 'escape' in str(e).lower():
+                    logger.warning(f"エスケープエラー検出。修正を試みます: {str(e)[:100]}")
+                    try:
+                        # すべてのバックスラッシュを二重エスケープ
+                        fixed_str = json_str
+                        # 既に正しくエスケープされている部分を保護するため、段階的に処理
+
+                        # Step 1: すべての \ を一時的にプレースホルダーに置き換え
+                        fixed_str = fixed_str.replace('\\', '\x00BACKSLASH\x00')
+
+                        # Step 2: プレースホルダーを \\ に置き換え
+                        fixed_str = fixed_str.replace('\x00BACKSLASH\x00', '\\\\')
+
+                        # Step 3: 正しいエスケープシーケンスを復元
+                        # \\n -> \n, \\t -> \t, \\" -> \", \\\\ -> \\
+                        fixed_str = fixed_str.replace('\\\\n', '\\n')
+                        fixed_str = fixed_str.replace('\\\\t', '\\t')
+                        fixed_str = fixed_str.replace('\\\\r', '\\r')
+                        fixed_str = fixed_str.replace('\\\\"', '\\"')
+                        fixed_str = fixed_str.replace('\\\\/', '\\/')
+                        # Unicode エスケープ: \\uXXXX -> \uXXXX
+                        import re
+                        fixed_str = re.sub(r'\\\\u([0-9a-fA-F]{4})', r'\\u\1', fixed_str)
+                        # 二重バックスラッシュ: \\\\\\\\ -> \\\\
+                        fixed_str = fixed_str.replace('\\\\\\\\', '\\\\')
+
+                        vision_result = json.loads(fixed_str)
+                        logger.info("エスケープ修正後、JSON解析成功！")
+                    except json.JSONDecodeError as e2:
+                        logger.warning(f"修正後もJSON解析失敗: {str(e2)[:100]}")
+                        # それでも失敗した場合、テキストとして扱う
+                        vision_result = {
+                            'extracted_text': response,
+                            'summary': response[:200] + '...' if len(response) > 200 else response,
+                            'key_information': [],
+                            'has_images': False,
+                            'image_descriptions': [],
+                            'tables': [],
+                            'links': []
+                        }
+                else:
+                    # エスケープエラー以外の場合、テキストとして扱う
+                    logger.warning(f"JSON解析失敗: {str(e)[:100]}")
+                    logger.debug(f"失敗したJSON文字列（最初の500文字）: {json_str[:500]}")
+                    vision_result = {
+                        'extracted_text': response,
+                        'summary': response[:200] + '...' if len(response) > 200 else response,
+                        'key_information': [],
+                        'has_images': False,
+                        'image_descriptions': [],
+                        'tables': [],
+                        'links': []
+                    }
 
             logger.info(f"Vision解析結果: テキスト={len(vision_result.get('extracted_text', ''))}文字")
 
