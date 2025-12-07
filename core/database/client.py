@@ -69,11 +69,12 @@ class DatabaseClient:
         workspace: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        2階層ハイブリッド検索：小チャンク検索 + 中チャンク回答
+        3階層ハイブリッド検索：小チャンク検索 + 中チャンク詳細 + 大チャンク回答
 
         【検索フロー】
         1. 小チャンク（300文字）でベクトル + 全文検索 → 関連ドキュメントを検出
-        2. 見つかったドキュメントの中チャンク（1500文字）を取得 → 回答用として使用
+        2. 中チャンク（1500文字）で詳細検索 → 関連情報を確認
+        3. 大チャンク（全文）で回答生成 → 最も詳細な情報を使用
 
         Args:
             query: 検索クエリ
@@ -82,7 +83,7 @@ class DatabaseClient:
             workspace: ワークスペースフィルタ (オプション)
 
         Returns:
-            検索結果のリスト（小チャンク検索スコア順、回答は中チャンク）
+            検索結果のリスト（小チャンク検索スコア順、回答は大チャンク）
         """
         try:
             # クエリから日付を抽出（既存のロジックを流用）
@@ -99,8 +100,8 @@ class DatabaseClient:
                 except:
                     pass
 
-            # DB関数を一発呼び出し（2階層検索）
-            # 小チャンクで検索 → 中チャンクで回答
+            # DB関数を一発呼び出し（3階層検索）
+            # 小チャンクで検索 → 中チャンクで詳細 → 大チャンクで回答
             rpc_params = {
                 "query_text": query,
                 "query_embedding": embedding,
@@ -113,11 +114,11 @@ class DatabaseClient:
                 "filter_workspace": workspace
             }
 
-            print(f"[DEBUG] hybrid_search_2tier 呼び出し: query='{query}', limit={limit}")
-            response = self.client.rpc("hybrid_search_2tier", rpc_params).execute()
+            print(f"[DEBUG] hybrid_search_3tier 呼び出し: query='{query}', limit={limit}")
+            response = self.client.rpc("hybrid_search_3tier", rpc_params).execute()
             results = response.data if response.data else []
 
-            print(f"[DEBUG] hybrid_search_2tier 結果: {len(results)} 件")
+            print(f"[DEBUG] hybrid_search_3tier 結果: {len(results)} 件")
 
             # 結果をドキュメント単位にグループ化
             # 同じドキュメントの複数検索結果から、最高スコアのものを選ぶ
@@ -136,10 +137,15 @@ class DatabaseClient:
                         'metadata': result.get('metadata'),
                         'summary': result.get('summary'),
 
-                        # 回答用：中チャンク（1500文字）
-                        'content': result.get('medium_chunk_text'),
+                        # 回答用：大チャンク（全文・最も詳細）
+                        'content': result.get('large_chunk_text'),
+                        'large_chunk_id': result.get('large_chunk_id'),
+                        'large_chunk_size': result.get('large_chunk_size'),
+
+                        # 詳細情報：中チャンク（1500文字）
                         'medium_chunk_id': result.get('medium_chunk_id'),
                         'medium_chunk_index': result.get('medium_chunk_index'),
+                        'medium_chunk_text': result.get('medium_chunk_text'),
                         'medium_chunk_size': result.get('medium_chunk_size'),
 
                         # 検索スコア：小チャンクの検索スコア
@@ -153,9 +159,8 @@ class DatabaseClient:
                 else:
                     # 既存のドキュメント：スコアが高ければ更新
                     if combined_score > doc_map[doc_id]['similarity']:
-                        doc_map[doc_id]['content'] = result.get('medium_chunk_text')
-                        doc_map[doc_id]['medium_chunk_id'] = result.get('medium_chunk_id')
-                        doc_map[doc_id]['medium_chunk_index'] = result.get('medium_chunk_index')
+                        doc_map[doc_id]['content'] = result.get('large_chunk_text')
+                        doc_map[doc_id]['large_chunk_id'] = result.get('large_chunk_id')
                         doc_map[doc_id]['similarity'] = combined_score
                         doc_map[doc_id]['small_chunk_id'] = result.get('small_chunk_id')
                         doc_map[doc_id]['small_chunk_index'] = result.get('small_chunk_index')
@@ -170,13 +175,13 @@ class DatabaseClient:
             max_limit = min(limit, 5)
             final_results = final_results[:max_limit]
 
-            print(f"[DEBUG] 最終結果: {len(final_results)} 件（2階層検索）")
-            print(f"[DEBUG] 検索戦略: 小チャンク検索 + 中チャンク回答")
+            print(f"[DEBUG] 最終結果: {len(final_results)} 件（3階層検索）")
+            print(f"[DEBUG] 検索戦略: 小チャンク検索 → 中チャンク詳細 → 大チャンク回答")
 
             return final_results
 
         except Exception as e:
-            print(f"2-tier hybrid search error: {e}")
+            print(f"3-tier hybrid search error: {e}")
             import traceback
             traceback.print_exc()
 
