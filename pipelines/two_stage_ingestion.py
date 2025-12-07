@@ -417,8 +417,8 @@ class TwoStageIngestionPipeline:
 
                         logger.info(f"  子チャンク保存完了: {chunk_success_count}/{len(child_chunks)}個")
 
-                        # ステップ2: 親チャンク（回答生成用）を保存
-                        logger.info(f"  親チャンク（回答用）の保存開始: {len(parent_chunks)}個")
+                        # ステップ2: 親チャンク（詳細検索・回答生成用）を保存
+                        logger.info(f"  親チャンク（中階層）の保存開始: {len(parent_chunks)}個")
                         parent_chunk_success_count = 0
                         for parent_chunk in parent_chunks:
                             try:
@@ -430,7 +430,7 @@ class TwoStageIngestionPipeline:
                                     'chunk_index': parent_chunk.get('chunk_index', 0),
                                     'chunk_text': parent_text,
                                     'chunk_size': parent_chunk.get('chunk_size', len(parent_text)),
-                                    'chunk_type': 'medium',  # 中チャンク（回答生成用）
+                                    'chunk_type': 'medium',  # 中チャンク（詳細検索用）
                                     'chunk_level': parent_chunk.get('chunk_level', 'parent'),
                                     'embedding': parent_embedding
                                 }
@@ -444,14 +444,38 @@ class TwoStageIngestionPipeline:
 
                         logger.info(f"  親チャンク保存完了: {parent_chunk_success_count}/{len(parent_chunks)}個")
 
-                        total_chunks = chunk_success_count + parent_chunk_success_count
-                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（小{chunk_success_count}個 + 中{parent_chunk_success_count}個）")
+                        # ステップ3: 大チャンク（全文・回答生成用）を保存
+                        logger.info(f"  大チャンク（全文）の保存開始")
+                        large_chunk_success_count = 0
+                        try:
+                            # 全文を1つの大チャンクとして保存
+                            large_doc = {
+                                'document_id': document_id,
+                                'chunk_index': 0,
+                                'chunk_text': extracted_text,  # 全文テキスト
+                                'chunk_size': len(extracted_text),
+                                'chunk_type': 'large',  # 大チャンク（回答生成用）
+                                'chunk_level': 'full_text',
+                                'embedding': embedding  # 全文のembedding を使用
+                            }
 
-                        # ステップ3: document の chunk_count を更新
+                            chunk_result = await self.db.insert_document('document_chunks', large_doc)
+                            if chunk_result:
+                                large_chunk_success_count = 1
+                        except Exception as chunk_insert_error:
+                            logger.error(f"  大チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
+                            logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
+
+                        logger.info(f"  大チャンク保存完了: {large_chunk_success_count}/1個")
+
+                        total_chunks = chunk_success_count + parent_chunk_success_count + large_chunk_success_count
+                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（小{chunk_success_count}個 + 中{parent_chunk_success_count}個 + 大{large_chunk_success_count}個）")
+
+                        # ステップ4: document の chunk_count を更新
                         try:
                             update_data = {
                                 'chunk_count': total_chunks,
-                                'chunking_strategy': 'parent_child_2tier'  # 2階層戦略
+                                'chunking_strategy': 'parent_child_3tier'  # 3階層戦略
                             }
                             response = (
                                 self.db.client.table('documents')
