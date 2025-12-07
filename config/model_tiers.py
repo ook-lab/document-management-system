@@ -33,7 +33,7 @@ class ModelTier:
         "model": "gemini-2.0-flash-lite",
         "description": "メールスクリーンショット解析（大量処理向け）",
         "temperature": 0.0,
-        "max_tokens": 8192,  # 長いメールに対応するため8192に増加
+        "max_tokens": 16384,  # 超長文メールに対応（Flash-Liteは最大32K）
         "cost_per_1k_tokens": 0.00005  # Flash-Liteは超低コスト
     }
     

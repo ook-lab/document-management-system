@@ -236,15 +236,43 @@ class EmailVisionProcessor:
             logger.info("Gemini 2.0 Flash-Lite でVision解析中...")
 
             # Gemini APIを呼び出し
-            response = self.llm_client.generate_with_images(
-                prompt=prompt,
-                image_data=screenshot_base64,
-                model=self.model_config['model'],
-                temperature=self.model_config['temperature'],
-                max_tokens=self.model_config['max_tokens']
-            )
+            try:
+                response = self.llm_client.generate_with_images(
+                    prompt=prompt,
+                    image_data=screenshot_base64,
+                    model=self.model_config['model'],
+                    temperature=self.model_config['temperature'],
+                    max_tokens=self.model_config['max_tokens']
+                )
+                logger.info("Vision解析完了")
+            except Exception as vision_error:
+                # MAX_TOKENSエラーの場合はHTML抽出のみにフォールバック
+                error_str = str(vision_error)
+                if 'MAX_TOKENS' in error_str or 'max_tokens' in error_str:
+                    logger.warning(f"⚠️ MAX_TOKENSエラー検出。HTML抽出のみにフォールバックします: {error_str}")
 
-            logger.info("Vision解析完了")
+                    # HTMLテキスト抽出のみを実行
+                    html_extract = self._extract_html_text(html_content)
+
+                    # HTML抽出結果を返す（Visionなし）
+                    fallback_result = {
+                        'extracted_text': html_extract.get('text', ''),
+                        'summary': html_extract.get('text', '')[:200] + '...' if len(html_extract.get('text', '')) > 200 else html_extract.get('text', ''),
+                        'key_information': ['⚠️ メールが長すぎるため、Vision解析をスキップしました'],
+                        'has_images': False,
+                        'image_descriptions': [],
+                        'tables': [],
+                        'links': html_extract.get('links', []),
+                        'has_tables': html_extract.get('has_tables', False),
+                        'has_lists': html_extract.get('has_lists', False),
+                        'metadata': email_metadata or {}
+                    }
+
+                    logger.info(f"HTMLフォールバック完了: テキスト={len(fallback_result['extracted_text'])}文字, リンク={len(fallback_result['links'])}個")
+                    return fallback_result
+                else:
+                    # その他のエラーは再raise
+                    raise
 
             # デバッグ: レスポンスの最初の500文字をログ出力
             logger.debug(f"Vision APIレスポンス（最初の500文字）: {response[:500]}")
