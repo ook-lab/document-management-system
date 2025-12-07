@@ -60,14 +60,14 @@ class ModelTier:
     }
     
     # UI回答生成（速度・コスト重視）
-    # ✅ GPT-5 miniをデフォルトに設定（高速・安価）
+    # ✅ GPT-4o miniをデフォルトに設定（高速・安価）
     UI_RESPONSE_GENERATOR = {
         "provider": AIProvider.OPENAI,
-        "model": "gpt-5-mini",  # ✅ GPT-5 mini（デフォルト: $0.25/$2.00）
+        "model": "gpt-4o-mini",  # ✅ GPT-4o mini（高速・低コスト）
         "description": "高速で効率的な対話応答",
-        # temperatureはGPT-5.1モデルでサポートされていないため削除
-        "max_completion_tokens": 2048,
-        "cost_per_1k_tokens": 0.00025  # GPT-5 mini
+        "temperature": 0.7,
+        "max_tokens": 2048,
+        "cost_per_1k_tokens": 0.00015  # GPT-4o mini
     }
     
     # Embedding生成
