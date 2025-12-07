@@ -69,24 +69,24 @@ class DatabaseClient:
         workspace: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        3階層ハイブリッド検索：小チャンク検索 + 中チャンク詳細 + 大チャンク回答
+        2階層ハイブリッド検索：小チャンク検索 + 大チャンク回答（重複排除＆Rerank対応）
 
         【検索フロー】
         1. 小チャンク（300文字）でベクトル + 全文検索 → 関連ドキュメントを検出
-        2. 中チャンク（1500文字）で詳細検索 → 関連情報を確認
+        2. ドキュメント単位で重複排除（最高スコアのみ） → 重複を削減
         3. 大チャンク（全文）で回答生成 → 最も詳細な情報を使用
 
         Args:
             query: 検索クエリ
             embedding: クエリのembeddingベクトル
-            limit: 取得する最大件数（デフォルト: 50）
+            limit: 取得する最大件数（デフォルト: 50）→ 実際には上位10件に制限
             workspace: ワークスペースフィルタ (オプション)
 
         Returns:
-            検索結果のリスト（小チャンク検索スコア順、回答は大チャンク）
+            検索結果のリスト（小チャンク検索スコア順、回答は大チャンク、最大10件）
         """
         try:
-            # クエリから日付を抽出（既存のロジックを流用）
+            # クエリから日付を抽出
             target_date = self._extract_date(query)
             filter_year = None
             filter_month = None
@@ -100,13 +100,12 @@ class DatabaseClient:
                 except:
                     pass
 
-            # DB関数を一発呼び出し（3階層検索）
-            # 小チャンクで検索 → 中チャンクで詳細 → 大チャンクで回答
+            # DB関数を呼び出し（小チャンク検索＋重複排除＋大チャンク取得）
             rpc_params = {
                 "query_text": query,
                 "query_embedding": embedding,
                 "match_threshold": 0.0,
-                "match_count": limit,
+                "match_count": 10,  # Reranker向けに10件を常に取得
                 "vector_weight": 0.7,  # ベクトル検索70%
                 "fulltext_weight": 0.3,  # キーワード検索30%
                 "filter_year": filter_year,
@@ -114,74 +113,43 @@ class DatabaseClient:
                 "filter_workspace": workspace
             }
 
-            print(f"[DEBUG] hybrid_search_3tier 呼び出し: query='{query}', limit={limit}")
-            response = self.client.rpc("hybrid_search_3tier", rpc_params).execute()
+            print(f"[DEBUG] hybrid_search_2tier_final 呼び出し: query='{query}'")
+            response = self.client.rpc("hybrid_search_2tier_final", rpc_params).execute()
             results = response.data if response.data else []
 
-            print(f"[DEBUG] hybrid_search_3tier 結果: {len(results)} 件")
+            print(f"[DEBUG] hybrid_search_2tier_final 結果: {len(results)} 件")
 
-            # 結果をドキュメント単位にグループ化
-            # 同じドキュメントの複数検索結果から、最高スコアのものを選ぶ
-            doc_map = {}
+            # 結果を整形（既に重複排除済みだが、確認用）
+            final_results = []
             for result in results:
-                doc_id = result.get('document_id')
-                combined_score = result.get('combined_score', 0)
+                doc_result = {
+                    'id': result.get('document_id'),
+                    'file_name': result.get('file_name'),
+                    'doc_type': result.get('doc_type'),
+                    'document_date': result.get('document_date'),
+                    'metadata': result.get('metadata'),
+                    'summary': result.get('summary'),
 
-                if doc_id not in doc_map:
-                    # 初出のドキュメント：そのまま追加
-                    doc_map[doc_id] = {
-                        'id': doc_id,
-                        'file_name': result.get('file_name'),
-                        'doc_type': result.get('doc_type'),
-                        'document_date': result.get('document_date'),
-                        'metadata': result.get('metadata'),
-                        'summary': result.get('summary'),
+                    # 回答用：大チャンク（全文）
+                    'content': result.get('large_chunk_text'),
+                    'large_chunk_id': result.get('large_chunk_id'),
 
-                        # 回答用：大チャンク（全文・最も詳細）
-                        'content': result.get('large_chunk_text'),
-                        'large_chunk_id': result.get('large_chunk_id'),
-                        'large_chunk_size': result.get('large_chunk_size'),
+                    # 検索スコア：小チャンクの検索スコア
+                    'similarity': result.get('combined_score', 0),
+                    'small_chunk_id': result.get('small_chunk_id'),
 
-                        # 詳細情報：中チャンク（1500文字）
-                        'medium_chunk_id': result.get('medium_chunk_id'),
-                        'medium_chunk_index': result.get('medium_chunk_index'),
-                        'medium_chunk_text': result.get('medium_chunk_text'),
-                        'medium_chunk_size': result.get('medium_chunk_size'),
+                    'year': result.get('year'),
+                    'month': result.get('month')
+                }
+                final_results.append(doc_result)
 
-                        # 検索スコア：小チャンクの検索スコア
-                        'similarity': combined_score,
-                        'small_chunk_id': result.get('small_chunk_id'),
-                        'small_chunk_index': result.get('small_chunk_index'),
-
-                        'year': result.get('year'),
-                        'month': result.get('month')
-                    }
-                else:
-                    # 既存のドキュメント：スコアが高ければ更新
-                    if combined_score > doc_map[doc_id]['similarity']:
-                        doc_map[doc_id]['content'] = result.get('large_chunk_text')
-                        doc_map[doc_id]['large_chunk_id'] = result.get('large_chunk_id')
-                        doc_map[doc_id]['similarity'] = combined_score
-                        doc_map[doc_id]['small_chunk_id'] = result.get('small_chunk_id')
-                        doc_map[doc_id]['small_chunk_index'] = result.get('small_chunk_index')
-
-            # ドキュメントリストに変換
-            final_results = list(doc_map.values())
-
-            # 類似度でソート（高い順）
-            final_results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
-
-            # 上位のみに制限（最大でも5件）
-            max_limit = min(limit, 5)
-            final_results = final_results[:max_limit]
-
-            print(f"[DEBUG] 最終結果: {len(final_results)} 件（3階層検索）")
-            print(f"[DEBUG] 検索戦略: 小チャンク検索 → 中チャンク詳細 → 大チャンク回答")
+            print(f"[DEBUG] 最終結果: {len(final_results)} 件（2階層検索・Rerank対応）")
+            print(f"[DEBUG] 検索戦略: 小チャンク検索 + 重複排除 + 大チャンク回答")
 
             return final_results
 
         except Exception as e:
-            print(f"3-tier hybrid search error: {e}")
+            print(f"2-tier hybrid search error: {e}")
             import traceback
             traceback.print_exc()
 

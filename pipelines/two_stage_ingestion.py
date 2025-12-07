@@ -367,84 +367,47 @@ class TwoStageIngestionPipeline:
                 logger.info(f"Document保存完了: {document_id}")
 
                 # ============================================
-                # チャンク化処理（2階層：小チャンク検索用 + 中チャンク回答用）
+                # チャンク化処理（2階層：小チャンク検索用 + 大チャンク回答用）
                 # ============================================
                 if extracted_text and document_id:
-                    logger.info(f"  ドキュメントの親子チャンク化開始（2階層）")
+                    logger.info(f"  ドキュメントの2階層チャンク化開始（小・大）")
                     try:
-                        # 親子チャンクに分割
-                        # 親チャンク（1500文字）：回答生成用
-                        # 子チャンク（300文字）：検索用（埋め込み用）
-                        parent_child_chunks = chunk_document_parent_child(
+                        # 小チャンク化（検索用）
+                        small_chunks = chunk_document(
                             text=extracted_text,
-                            parent_size=1500,
-                            child_size=300
+                            chunk_size=300,
+                            chunk_overlap=50
                         )
 
-                        parent_chunks = parent_child_chunks.get('parent_chunks', [])
-                        child_chunks = parent_child_chunks.get('child_chunks', [])
+                        logger.info(f"  小チャンク作成完了: {len(small_chunks)}個")
 
-                        logger.info(f"  チャンク作成完了: 親{len(parent_chunks)}個 + 子{len(child_chunks)}個")
-
-                        chunk_success_count = 0
-
-                        # ステップ1: 子チャンク（検索用）を保存
-                        logger.info(f"  子チャンク（検索用）の保存開始: {len(child_chunks)}個")
-                        child_chunk_ids = {}  # chunk_index -> chunk_id のマッピング
-                        for child_chunk in child_chunks:
+                        # ステップ1: 小チャンク（検索用）を保存
+                        logger.info(f"  小チャンク（検索用）の保存開始: {len(small_chunks)}個")
+                        small_chunk_success_count = 0
+                        for small_chunk in small_chunks:
                             try:
-                                child_text = child_chunk.get('chunk_text', '')
-                                child_embedding = self.llm_client.generate_embedding(child_text)
+                                small_text = small_chunk.get('chunk_text', '')
+                                small_embedding = self.llm_client.generate_embedding(small_text)
 
-                                child_doc = {
+                                small_doc = {
                                     'document_id': document_id,
-                                    'chunk_index': child_chunk.get('chunk_index', 0),
-                                    'chunk_text': child_text,
-                                    'chunk_size': child_chunk.get('chunk_size', len(child_text)),
+                                    'chunk_index': small_chunk.get('chunk_index', 0),
+                                    'chunk_text': small_text,
+                                    'chunk_size': small_chunk.get('chunk_size', len(small_text)),
                                     'chunk_type': 'small',  # 小チャンク（検索用）
-                                    'chunk_level': child_chunk.get('chunk_level', 'child'),
-                                    'parent_local_index': child_chunk.get('parent_local_index'),
-                                    'embedding': child_embedding
+                                    'embedding': small_embedding
                                 }
 
-                                chunk_result = await self.db.insert_document('document_chunks', child_doc)
+                                chunk_result = await self.db.insert_document('document_chunks', small_doc)
                                 if chunk_result:
-                                    chunk_success_count += 1
-                                    child_chunk_ids[child_chunk.get('chunk_index')] = chunk_result.get('id')
+                                    small_chunk_success_count += 1
                             except Exception as chunk_insert_error:
-                                logger.error(f"  子チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
+                                logger.error(f"  小チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
                                 logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
 
-                        logger.info(f"  子チャンク保存完了: {chunk_success_count}/{len(child_chunks)}個")
+                        logger.info(f"  小チャンク保存完了: {small_chunk_success_count}/{len(small_chunks)}個")
 
-                        # ステップ2: 親チャンク（詳細検索・回答生成用）を保存
-                        logger.info(f"  親チャンク（中階層）の保存開始: {len(parent_chunks)}個")
-                        parent_chunk_success_count = 0
-                        for parent_chunk in parent_chunks:
-                            try:
-                                parent_text = parent_chunk.get('chunk_text', '')
-                                parent_embedding = self.llm_client.generate_embedding(parent_text)
-
-                                parent_doc = {
-                                    'document_id': document_id,
-                                    'chunk_index': parent_chunk.get('chunk_index', 0),
-                                    'chunk_text': parent_text,
-                                    'chunk_size': parent_chunk.get('chunk_size', len(parent_text)),
-                                    'chunk_type': 'medium',  # 中チャンク（詳細検索用）
-                                    'chunk_level': parent_chunk.get('chunk_level', 'parent'),
-                                    'embedding': parent_embedding
-                                }
-
-                                chunk_result = await self.db.insert_document('document_chunks', parent_doc)
-                                if chunk_result:
-                                    parent_chunk_success_count += 1
-                            except Exception as chunk_insert_error:
-                                logger.error(f"  親チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
-                                logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
-
-                        logger.info(f"  親チャンク保存完了: {parent_chunk_success_count}/{len(parent_chunks)}個")
-
-                        # ステップ3: 大チャンク（全文・回答生成用）を保存
+                        # ステップ2: 大チャンク（全文・回答生成用）を保存
                         logger.info(f"  大チャンク（全文）の保存開始")
                         large_chunk_success_count = 0
                         try:
@@ -455,7 +418,6 @@ class TwoStageIngestionPipeline:
                                 'chunk_text': extracted_text,  # 全文テキスト
                                 'chunk_size': len(extracted_text),
                                 'chunk_type': 'large',  # 大チャンク（回答生成用）
-                                'chunk_level': 'full_text',
                                 'embedding': embedding  # 全文のembedding を使用
                             }
 
@@ -468,14 +430,14 @@ class TwoStageIngestionPipeline:
 
                         logger.info(f"  大チャンク保存完了: {large_chunk_success_count}/1個")
 
-                        total_chunks = chunk_success_count + parent_chunk_success_count + large_chunk_success_count
-                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（小{chunk_success_count}個 + 中{parent_chunk_success_count}個 + 大{large_chunk_success_count}個）")
+                        total_chunks = small_chunk_success_count + large_chunk_success_count
+                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（小{small_chunk_success_count}個 + 大{large_chunk_success_count}個）")
 
-                        # ステップ4: document の chunk_count を更新
+                        # ステップ3: document の chunk_count を更新
                         try:
                             update_data = {
                                 'chunk_count': total_chunks,
-                                'chunking_strategy': 'parent_child_3tier'  # 3階層戦略
+                                'chunking_strategy': 'small_large_2tier'  # 2階層戦略
                             }
                             response = (
                                 self.db.client.table('documents')

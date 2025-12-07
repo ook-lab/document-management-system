@@ -87,7 +87,8 @@ class Stage2Extractor:
             file_name=file_name,
             doc_type=doc_type,
             workspace=workspace,
-            stage1_confidence=stage1_result.get("confidence", 0.0)
+            stage1_confidence=stage1_result.get("confidence", 0.0),
+            tier=tier
         )
 
         try:
@@ -130,7 +131,8 @@ class Stage2Extractor:
         file_name: str,
         doc_type: str,
         workspace: str,
-        stage1_confidence: float
+        stage1_confidence: float,
+        tier: str = "stage2_extraction"
     ) -> str:
         """抽出プロンプト生成"""
         

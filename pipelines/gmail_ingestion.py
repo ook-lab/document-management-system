@@ -681,7 +681,8 @@ class GmailIngestionPipeline:
                     'processing_status': 'completed',
                     'processing_stage': 'email_stage2',
                     'stage1_model': 'gemini-2.0-flash-lite',
-                    'stage2_model': 'gemini-2.5-flash'
+                    'stage2_model': 'gemini-2.5-flash',
+                    'chunking_strategy': 'small_large_2tier'
                 }
 
                 try:
@@ -692,21 +693,24 @@ class GmailIngestionPipeline:
                         result['ingested_document_ids'].append(email_doc_id)
                         logger.info(f"  メール本文のSupabase保存完了: {email_doc_id}")
 
-                        # チャンク化処理
-                        logger.info(f"  メール本文のチャンク化開始")
+                        # チャンク化処理（2階層: 小・大）
+                        logger.info(f"  メール本文の2階層チャンク化開始（小・大）")
                         try:
-                            chunks = chunk_document(
-                                text=vision_result.get('extracted_text', ''),
-                                chunk_size=800,
-                                chunk_overlap=100
+                            extracted_text = vision_result.get('extracted_text', '')
+
+                            # 小チャンク（検索用、300文字）
+                            small_chunks = chunk_document(
+                                text=extracted_text,
+                                chunk_size=300,
+                                chunk_overlap=50
                             )
 
-                            if chunks:
-                                logger.info(f"  チャンク作成完了: {len(chunks)}個のチャンク")
+                            if small_chunks:
+                                logger.info(f"  小チャンク作成完了: {len(small_chunks)}個のチャンク")
 
-                                # 各チャンクにembeddingを生成して保存
-                                chunk_success_count = 0
-                                for i, chunk in enumerate(chunks):
+                                # 小チャンクにembeddingを生成して保存
+                                small_chunk_success_count = 0
+                                for i, chunk in enumerate(small_chunks):
                                     try:
                                         chunk_text = chunk.get('chunk_text', '')
                                         chunk_embedding = self.llm_client.generate_embedding(chunk_text)
@@ -716,24 +720,40 @@ class GmailIngestionPipeline:
                                             'chunk_index': chunk.get('chunk_index', 0),
                                             'chunk_text': chunk_text,
                                             'chunk_size': chunk.get('chunk_size', len(chunk_text)),
-                                            'embedding': chunk_embedding,
-                                            'metadata': {
-                                                'from': email_metadata['from'],
-                                                'subject': email_metadata['subject'],
-                                                'date': email_metadata['date']
-                                            }
+                                            'chunk_type': 'small',
+                                            'embedding': chunk_embedding
                                         }
 
-                                        result = await self.db.insert_document('document_chunks', chunk_doc)
-                                        if result:
-                                            chunk_success_count += 1
+                                        chunk_result = await self.db.insert_document('document_chunks', chunk_doc)
+                                        if chunk_result:
+                                            small_chunk_success_count += 1
                                     except Exception as chunk_insert_error:
-                                        logger.error(f"  チャンク{i+1}保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
+                                        logger.error(f"  小チャンク{i+1}保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
                                         logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
 
-                                logger.info(f"  チャンク保存完了: {chunk_success_count}/{len(chunks)}個")
+                                logger.info(f"  小チャンク保存完了: {small_chunk_success_count}/{len(small_chunks)}個")
                             else:
-                                logger.warning(f"  チャンク作成失敗: テキストが短すぎる可能性")
+                                logger.warning(f"  小チャンク作成失敗: テキストが短すぎる可能性")
+
+                            # 大チャンク（回答用、全文）
+                            large_doc = {
+                                'document_id': email_doc_id,
+                                'chunk_index': 0,
+                                'chunk_text': extracted_text,
+                                'chunk_size': len(extracted_text),
+                                'chunk_type': 'large',
+                                'embedding': embedding  # 既に生成済みの全文embedding
+                            }
+
+                            try:
+                                large_chunk_result = await self.db.insert_document('document_chunks', large_doc)
+                                if large_chunk_result:
+                                    logger.info(f"  大チャンク保存完了")
+                                else:
+                                    logger.error(f"  大チャンク保存失敗")
+                            except Exception as large_chunk_error:
+                                logger.error(f"  大チャンク保存エラー: {type(large_chunk_error).__name__}: {large_chunk_error}")
+                                logger.debug(f"  エラー詳細: {repr(large_chunk_error)}", exc_info=True)
 
                         except Exception as chunk_error:
                             logger.error(f"  チャンク化エラー: {chunk_error}", exc_info=True)
