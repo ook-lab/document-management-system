@@ -720,7 +720,6 @@ class GmailIngestionPipeline:
                                             'chunk_index': chunk.get('chunk_index', 0),
                                             'chunk_text': chunk_text,
                                             'chunk_size': chunk.get('chunk_size', len(chunk_text)),
-                                            'chunk_type': 'small',
                                             'embedding': chunk_embedding
                                         }
 
@@ -741,7 +740,6 @@ class GmailIngestionPipeline:
                                 'chunk_index': 0,
                                 'chunk_text': extracted_text,
                                 'chunk_size': len(extracted_text),
-                                'chunk_type': 'large',
                                 'embedding': embedding  # 既に生成済みの全文embedding
                             }
 

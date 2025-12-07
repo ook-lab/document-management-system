@@ -394,7 +394,6 @@ class TwoStageIngestionPipeline:
                                     'chunk_index': small_chunk.get('chunk_index', 0),
                                     'chunk_text': small_text,
                                     'chunk_size': small_chunk.get('chunk_size', len(small_text)),
-                                    'chunk_type': 'small',  # 小チャンク（検索用）
                                     'embedding': small_embedding
                                 }
 
@@ -417,7 +416,6 @@ class TwoStageIngestionPipeline:
                                 'chunk_index': 0,
                                 'chunk_text': extracted_text,  # 全文テキスト
                                 'chunk_size': len(extracted_text),
-                                'chunk_type': 'large',  # 大チャンク（回答生成用）
                                 'embedding': embedding  # 全文のembedding を使用
                             }
 
