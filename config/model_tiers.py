@@ -55,7 +55,7 @@ class ModelTier:
         "model": "gemini-2.5-flash",
         "description": "メール専用の情報抽出・構造化・タグ付け",
         "temperature": 0.0,
-        "max_tokens": 8192,
+        "max_tokens": 16384,  # 長いメール + 表抽出テンプレートに対応
         "cost_per_1k_tokens": 0.00015  # Flashは超低コスト
     }
     

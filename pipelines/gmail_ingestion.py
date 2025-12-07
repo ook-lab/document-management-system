@@ -705,26 +705,32 @@ class GmailIngestionPipeline:
                                 logger.info(f"  チャンク作成完了: {len(chunks)}個のチャンク")
 
                                 # 各チャンクにembeddingを生成して保存
-                                for chunk in chunks:
-                                    chunk_text = chunk.get('chunk_text', '')
-                                    chunk_embedding = self.llm_client.generate_embedding(chunk_text)
+                                chunk_success_count = 0
+                                for i, chunk in enumerate(chunks):
+                                    try:
+                                        chunk_text = chunk.get('chunk_text', '')
+                                        chunk_embedding = self.llm_client.generate_embedding(chunk_text)
 
-                                    chunk_doc = {
-                                        'document_id': email_doc_id,
-                                        'chunk_index': chunk.get('chunk_index', 0),
-                                        'chunk_text': chunk_text,
-                                        'chunk_size': chunk.get('chunk_size', len(chunk_text)),
-                                        'embedding': chunk_embedding,
-                                        'metadata': {
-                                            'from': email_metadata['from'],
-                                            'subject': email_metadata['subject'],
-                                            'date': email_metadata['date']
+                                        chunk_doc = {
+                                            'document_id': email_doc_id,
+                                            'chunk_index': chunk.get('chunk_index', 0),
+                                            'chunk_text': chunk_text,
+                                            'chunk_size': chunk.get('chunk_size', len(chunk_text)),
+                                            'embedding': chunk_embedding,
+                                            'metadata': {
+                                                'from': email_metadata['from'],
+                                                'subject': email_metadata['subject'],
+                                                'date': email_metadata['date']
+                                            }
                                         }
-                                    }
 
-                                    await self.db.insert_document('document_chunks', chunk_doc)
+                                        result = await self.db.insert_document('document_chunks', chunk_doc)
+                                        if result:
+                                            chunk_success_count += 1
+                                    except Exception as chunk_insert_error:
+                                        logger.error(f"  チャンク{i+1}保存エラー: {chunk_insert_error}", exc_info=True)
 
-                                logger.info(f"  チャンク保存完了: {len(chunks)}個")
+                                logger.info(f"  チャンク保存完了: {chunk_success_count}/{len(chunks)}個")
                             else:
                                 logger.warning(f"  チャンク作成失敗: テキストが短すぎる可能性")
 
