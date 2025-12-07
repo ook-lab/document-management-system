@@ -34,6 +34,9 @@ from core.connectors.google_drive import GoogleDriveConnector
 from core.database.client import DatabaseClient
 from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
 from core.processors.email_vision import EmailVisionProcessor
+from core.ai.stage2_extractor import Stage2Extractor
+from core.ai.llm_client import LLMClient
+from core.utils.chunking import chunk_document
 from config.workspaces import get_workspace_from_gmail_label
 
 
@@ -63,8 +66,10 @@ class GmailIngestionPipeline:
         self.gmail = GmailConnector(user_email=gmail_user_email)
         self.drive = GoogleDriveConnector()
         self.db = DatabaseClient()
+        self.llm_client = LLMClient()
         self.ingestion_pipeline = TwoStageIngestionPipeline()
         self.email_vision_processor = EmailVisionProcessor()
+        self.stage2_extractor = Stage2Extractor(llm_client=self.llm_client)
 
         logger.info(f"GmailIngestionPipeline初期化完了")
         logger.info(f"  - Gmail: {gmail_user_email}")
@@ -579,8 +584,41 @@ class GmailIngestionPipeline:
 
                 logger.info(f"  Vision処理完了: {len(vision_result.get('extracted_text', ''))} 文字抽出")
 
+                # Stage 2: リッチ化処理（Gemini 2.5 Flash使用）
+                logger.info(f"  メール本文のStage 2処理開始（リッチ化）")
+
+                # Gmailラベルからworkspaceを判定
+                workspace = get_workspace_from_gmail_label(self.gmail_label)
+
+                # Stage 1結果を構築（Visionの結果を疑似的にStage 1として扱う）
+                stage1_result = {
+                    "doc_type": "email",  # メールとして分類
+                    "workspace": workspace,
+                    "confidence": 1.0
+                }
+
+                # メール全文を構築（Stage 2に渡す）
+                full_text_for_stage2 = f"""送信者: {email_metadata['from']}
+受信者: {email_metadata['to']}
+件名: {email_metadata['subject']}
+日時: {email_metadata['date']}
+
+{vision_result.get('extracted_text', '')}
+"""
+
+                # Stage 2でメタデータ抽出、タグ付け、構造化
+                stage2_result = self.stage2_extractor.extract_metadata(
+                    full_text=full_text_for_stage2,
+                    file_name=f"{subject}_{message_id[:8]}.html",
+                    stage1_result=stage1_result,
+                    workspace=workspace,
+                    tier="email_stage2_extraction"  # メール専用のGemini 2.5 Flash使用
+                )
+
+                logger.info(f"  Stage 2処理完了: doc_type={stage2_result.get('doc_type')}, tags={stage2_result.get('tags', [])}")
+
                 # メール内容をSupabaseに直接保存
-                # メールテキストを整形
+                # メールテキストを整形（Stage 2の結果を使用）
                 email_text_content = f"""メール情報:
 送信者: {email_metadata['from']}
 受信者: {email_metadata['to']}
@@ -588,7 +626,7 @@ class GmailIngestionPipeline:
 日時: {email_metadata['date']}
 
 要約:
-{vision_result.get('summary', '')}
+{stage2_result.get('summary', vision_result.get('summary', ''))}
 
 本文:
 {vision_result.get('extracted_text', '')}
@@ -598,48 +636,52 @@ class GmailIngestionPipeline:
 """
 
                 # Embeddingを生成
-                from core.ai.llm_client import LLMClient
-                llm_client = LLMClient()
-                embedding = llm_client.generate_embedding(email_text_content)
+                embedding = self.llm_client.generate_embedding(email_text_content)
 
-                # Supabaseに保存（workspaceベースのスキーマ）
+                # Supabaseに保存（workspaceベースのスキーマ + Stage 2結果）
                 import hashlib
                 content_hash = hashlib.sha256(email_text_content.encode('utf-8')).hexdigest()
 
-                # Gmailラベルからworkspaceを判定
-                workspace = get_workspace_from_gmail_label(self.gmail_label)
+                # Stage 2のメタデータをマージ
+                stage2_metadata = stage2_result.get('metadata', {})
+                merged_metadata = {
+                    'from': email_metadata['from'],
+                    'to': email_metadata['to'],
+                    'subject': email_metadata['subject'],
+                    'date': email_metadata['date'],
+                    'gmail_label': self.gmail_label,
+                    'workspace': workspace,
+                    'summary': stage2_result.get('summary', vision_result.get('summary', '')),
+                    'key_information': vision_result.get('key_information', []),
+                    'has_images': vision_result.get('has_images', False),
+                    'links': vision_result.get('links', []),
+                    **stage2_metadata  # Stage 2の構造化メタデータを追加
+                }
 
                 email_doc = {
-                    'source_type': 'gmail',  # 技術的な出所
-                    'source_id': email_file_id,  # Google DriveのHTMLファイルID
+                    'source_type': 'gmail',
+                    'source_id': email_file_id,
                     'source_url': f"https://drive.google.com/file/d/{email_file_id}/view",
                     'drive_file_id': email_file_id,
                     'file_name': f"{subject}_{message_id[:8]}.html",
-                    'file_type': 'email',  # ファイル形式
-                    'workspace': workspace,  # ★意味的な分類（メイン軸）
+                    'file_type': 'email',
+                    'doc_type': stage2_result.get('doc_type', 'email'),  # Stage 2の分類を使用
+                    'workspace': workspace,
                     'full_text': email_text_content,
-                    'summary': vision_result.get('summary', ''),
+                    'summary': stage2_result.get('summary', vision_result.get('summary', '')),
+                    'tags': stage2_result.get('tags', []),  # Stage 2のタグを追加
+                    'document_date': stage2_result.get('document_date'),  # Stage 2の日付を追加
                     'embedding': embedding,
-                    'metadata': {
-                        'from': email_metadata['from'],
-                        'to': email_metadata['to'],
-                        'subject': email_metadata['subject'],
-                        'date': email_metadata['date'],
-                        'gmail_label': self.gmail_label,  # 元のラベルも保存
-                        'workspace': workspace,  # workspaceも明示的に保存
-                        'summary': vision_result.get('summary', ''),
-                        'key_information': vision_result.get('key_information', []),
-                        'has_images': vision_result.get('has_images', False),
-                        'links': vision_result.get('links', [])
-                    },
-                    'extracted_tables': [],
+                    'metadata': merged_metadata,
+                    'extracted_tables': stage2_result.get('tables', []),  # Stage 2のテーブルを追加
                     'content_hash': content_hash,
                     'confidence': 1.0,
+                    'extraction_confidence': stage2_result.get('extraction_confidence', 1.0),
                     'total_confidence': 1.0,
                     'processing_status': 'completed',
-                    'processing_stage': 'email_vision',
+                    'processing_stage': 'email_stage2',
                     'stage1_model': 'gemini-2.0-flash-lite',
-                    'stage2_model': None
+                    'stage2_model': 'gemini-2.5-flash'
                 }
 
                 try:
@@ -649,6 +691,46 @@ class GmailIngestionPipeline:
                         email_doc_id = email_doc_result.get('id')
                         result['ingested_document_ids'].append(email_doc_id)
                         logger.info(f"  メール本文のSupabase保存完了: {email_doc_id}")
+
+                        # チャンク化処理
+                        logger.info(f"  メール本文のチャンク化開始")
+                        try:
+                            chunks = chunk_document(
+                                text=vision_result.get('extracted_text', ''),
+                                chunk_size=800,
+                                chunk_overlap=100
+                            )
+
+                            if chunks:
+                                logger.info(f"  チャンク作成完了: {len(chunks)}個のチャンク")
+
+                                # 各チャンクにembeddingを生成して保存
+                                for chunk in chunks:
+                                    chunk_text = chunk.get('chunk_text', '')
+                                    chunk_embedding = self.llm_client.generate_embedding(chunk_text)
+
+                                    chunk_doc = {
+                                        'document_id': email_doc_id,
+                                        'chunk_index': chunk.get('chunk_index', 0),
+                                        'chunk_text': chunk_text,
+                                        'chunk_size': chunk.get('chunk_size', len(chunk_text)),
+                                        'embedding': chunk_embedding,
+                                        'metadata': {
+                                            'from': email_metadata['from'],
+                                            'subject': email_metadata['subject'],
+                                            'date': email_metadata['date']
+                                        }
+                                    }
+
+                                    await self.db.insert_document('document_chunks', chunk_doc)
+
+                                logger.info(f"  チャンク保存完了: {len(chunks)}個")
+                            else:
+                                logger.warning(f"  チャンク作成失敗: テキストが短すぎる可能性")
+
+                        except Exception as chunk_error:
+                            logger.error(f"  チャンク化エラー: {chunk_error}", exc_info=True)
+
                 except Exception as db_error:
                     logger.error(f"  Supabase保存エラー: {type(db_error).__name__}: {db_error}", exc_info=True)
 

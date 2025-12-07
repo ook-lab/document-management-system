@@ -36,7 +36,7 @@ class ModelTier:
         "max_tokens": 16384,  # 超長文メールに対応（Flash-Liteは最大32K）
         "cost_per_1k_tokens": 0.00005  # Flash-Liteは超低コスト
     }
-    
+
     # Stage 2: 詳細抽出（速度・コスト重視）
     # Claude Haiku 4.5に変更（コスト効率と速度向上）
     STAGE2_EXTRACTOR = {
@@ -46,6 +46,17 @@ class ModelTier:
         "temperature": 0.0,
         "max_tokens": 4096,
         "cost_per_1k_tokens": 0.0008  # Haikuは低コスト
+    }
+
+    # Email Stage 2: メール専用の詳細抽出（超高速・超低コスト）
+    # Gemini 2.5 Flash でメールのリッチ化処理
+    EMAIL_STAGE2_EXTRACTOR = {
+        "provider": AIProvider.GEMINI,
+        "model": "gemini-2.5-flash",
+        "description": "メール専用の情報抽出・構造化・タグ付け",
+        "temperature": 0.0,
+        "max_tokens": 8192,
+        "cost_per_1k_tokens": 0.00015  # Flashは超低コスト
     }
     
     # UI回答生成（速度・コスト重視）
@@ -75,6 +86,7 @@ class ModelTier:
             "stage1_classification": cls.STAGE1_CLASSIFIER,
             "email_vision": cls.EMAIL_VISION,
             "stage2_extraction": cls.STAGE2_EXTRACTOR,
+            "email_stage2_extraction": cls.EMAIL_STAGE2_EXTRACTOR,
             "ui_response": cls.UI_RESPONSE_GENERATOR,
             "embeddings": cls.EMBEDDING
         }

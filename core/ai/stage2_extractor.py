@@ -54,17 +54,19 @@ class Stage2Extractor:
         full_text: str,
         file_name: str,
         stage1_result: Dict,
-        workspace: str = "personal"
+        workspace: str = "personal",
+        tier: str = "stage2_extraction"
     ) -> Dict:
         """
         詳細メタデータを抽出
-        
+
         Args:
             full_text: 抽出済みテキスト
             file_name: ファイル名
             stage1_result: Stage 1結果
             workspace: ワークスペース
-        
+            tier: モデル階層（デフォルト: "stage2_extraction"、メール用: "email_stage2_extraction"）
+
         Returns:
             抽出結果辞書:
             {
@@ -77,9 +79,9 @@ class Stage2Extractor:
             }
         """
         doc_type = stage1_result.get("doc_type", "other")
-        
-        logger.info(f"[Stage 2] 詳細抽出開始: doc_type={doc_type}")
-        
+
+        logger.info(f"[Stage 2] 詳細抽出開始: doc_type={doc_type}, tier={tier}")
+
         prompt = self._build_extraction_prompt(
             full_text=full_text,
             file_name=file_name,
@@ -87,10 +89,10 @@ class Stage2Extractor:
             workspace=workspace,
             stage1_confidence=stage1_result.get("confidence", 0.0)
         )
-        
+
         try:
             response = self.llm.call_model(
-                tier="stage2_extraction",
+                tier=tier,
                 prompt=prompt
             )
 
@@ -101,10 +103,10 @@ class Stage2Extractor:
             # JSON抽出（リトライ機能付き）
             content = response.get("content", "")
 
-            # ✅ DEBUG: Claude から得られた生のコンテンツ全体を出力
-            logger.debug(f"[Stage 2 Input] Raw Claude response content starts with: {content[:500]}")
+            # ✅ DEBUG: LLM から得られた生のコンテンツ全体を出力
+            logger.debug(f"[Stage 2 Input] Raw LLM response content starts with: {content[:500]}")
 
-            result = self._extract_json_with_retry(content, tier="stage2_extraction", max_retries=2)
+            result = self._extract_json_with_retry(content, tier=tier, max_retries=2)
             
             # doc_typeの上書き(Stage 2の方が精度高い可能性)
             result["doc_type"] = result.get("doc_type", doc_type)
