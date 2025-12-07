@@ -69,7 +69,8 @@ class DatabaseClient:
         workspace: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        ハイブリッド検索：ベクトル検索 + file_name キーワードマッチ
+        ハイブリッド検索：DB関数を使用して高速化
+        ベクトル検索 + 全文検索を1回のRPC呼び出しで実行
 
         Args:
             query: 検索クエリ
@@ -78,100 +79,127 @@ class DatabaseClient:
             workspace: ワークスペースフィルタ (オプション)
 
         Returns:
-            検索結果のリスト（file_name マッチを優先）
+            検索結果のリスト（combined_score順）
         """
-        # 1. ベクトル検索を実行
-        rpc_params = {
-            "query_embedding": embedding,
-            "match_threshold": 0.0,
-            "match_count": limit
-        }
-        vector_response = self.client.rpc("match_documents", rpc_params).execute()
-        vector_results = vector_response.data if vector_response.data else []
+        try:
+            # クエリから日付を抽出（既存のロジックを流用）
+            target_date = self._extract_date(query)
+            filter_year = None
+            filter_month = None
 
-        # 2. クエリから日付とキーワードを抽出
-        target_date = self._extract_date(query)
-        keywords = self._extract_keywords(query)
+            if target_date:
+                try:
+                    parts = target_date.split('-')
+                    filter_year = int(parts[0])
+                    filter_month = int(parts[1])
+                    print(f"[DEBUG] 日付フィルタ: {filter_year}年{filter_month}月")
+                except:
+                    pass
 
-        print(f"[DEBUG] 抽出された日付: {target_date}")
-        print(f"[DEBUG] 抽出されたキーワード: {keywords}")
+            # DB関数を一発呼び出し（ベクトル検索 + 全文検索）
+            rpc_params = {
+                "query_text": query,
+                "query_embedding": embedding,
+                "match_threshold": 0.0,
+                "match_count": limit,
+                "vector_weight": 0.7,  # ベクトル検索70%
+                "fulltext_weight": 0.3,  # キーワード検索30%
+                "filter_year": filter_year,
+                "filter_month": filter_month,
+                "filter_workspace": workspace
+            }
 
-        # 3. file_name でキーワード検索（いずれかのキーワードにマッチ）
-        keyword_results = []
-        seen_keyword_ids = set()
+            print(f"[DEBUG] hybrid_search_chunks 呼び出し: query='{query}', limit={limit}")
+            response = self.client.rpc("hybrid_search_chunks", rpc_params).execute()
+            results = response.data if response.data else []
 
-        if keywords:
-            try:
-                # 各キーワードで個別に検索し、結果をマージ
-                for keyword in keywords:
-                    query_response = (
-                        self.client.table('documents')
-                        .select('*')
-                        .ilike('file_name', f'%{keyword}%')
-                        .eq('processing_status', 'completed')
-                        .not_.is_('embedding', 'null')
-                        .limit(limit)
-                        .execute()
-                    )
+            print(f"[DEBUG] hybrid_search_chunks 結果: {len(results)} 件")
 
-                    if query_response.data:
-                        for doc in query_response.data:
-                            doc_id = doc.get('id')
-                            if doc_id not in seen_keyword_ids:
-                                keyword_results.append(doc)
-                                seen_keyword_ids.add(doc_id)
+            # チャンクレベルの結果をドキュメントレベルにグループ化
+            # 同じドキュメントの複数チャンクをマージして、最もスコアの高いチャンクを採用
+            doc_map = {}
+            for result in results:
+                doc_id = result.get('document_id')
+                if doc_id not in doc_map:
+                    # 初出のドキュメント：そのまま追加
+                    doc_map[doc_id] = {
+                        'id': doc_id,
+                        'file_name': result.get('file_name'),
+                        'doc_type': result.get('doc_type'),
+                        'document_date': result.get('document_date'),
+                        'metadata': result.get('metadata'),
+                        'summary': result.get('summary'),
+                        'content': result.get('chunk_text'),  # 最高スコアのチャンクを使用
+                        'similarity': result.get('combined_score', 0),  # combined_scoreをsimilarityとして使用
+                        'chunk_id': result.get('chunk_id'),
+                        'chunk_index': result.get('chunk_index')
+                    }
+                else:
+                    # 既存のドキュメント：スコアが高ければ更新
+                    if result.get('combined_score', 0) > doc_map[doc_id]['similarity']:
+                        doc_map[doc_id]['content'] = result.get('chunk_text')
+                        doc_map[doc_id]['similarity'] = result.get('combined_score', 0)
+                        doc_map[doc_id]['chunk_id'] = result.get('chunk_id')
+                        doc_map[doc_id]['chunk_index'] = result.get('chunk_index')
 
-            except Exception as e:
-                print(f"Keyword search error: {e}")
+            # ドキュメントリストに変換
+            final_results = list(doc_map.values())
 
-        # 4. 結果をマージ（file_name マッチを優先、重複削除）
-        merged_results = []
-        seen_ids = set()
+            # 類似度でソート（高い順）
+            final_results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
 
-        # file_name マッチを優先的に追加（一致度に応じてスコアを計算）
-        for doc in keyword_results:
-            doc_id = doc.get('id')
-            if doc_id not in seen_ids:
-                # file_name とクエリの一致度を計算
-                file_name = doc.get('file_name', '')
-                match_score = self._calculate_keyword_match_score(file_name, keywords, query)
+            # 上位のみに制限（最大でも5件）
+            max_limit = min(limit, 5)
+            final_results = final_results[:max_limit]
 
-                # 日付マッチングでスコアをブースト
-                if target_date:
-                    date_match_score = self._check_date_match(doc, target_date)
-                    if date_match_score > 0:
-                        match_score = min(1.0, match_score + date_match_score)
-                        print(f"[DEBUG] 日付マッチ: {file_name} → スコア: {match_score}")
+            print(f"[DEBUG] 最終結果: {len(final_results)} 件（グループ化後）")
 
-                doc['similarity'] = match_score
-                merged_results.append(doc)
-                seen_ids.add(doc_id)
+            return final_results
 
-        # ベクトル検索結果を追加（重複を除く）
-        for doc in vector_results:
-            doc_id = doc.get('id')
-            if doc_id not in seen_ids:
-                # 日付マッチングでスコアをブースト
-                if target_date:
-                    date_match_score = self._check_date_match(doc, target_date)
-                    if date_match_score > 0:
-                        original_score = doc.get('similarity', 0)
-                        doc['similarity'] = min(1.0, original_score + date_match_score)
-                        print(f"[DEBUG] 日付マッチ（ベクトル検索）: {doc.get('file_name')} → スコア: {doc['similarity']}")
+        except Exception as e:
+            print(f"Hybrid search error: {e}")
+            import traceback
+            traceback.print_exc()
 
-                merged_results.append(doc)
-                seen_ids.add(doc_id)
+            # フォールバック: 従来のベクトル検索
+            print("[WARNING] フォールバックモード: match_documents を使用")
+            return await self._fallback_vector_search(embedding, limit, workspace)
 
-        # 類似度でソート（高い順）
-        merged_results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+    async def _fallback_vector_search(
+        self,
+        embedding: List[float],
+        limit: int,
+        workspace: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        フォールバック用のベクトル検索（エラー時に使用）
 
-        # 上位のみに制限（最大でも5件）
-        max_limit = min(limit, 5)
-        final_results = merged_results[:max_limit]
+        Args:
+            embedding: クエリのembeddingベクトル
+            limit: 取得する最大件数
+            workspace: ワークスペースフィルタ
 
-        print(f"[DEBUG] 最終結果: {len(final_results)} 件（limit={limit}, max_limit={max_limit}）")
+        Returns:
+            検索結果のリスト
+        """
+        try:
+            rpc_params = {
+                "query_embedding": embedding,
+                "match_threshold": 0.0,
+                "match_count": min(limit, 5)
+            }
+            if workspace:
+                rpc_params["filter_workspace"] = workspace
 
-        return final_results
+            response = self.client.rpc("match_documents", rpc_params).execute()
+            results = response.data if response.data else []
+
+            print(f"[DEBUG] フォールバック検索結果: {len(results)} 件")
+            return results
+
+        except Exception as e:
+            print(f"Fallback search error: {e}")
+            return []
 
     def _check_date_match(self, doc: Dict[str, Any], target_date: str) -> float:
         """
