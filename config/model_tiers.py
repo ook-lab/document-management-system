@@ -66,7 +66,7 @@ class ModelTier:
         "model": "gpt-4o-mini",  # ✅ GPT-4o mini（高速・低コスト）
         "description": "高速で効率的な対話応答",
         "temperature": 0.7,
-        "max_tokens": 2048,
+        "max_completion_tokens": 2048,  # GPT-4o系モデルでは max_completion_tokens を使用
         "cost_per_1k_tokens": 0.00015  # GPT-4o mini
     }
     
