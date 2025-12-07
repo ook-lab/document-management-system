@@ -122,9 +122,10 @@ class LLMClient:
 
             # finish_reason をチェック
             if candidate.finish_reason != 1:  # 1 = STOP (正常終了)
+                finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
                 error_details = {
                     "finish_reason": candidate.finish_reason,
-                    "finish_reason_name": candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
+                    "finish_reason_name": finish_reason_name
                 }
                 if hasattr(candidate, 'safety_ratings') and candidate.safety_ratings:
                     error_details["safety_ratings"] = [
@@ -135,7 +136,7 @@ class LLMClient:
                         for rating in candidate.safety_ratings
                     ]
                 logger.error(f"Gemini Vision失敗: {error_details}")
-                raise ValueError(f"Gemini finish_reason: {candidate.finish_reason}")
+                raise ValueError(f"Gemini finish_reason: {finish_reason_name} ({candidate.finish_reason})")
 
             # テキストを取得
             text_content = candidate.content.parts[0].text if candidate.content.parts else ""
