@@ -59,15 +59,37 @@ class ModelTier:
         "cost_per_1k_tokens": 0.00015  # Flashは超低コスト
     }
     
-    # UI回答生成（速度・コスト重視）
-    # ✅ GPT-5 miniをデフォルトに設定（高速・安価）
+    # UI回答生成（デフォルト：速度・コスト・精度のバランス）
+    # ✅ Gemini 2.5 Flashをデフォルトに設定（100万トークンコンテキスト、高速、GPT-5-miniより安定）
     UI_RESPONSE_GENERATOR = {
+        "provider": AIProvider.GEMINI,
+        "model": "gemini-2.5-flash",  # ✅ Gemini 2.5 Flash（デフォルト: $0.30/$2.50）
+        "description": "100万トークンコンテキスト、高速で安定した対話応答",
+        "temperature": 0.7,  # 自然な会話のため適度な創造性を保つ
+        "max_tokens": 4096,
+        "cost_per_1k_tokens": 0.0003  # Gemini 2.5 Flash
+    }
+
+    # UI回答生成（高速モード：大量処理・単純タスク用）
+    # ✅ Gemini 2.5 Flash-Liteで超高速・超低コストを実現
+    UI_RESPONSE_GENERATOR_LITE = {
+        "provider": AIProvider.GEMINI,
+        "model": "gemini-2.5-flash-lite",  # ✅ Gemini 2.5 Flash-Lite（$0.10/$0.40）
+        "description": "超高速・超低コスト（Flash比80%削減）の単純タスク処理",
+        "temperature": 0.5,
+        "max_tokens": 2048,
+        "cost_per_1k_tokens": 0.0001  # Gemini 2.5 Flash-Lite
+    }
+
+    # UI回答生成（高精度モード：複雑な推論・数学・コーディング用）
+    # ✅ GPT-5.1を高精度オプションとして維持
+    UI_RESPONSE_GENERATOR_PREMIUM = {
         "provider": AIProvider.OPENAI,
-        "model": "gpt-5-mini",  # ✅ GPT-5 mini（デフォルト: $0.25/$2.00）
-        "description": "高速で効率的な対話応答",
+        "model": "gpt-5.1",  # ✅ GPT-5.1（高精度: $0.125/$10.00）
+        "description": "最高精度の推論・数学・コーディング支援",
         # temperatureはGPT-5.1モデルでサポートされていないため削除
-        "max_completion_tokens": 2048,
-        "cost_per_1k_tokens": 0.00025  # GPT-5 mini
+        "max_completion_tokens": 4096,
+        "cost_per_1k_tokens": 0.000125  # GPT-5.1
     }
     
     # Embedding生成
@@ -87,7 +109,9 @@ class ModelTier:
             "email_vision": cls.EMAIL_VISION,
             "stage2_extraction": cls.STAGE2_EXTRACTOR,
             "email_stage2_extraction": cls.EMAIL_STAGE2_EXTRACTOR,
-            "ui_response": cls.UI_RESPONSE_GENERATOR,
+            "ui_response": cls.UI_RESPONSE_GENERATOR,  # デフォルト: Gemini 2.5 Flash
+            "ui_response_lite": cls.UI_RESPONSE_GENERATOR_LITE,  # 高速モード: Gemini 2.5 Flash-Lite
+            "ui_response_premium": cls.UI_RESPONSE_GENERATOR_PREMIUM,  # 高精度モード: GPT-5.1
             "embeddings": cls.EMBEDDING
         }
         return task_mapping.get(task, cls.STAGE2_EXTRACTOR)

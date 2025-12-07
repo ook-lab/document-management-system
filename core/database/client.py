@@ -113,11 +113,11 @@ class DatabaseClient:
                 "filter_workspace": workspace
             }
 
-            print(f"[DEBUG] hybrid_search_2tier_final 呼び出し: query='{query}'")
-            response = self.client.rpc("hybrid_search_2tier_final", rpc_params).execute()
+            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}'")
+            response = self.client.rpc("search_documents_final", rpc_params).execute()
             results = response.data if response.data else []
 
-            print(f"[DEBUG] hybrid_search_2tier_final 結果: {len(results)} 件")
+            print(f"[DEBUG] search_documents_final 結果: {len(results)} 件")
 
             # 結果を整形（既に重複排除済みだが、確認用）
             final_results = []
