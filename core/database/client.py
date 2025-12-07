@@ -69,8 +69,11 @@ class DatabaseClient:
         workspace: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        ハイブリッド検索：DB関数を使用して高速化
-        ベクトル検索 + 全文検索を1回のRPC呼び出しで実行
+        2階層ハイブリッド検索：小チャンク検索 + 中チャンク回答
+
+        【検索フロー】
+        1. 小チャンク（300文字）でベクトル + 全文検索 → 関連ドキュメントを検出
+        2. 見つかったドキュメントの中チャンク（1500文字）を取得 → 回答用として使用
 
         Args:
             query: 検索クエリ
@@ -79,7 +82,7 @@ class DatabaseClient:
             workspace: ワークスペースフィルタ (オプション)
 
         Returns:
-            検索結果のリスト（combined_score順）
+            検索結果のリスト（小チャンク検索スコア順、回答は中チャンク）
         """
         try:
             # クエリから日付を抽出（既存のロジックを流用）
@@ -96,7 +99,8 @@ class DatabaseClient:
                 except:
                     pass
 
-            # DB関数を一発呼び出し（ベクトル検索 + 全文検索）
+            # DB関数を一発呼び出し（2階層検索）
+            # 小チャンクで検索 → 中チャンクで回答
             rpc_params = {
                 "query_text": query,
                 "query_embedding": embedding,
@@ -109,17 +113,19 @@ class DatabaseClient:
                 "filter_workspace": workspace
             }
 
-            print(f"[DEBUG] hybrid_search_chunks 呼び出し: query='{query}', limit={limit}")
-            response = self.client.rpc("hybrid_search_chunks", rpc_params).execute()
+            print(f"[DEBUG] hybrid_search_2tier 呼び出し: query='{query}', limit={limit}")
+            response = self.client.rpc("hybrid_search_2tier", rpc_params).execute()
             results = response.data if response.data else []
 
-            print(f"[DEBUG] hybrid_search_chunks 結果: {len(results)} 件")
+            print(f"[DEBUG] hybrid_search_2tier 結果: {len(results)} 件")
 
-            # チャンクレベルの結果をドキュメントレベルにグループ化
-            # 同じドキュメントの複数チャンクをマージして、最もスコアの高いチャンクを採用
+            # 結果をドキュメント単位にグループ化
+            # 同じドキュメントの複数検索結果から、最高スコアのものを選ぶ
             doc_map = {}
             for result in results:
                 doc_id = result.get('document_id')
+                combined_score = result.get('combined_score', 0)
+
                 if doc_id not in doc_map:
                     # 初出のドキュメント：そのまま追加
                     doc_map[doc_id] = {
@@ -129,18 +135,30 @@ class DatabaseClient:
                         'document_date': result.get('document_date'),
                         'metadata': result.get('metadata'),
                         'summary': result.get('summary'),
-                        'content': result.get('chunk_text'),  # 最高スコアのチャンクを使用
-                        'similarity': result.get('combined_score', 0),  # combined_scoreをsimilarityとして使用
-                        'chunk_id': result.get('chunk_id'),
-                        'chunk_index': result.get('chunk_index')
+
+                        # 回答用：中チャンク（1500文字）
+                        'content': result.get('medium_chunk_text'),
+                        'medium_chunk_id': result.get('medium_chunk_id'),
+                        'medium_chunk_index': result.get('medium_chunk_index'),
+                        'medium_chunk_size': result.get('medium_chunk_size'),
+
+                        # 検索スコア：小チャンクの検索スコア
+                        'similarity': combined_score,
+                        'small_chunk_id': result.get('small_chunk_id'),
+                        'small_chunk_index': result.get('small_chunk_index'),
+
+                        'year': result.get('year'),
+                        'month': result.get('month')
                     }
                 else:
                     # 既存のドキュメント：スコアが高ければ更新
-                    if result.get('combined_score', 0) > doc_map[doc_id]['similarity']:
-                        doc_map[doc_id]['content'] = result.get('chunk_text')
-                        doc_map[doc_id]['similarity'] = result.get('combined_score', 0)
-                        doc_map[doc_id]['chunk_id'] = result.get('chunk_id')
-                        doc_map[doc_id]['chunk_index'] = result.get('chunk_index')
+                    if combined_score > doc_map[doc_id]['similarity']:
+                        doc_map[doc_id]['content'] = result.get('medium_chunk_text')
+                        doc_map[doc_id]['medium_chunk_id'] = result.get('medium_chunk_id')
+                        doc_map[doc_id]['medium_chunk_index'] = result.get('medium_chunk_index')
+                        doc_map[doc_id]['similarity'] = combined_score
+                        doc_map[doc_id]['small_chunk_id'] = result.get('small_chunk_id')
+                        doc_map[doc_id]['small_chunk_index'] = result.get('small_chunk_index')
 
             # ドキュメントリストに変換
             final_results = list(doc_map.values())
@@ -152,12 +170,13 @@ class DatabaseClient:
             max_limit = min(limit, 5)
             final_results = final_results[:max_limit]
 
-            print(f"[DEBUG] 最終結果: {len(final_results)} 件（グループ化後）")
+            print(f"[DEBUG] 最終結果: {len(final_results)} 件（2階層検索）")
+            print(f"[DEBUG] 検索戦略: 小チャンク検索 + 中チャンク回答")
 
             return final_results
 
         except Exception as e:
-            print(f"Hybrid search error: {e}")
+            print(f"2-tier hybrid search error: {e}")
             import traceback
             traceback.print_exc()
 
