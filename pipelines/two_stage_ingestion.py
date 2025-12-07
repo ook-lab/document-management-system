@@ -23,7 +23,7 @@ from core.ai.json_validator import validate_metadata
 # from core.ai.embeddings import EmbeddingClient  # 768次元 - 使用しない
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
-from core.utils.chunking import chunk_document
+from core.utils.chunking import chunk_document, chunk_document_parent_child
 from config.yaml_loader import get_classification_yaml_string
 
 PROCESSING_STATUS = {
@@ -367,61 +367,101 @@ class TwoStageIngestionPipeline:
                 logger.info(f"Document保存完了: {document_id}")
 
                 # ============================================
-                # チャンク化処理（Embedding生成 + document_chunksへの保存）
+                # チャンク化処理（2階層：小チャンク検索用 + 中チャンク回答用）
                 # ============================================
                 if extracted_text and document_id:
-                    logger.info(f"  ドキュメントのチャンク化開始")
+                    logger.info(f"  ドキュメントの親子チャンク化開始（2階層）")
                     try:
-                        chunks = chunk_document(
+                        # 親子チャンクに分割
+                        # 親チャンク（1500文字）：回答生成用
+                        # 子チャンク（300文字）：検索用（埋め込み用）
+                        parent_child_chunks = chunk_document_parent_child(
                             text=extracted_text,
-                            chunk_size=800,
-                            chunk_overlap=100
+                            parent_size=1500,
+                            child_size=300
                         )
 
-                        if chunks:
-                            logger.info(f"  チャンク作成完了: {len(chunks)}個のチャンク")
+                        parent_chunks = parent_child_chunks.get('parent_chunks', [])
+                        child_chunks = parent_child_chunks.get('child_chunks', [])
 
-                            # 各チャンクにembeddingを生成して保存
-                            chunk_success_count = 0
-                            for i, chunk in enumerate(chunks):
-                                try:
-                                    chunk_text = chunk.get('chunk_text', '')
-                                    chunk_embedding = self.llm_client.generate_embedding(chunk_text)
+                        logger.info(f"  チャンク作成完了: 親{len(parent_chunks)}個 + 子{len(child_chunks)}個")
 
-                                    chunk_doc = {
-                                        'document_id': document_id,
-                                        'chunk_index': chunk.get('chunk_index', 0),
-                                        'chunk_text': chunk_text,
-                                        'chunk_size': chunk.get('chunk_size', len(chunk_text)),
-                                        'embedding': chunk_embedding
-                                    }
+                        chunk_success_count = 0
 
-                                    chunk_result = await self.db.insert_document('document_chunks', chunk_doc)
-                                    if chunk_result:
-                                        chunk_success_count += 1
-                                except Exception as chunk_insert_error:
-                                    logger.error(f"  チャンク{i+1}保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
-                                    logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
-
-                            logger.info(f"  チャンク保存完了: {chunk_success_count}/{len(chunks)}個")
-
-                            # document の chunk_count を更新
+                        # ステップ1: 子チャンク（検索用）を保存
+                        logger.info(f"  子チャンク（検索用）の保存開始: {len(child_chunks)}個")
+                        child_chunk_ids = {}  # chunk_index -> chunk_id のマッピング
+                        for child_chunk in child_chunks:
                             try:
-                                update_data = {
-                                    'chunk_count': chunk_success_count,
-                                    'chunking_strategy': 'simple_split'
+                                child_text = child_chunk.get('chunk_text', '')
+                                child_embedding = self.llm_client.generate_embedding(child_text)
+
+                                child_doc = {
+                                    'document_id': document_id,
+                                    'chunk_index': child_chunk.get('chunk_index', 0),
+                                    'chunk_text': child_text,
+                                    'chunk_size': child_chunk.get('chunk_size', len(child_text)),
+                                    'chunk_type': 'small',  # 小チャンク（検索用）
+                                    'chunk_level': child_chunk.get('chunk_level', 'child'),
+                                    'parent_local_index': child_chunk.get('parent_local_index'),
+                                    'embedding': child_embedding
                                 }
-                                response = (
-                                    self.db.client.table('documents')
-                                    .update(update_data)
-                                    .eq('id', document_id)
-                                    .execute()
-                                )
-                                logger.info(f"  Document chunk_count更新完了: {chunk_success_count}")
-                            except Exception as update_error:
-                                logger.error(f"  Document chunk_count更新エラー: {update_error}")
-                        else:
-                            logger.warning(f"  チャンク作成失敗: テキストが短すぎる可能性")
+
+                                chunk_result = await self.db.insert_document('document_chunks', child_doc)
+                                if chunk_result:
+                                    chunk_success_count += 1
+                                    child_chunk_ids[child_chunk.get('chunk_index')] = chunk_result.get('id')
+                            except Exception as chunk_insert_error:
+                                logger.error(f"  子チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
+                                logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
+
+                        logger.info(f"  子チャンク保存完了: {chunk_success_count}/{len(child_chunks)}個")
+
+                        # ステップ2: 親チャンク（回答生成用）を保存
+                        logger.info(f"  親チャンク（回答用）の保存開始: {len(parent_chunks)}個")
+                        parent_chunk_success_count = 0
+                        for parent_chunk in parent_chunks:
+                            try:
+                                parent_text = parent_chunk.get('chunk_text', '')
+                                parent_embedding = self.llm_client.generate_embedding(parent_text)
+
+                                parent_doc = {
+                                    'document_id': document_id,
+                                    'chunk_index': parent_chunk.get('chunk_index', 0),
+                                    'chunk_text': parent_text,
+                                    'chunk_size': parent_chunk.get('chunk_size', len(parent_text)),
+                                    'chunk_type': 'medium',  # 中チャンク（回答生成用）
+                                    'chunk_level': parent_chunk.get('chunk_level', 'parent'),
+                                    'embedding': parent_embedding
+                                }
+
+                                chunk_result = await self.db.insert_document('document_chunks', parent_doc)
+                                if chunk_result:
+                                    parent_chunk_success_count += 1
+                            except Exception as chunk_insert_error:
+                                logger.error(f"  親チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
+                                logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
+
+                        logger.info(f"  親チャンク保存完了: {parent_chunk_success_count}/{len(parent_chunks)}個")
+
+                        total_chunks = chunk_success_count + parent_chunk_success_count
+                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（小{chunk_success_count}個 + 中{parent_chunk_success_count}個）")
+
+                        # ステップ3: document の chunk_count を更新
+                        try:
+                            update_data = {
+                                'chunk_count': total_chunks,
+                                'chunking_strategy': 'parent_child_2tier'  # 2階層戦略
+                            }
+                            response = (
+                                self.db.client.table('documents')
+                                .update(update_data)
+                                .eq('id', document_id)
+                                .execute()
+                            )
+                            logger.info(f"  Document chunk_count更新完了: {total_chunks}個")
+                        except Exception as update_error:
+                            logger.error(f"  Document chunk_count更新エラー: {update_error}")
 
                     except Exception as chunk_error:
                         logger.error(f"  チャンク化エラー: {chunk_error}", exc_info=True)
