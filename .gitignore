@@ -10,3 +10,13 @@ credentials/google_credentials.json
 __pycache__/
 *.pyc
 project_codebase_*.md
+
+# macOS
+.DS_Store
+
+# テスト・デバッグスクリプト
+test_*.py
+check_*.py
+debug_*.py
+apply_*.py
+collect_codebase2.py
