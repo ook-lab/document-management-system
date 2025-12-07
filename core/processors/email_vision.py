@@ -246,23 +246,35 @@ class EmailVisionProcessor:
 
             logger.info("Vision解析完了")
 
+            # デバッグ: レスポンスの最初の500文字をログ出力
+            logger.debug(f"Vision APIレスポンス（最初の500文字）: {response[:500]}")
+
             # JSONレスポンスをパース
             import json
             import re
 
-            # JSONブロックを抽出
-            json_match = re.search(r'```json\s*(\{.*?\})\s*```', response, re.DOTALL)
+            # JSONブロックを抽出（非貪欲マッチから貪欲マッチに変更）
+            json_match = re.search(r'```json\s*(\{.*\})\s*```', response, re.DOTALL)
             if json_match:
                 json_str = json_match.group(1)
+                logger.debug(f"JSONブロック抽出成功。長さ: {len(json_str)} 文字")
             else:
-                # JSONブロックがない場合、全体をJSONとして解析
-                json_str = response
+                # JSONブロックがない場合、{ } で囲まれた部分を抽出
+                json_match = re.search(r'\{.*\}', response, re.DOTALL)
+                if json_match:
+                    json_str = json_match.group(0)
+                    logger.debug(f"JSON抽出（ブロックなし）。長さ: {len(json_str)} 文字")
+                else:
+                    json_str = response
+                    logger.debug("JSON構造が見つかりません。全体を使用")
 
             try:
                 vision_result = json.loads(json_str)
-            except json.JSONDecodeError:
+                logger.info("JSON解析成功")
+            except json.JSONDecodeError as e:
                 # JSONパースに失敗した場合、テキストとして扱う
-                logger.warning("JSON解析失敗、テキストとして扱います")
+                logger.warning(f"JSON解析失敗: {str(e)[:100]}")
+                logger.debug(f"失敗したJSON文字列（最初の500文字）: {json_str[:500]}")
                 vision_result = {
                     'extracted_text': response,
                     'summary': response[:200] + '...' if len(response) > 200 else response,
