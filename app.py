@@ -27,10 +27,36 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/filters', methods=['GET'])
+def get_filters():
+    """
+    フィルタオプション取得API
+    フロントエンドでworkspace/doc_typeの選択肢を動的に生成
+    """
+    try:
+        # DatabaseClientの既存メソッドを使用
+        workspaces = db_client.get_available_workspaces()
+        doc_types = db_client.get_available_doc_types()
+
+        print(f"[DEBUG] フィルタ取得: workspaces={len(workspaces)}, doc_types={len(doc_types)}")
+
+        return jsonify({
+            'success': True,
+            'workspaces': workspaces,
+            'doc_types': doc_types
+        })
+    except Exception as e:
+        print(f"[ERROR] フィルタ取得エラー: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/search', methods=['POST'])
 def search_documents():
     """
-    ベクトル検索API（クエリ拡張対応）
+    ベクトル検索API（クエリ拡張対応 + 複数フィルタ対応）
     ユーザーの質問から関連文書を検索
     """
     try:
@@ -39,10 +65,18 @@ def search_documents():
         requested_limit = data.get('limit', 3)
         # 最大5件に強制制限（フロントエンドの指定を無視）
         limit = min(requested_limit, 5)
-        workspace = data.get('workspace')
+
+        # ✅ 配列で受け取る（後方互換性のため単一値もサポート）
+        workspaces = data.get('workspaces', [])
+        doc_types = data.get('doc_types', [])
+
+        # 後方互換性: 単一のworkspaceパラメータもサポート
+        if not workspaces and data.get('workspace'):
+            workspaces = [data.get('workspace')]
+
         enable_query_expansion = data.get('enable_query_expansion', True)  # デフォルトで有効
 
-        print(f"[DEBUG] 検索リクエスト: query='{query}', requested_limit={requested_limit}, actual_limit={limit}")
+        print(f"[DEBUG] 検索リクエスト: query='{query}', limit={limit}, workspaces={workspaces}, doc_types={doc_types}")
 
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
@@ -70,12 +104,36 @@ def search_documents():
         # 拡張されたクエリをテキスト検索にも使用
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+
+        # ✅ workspaceフィルタ: 配列が空の場合はNoneを渡して全検索
+        workspace_filter = workspaces[0] if len(workspaces) == 1 else None
+
         results = loop.run_until_complete(
-            db_client.search_documents(expanded_query, embedding, limit, workspace)
+            db_client.search_documents(expanded_query, embedding, limit * 2, workspace_filter)
         )
         loop.close()
 
-        print(f"[DEBUG] 検索結果: {len(results)} 件返却")
+        print(f"[DEBUG] 初期検索結果: {len(results)} 件")
+
+        # ✅ Pythonレベルでフィルタリング（複数workspace/doc_type対応）
+        if workspaces or doc_types:
+            filtered_results = []
+            for doc in results:
+                # workspaceフィルタチェック
+                if workspaces and doc.get('workspace') not in workspaces:
+                    continue
+                # doc_typeフィルタチェック
+                if doc_types and doc.get('doc_type') not in doc_types:
+                    continue
+                filtered_results.append(doc)
+
+            results = filtered_results[:limit]  # 制限件数まで
+            print(f"[DEBUG] フィルタ後: {len(results)} 件（workspaces={workspaces}, doc_types={doc_types}）")
+        else:
+            results = results[:limit]
+            print(f"[DEBUG] フィルタなし: {len(results)} 件")
+
+        print(f"[DEBUG] 最終検索結果: {len(results)} 件返却")
 
         response_data = {
             'success': True,

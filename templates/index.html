@@ -268,6 +268,209 @@
             padding: 40px;
             color: #999;
         }
+
+        /* ✅ フィルターチップ */
+        .filter-chips {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .chip {
+            padding: 8px 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 20px;
+            background: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .chip-filter {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .chip-filter:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .chip-active {
+            background: #f0f0f0;
+            border-color: #667eea;
+            color: #667eea;
+            padding-right: 8px;
+        }
+
+        .chip-active .remove-chip {
+            margin-left: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .active-filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* ✅ Bottom Sheet */
+        .bottom-sheet-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+            z-index: 999;
+        }
+
+        .bottom-sheet-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .bottom-sheet {
+            position: fixed;
+            bottom: -100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.3);
+            transition: bottom 0.3s ease;
+            z-index: 1000;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .bottom-sheet.active {
+            bottom: 0;
+        }
+
+        .sheet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 20px 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .sheet-header h3 {
+            margin: 0;
+            font-size: 1.2em;
+            color: #333;
+        }
+
+        .btn-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            line-height: 1;
+        }
+
+        .sheet-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .filter-section {
+            margin-bottom: 25px;
+        }
+
+        .filter-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .filter-section h4 {
+            margin: 0;
+            font-size: 1em;
+            color: #555;
+        }
+
+        .btn-clear {
+            background: none;
+            border: none;
+            color: #667eea;
+            font-size: 0.85em;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .filter-checkboxes {
+            display: grid;
+            gap: 8px;
+        }
+
+        .filter-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-checkbox:hover {
+            background: #f8f9ff;
+            border-color: #667eea;
+        }
+
+        .filter-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .filter-checkbox label {
+            flex: 1;
+            cursor: pointer;
+            margin: 0;
+        }
+
+        .btn-apply {
+            margin: 15px 20px 20px;
+            width: calc(100% - 40px);
+        }
+
+        /* スマホ対応 */
+        @media (max-width: 768px) {
+            .bottom-sheet {
+                max-height: 90vh;
+            }
+
+            .filter-chips {
+                font-size: 13px;
+            }
+
+            .chip {
+                padding: 6px 12px;
+                font-size: 13px;
+            }
+        }
     </style>
 </head>
 <body>
@@ -292,6 +495,14 @@
                     </button>
                 </div>
 
+                <!-- ✅ フィルターチップ -->
+                <div class="filter-chips" id="filterChips">
+                    <button class="chip chip-filter" onclick="openFilterSheet()">
+                        ⚙️ 絞り込み
+                    </button>
+                    <div id="activeFilters" class="active-filters"></div>
+                </div>
+
                 <div class="options">
                     <label>
                         検索件数:
@@ -306,6 +517,34 @@
                         </select>
                     </label>
                 </div>
+            </div>
+
+            <!-- ✅ Bottom Sheet（フィルター選択） -->
+            <div class="bottom-sheet-overlay" id="filterSheetOverlay" onclick="closeFilterSheet()"></div>
+            <div class="bottom-sheet" id="filterSheet">
+                <div class="sheet-header">
+                    <h3>検索条件を選択</h3>
+                    <button class="btn-close" onclick="closeFilterSheet()">×</button>
+                </div>
+                <div class="sheet-content">
+                    <div class="filter-section">
+                        <div class="filter-section-header">
+                            <h4>ワークスペース</h4>
+                            <button class="btn-clear" onclick="clearWorkspaceFilters()">すべて解除</button>
+                        </div>
+                        <div id="workspaceFilters" class="filter-checkboxes"></div>
+                    </div>
+                    <div class="filter-section">
+                        <div class="filter-section-header">
+                            <h4>ドキュメント種別</h4>
+                            <button class="btn-clear" onclick="clearDocTypeFilters()">すべて解除</button>
+                        </div>
+                        <div id="docTypeFilters" class="filter-checkboxes"></div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-apply" onclick="applyFilters()">
+                    決定して検索
+                </button>
             </div>
 
             <!-- ローディング -->
@@ -336,6 +575,147 @@
 
     <script>
         let currentDocuments = [];
+        let selectedWorkspaces = [];
+        let selectedDocTypes = [];
+        let availableWorkspaces = [];
+        let availableDocTypes = [];
+
+        // ✅ ページ読み込み時にフィルタ選択肢を取得
+        window.onload = async function() {
+            try {
+                const response = await fetch('/api/filters');
+                const data = await response.json();
+
+                if (data.success) {
+                    availableWorkspaces = data.workspaces || [];
+                    availableDocTypes = data.doc_types || [];
+
+                    // チェックボックスを動的生成
+                    renderFilterOptions();
+                    console.log(`[フィルタ読み込み] workspace: ${availableWorkspaces.length}件, doc_type: ${availableDocTypes.length}件`);
+                }
+            } catch (error) {
+                console.error('フィルタ取得エラー:', error);
+            }
+        };
+
+        function renderFilterOptions() {
+            const workspaceContainer = document.getElementById('workspaceFilters');
+            const docTypeContainer = document.getElementById('docTypeFilters');
+
+            // ワークスペースのチェックボックスを生成
+            workspaceContainer.innerHTML = availableWorkspaces.map(ws => `
+                <div class="filter-checkbox" onclick="toggleCheckbox('workspace-${ws}')">
+                    <input type="checkbox" id="workspace-${ws}" value="${ws}">
+                    <label for="workspace-${ws}">${escapeHtml(ws)}</label>
+                </div>
+            `).join('');
+
+            // ドキュメント種別のチェックボックスを生成
+            docTypeContainer.innerHTML = availableDocTypes.map(dt => `
+                <div class="filter-checkbox" onclick="toggleCheckbox('doctype-${dt}')">
+                    <input type="checkbox" id="doctype-${dt}" value="${dt}">
+                    <label for="doctype-${dt}">${escapeHtml(dt)}</label>
+                </div>
+            `).join('');
+        }
+
+        function toggleCheckbox(id) {
+            const checkbox = document.getElementById(id);
+            if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+            }
+        }
+
+        function openFilterSheet() {
+            document.getElementById('filterSheet').classList.add('active');
+            document.getElementById('filterSheetOverlay').classList.add('active');
+            document.body.style.overflow = 'hidden'; // スクロール無効化
+        }
+
+        function closeFilterSheet() {
+            document.getElementById('filterSheet').classList.remove('active');
+            document.getElementById('filterSheetOverlay').classList.remove('active');
+            document.body.style.overflow = ''; // スクロール有効化
+        }
+
+        function clearWorkspaceFilters() {
+            availableWorkspaces.forEach(ws => {
+                const checkbox = document.getElementById(`workspace-${ws}`);
+                if (checkbox) checkbox.checked = false;
+            });
+        }
+
+        function clearDocTypeFilters() {
+            availableDocTypes.forEach(dt => {
+                const checkbox = document.getElementById(`doctype-${dt}`);
+                if (checkbox) checkbox.checked = false;
+            });
+        }
+
+        function applyFilters() {
+            // チェックされた項目を取得
+            selectedWorkspaces = availableWorkspaces.filter(ws =>
+                document.getElementById(`workspace-${ws}`)?.checked
+            );
+            selectedDocTypes = availableDocTypes.filter(dt =>
+                document.getElementById(`doctype-${dt}`)?.checked
+            );
+
+            console.log('[フィルタ適用]', { selectedWorkspaces, selectedDocTypes });
+
+            // フィルタチップを更新
+            updateFilterChips();
+
+            // Bottom Sheetを閉じる
+            closeFilterSheet();
+
+            // 検索を実行（クエリがある場合のみ）
+            const query = document.getElementById('queryInput').value.trim();
+            if (query) {
+                performSearch();
+            }
+        }
+
+        function updateFilterChips() {
+            const container = document.getElementById('activeFilters');
+            const allFilters = [
+                ...selectedWorkspaces.map(ws => ({ type: 'workspace', value: ws, label: `WS: ${ws}` })),
+                ...selectedDocTypes.map(dt => ({ type: 'doctype', value: dt, label: dt }))
+            ];
+
+            if (allFilters.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            container.innerHTML = allFilters.map(filter => `
+                <span class="chip chip-active">
+                    ${escapeHtml(filter.label)}
+                    <span class="remove-chip" onclick="removeFilter('${filter.type}', '${escapeHtml(filter.value)}')">×</span>
+                </span>
+            `).join('');
+        }
+
+        function removeFilter(type, value) {
+            if (type === 'workspace') {
+                selectedWorkspaces = selectedWorkspaces.filter(ws => ws !== value);
+                const checkbox = document.getElementById(`workspace-${value}`);
+                if (checkbox) checkbox.checked = false;
+            } else if (type === 'doctype') {
+                selectedDocTypes = selectedDocTypes.filter(dt => dt !== value);
+                const checkbox = document.getElementById(`doctype-${value}`);
+                if (checkbox) checkbox.checked = false;
+            }
+
+            updateFilterChips();
+
+            // 検索を再実行
+            const query = document.getElementById('queryInput').value.trim();
+            if (query) {
+                performSearch();
+            }
+        }
 
         function handleKeyPress(event) {
             if (event.key === 'Enter') {
@@ -358,13 +738,22 @@
             hideResults();
 
             try {
-                // ステップ1: ベクトル検索
+                // ステップ1: ベクトル検索（✅ フィルタ配列を送信）
+                const searchPayload = {
+                    query,
+                    limit,
+                    workspaces: selectedWorkspaces,
+                    doc_types: selectedDocTypes
+                };
+
+                console.log('[検索実行]', searchPayload);
+
                 const searchResponse = await fetch('/api/search', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ query, limit })
+                    body: JSON.stringify(searchPayload)
                 });
 
                 const searchData = await searchResponse.json();
