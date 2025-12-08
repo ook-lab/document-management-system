@@ -539,7 +539,7 @@ class TwoStageIngestionPipeline:
                     logger.warning(f"  チャンク化スキップ: extracted_text={bool(extracted_text)}, document_id={bool(document_id)}")
 
                 logger.info(f"=== 処理完了: {file_name} ({doc_type}, {processing_stage}) ===")
-                return result
+                return {"success": True, "document_id": document_id, "doc_type": doc_type}
             except Exception as db_error:
                 # 重複エラー（23505）の場合はスキップ
                 error_str = str(db_error)
