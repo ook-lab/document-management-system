@@ -723,6 +723,40 @@ class DatabaseClient:
             print(f"Error getting available doc_types: {e}")
             return []
 
+    def get_workspace_hierarchy(self) -> Dict[str, List[str]]:
+        """
+        workspace別のdoc_type階層構造を取得
+
+        Returns:
+            {workspace: [doc_type1, doc_type2, ...]} の辞書
+        """
+        try:
+            # workspaceとdoc_typeの組み合わせを取得
+            response = self.client.table('documents').select('workspace, doc_type').execute()
+
+            hierarchy = {}
+            for doc in response.data:
+                workspace = doc.get('workspace')
+                doc_type = doc.get('doc_type')
+
+                if workspace and doc_type:
+                    if workspace not in hierarchy:
+                        hierarchy[workspace] = set()
+                    hierarchy[workspace].add(doc_type)
+
+            # setをソート済みリストに変換
+            result = {ws: sorted(list(types)) for ws, types in hierarchy.items()}
+
+            # workspaceもソート
+            result = dict(sorted(result.items()))
+
+            print(f"[DEBUG] workspace階層構造: {len(result)} workspaces")
+            return result
+
+        except Exception as e:
+            print(f"Error getting workspace hierarchy: {e}")
+            return {}
+
     def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
         IDでドキュメントを取得

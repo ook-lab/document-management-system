@@ -30,20 +30,26 @@ def index():
 @app.route('/api/filters', methods=['GET'])
 def get_filters():
     """
-    フィルタオプション取得API
-    フロントエンドでworkspace/doc_typeの選択肢を動的に生成
+    フィルタオプション取得API（階層構造対応）
+    workspace（親）→ doc_type（子）の階層データを返す
     """
     try:
-        # DatabaseClientの既存メソッドを使用
-        workspaces = db_client.get_available_workspaces()
-        doc_types = db_client.get_available_doc_types()
+        # workspace別のdoc_type階層構造を取得
+        hierarchy = db_client.get_workspace_hierarchy()
 
-        print(f"[DEBUG] フィルタ取得: workspaces={len(workspaces)}, doc_types={len(doc_types)}")
+        # 階層構造をリスト形式に変換（フロントエンド用）
+        workspace_list = []
+        for workspace, doc_types in hierarchy.items():
+            workspace_list.append({
+                'name': workspace,
+                'doc_types': doc_types
+            })
+
+        print(f"[DEBUG] フィルタ取得: {len(workspace_list)} workspaces（階層構造）")
 
         return jsonify({
             'success': True,
-            'workspaces': workspaces,
-            'doc_types': doc_types
+            'hierarchy': workspace_list
         })
     except Exception as e:
         print(f"[ERROR] フィルタ取得エラー: {e}")

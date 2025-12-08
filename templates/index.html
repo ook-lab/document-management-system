@@ -451,6 +451,103 @@
             margin: 0;
         }
 
+        /* ✅ 階層構造（アコーディオン）用CSS */
+        .hierarchy-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .workspace-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .workspace-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .workspace-header:hover {
+            background: #eef1ff;
+        }
+
+        .workspace-toggle {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: transform 0.3s;
+            color: #667eea;
+        }
+
+        .workspace-toggle.expanded {
+            transform: rotate(90deg);
+        }
+
+        .workspace-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .workspace-label {
+            flex: 1;
+            font-weight: 600;
+            color: #333;
+            cursor: pointer;
+        }
+
+        .workspace-count {
+            font-size: 0.85em;
+            color: #999;
+        }
+
+        .workspace-children {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .workspace-children.expanded {
+            max-height: 1000px; /* 十分に大きな値 */
+        }
+
+        .doc-type-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px 10px 42px; /* 左にインデント */
+            border-top: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .doc-type-item:hover {
+            background: #f8f9ff;
+        }
+
+        .doc-type-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .doc-type-label {
+            flex: 1;
+            cursor: pointer;
+            font-size: 0.95em;
+            color: #555;
+        }
+
         .btn-apply {
             margin: 15px 20px 20px;
             width: calc(100% - 40px);
@@ -519,7 +616,7 @@
                 </div>
             </div>
 
-            <!-- ✅ Bottom Sheet（フィルター選択） -->
+            <!-- ✅ Bottom Sheet（フィルター選択・階層構造） -->
             <div class="bottom-sheet-overlay" id="filterSheetOverlay" onclick="closeFilterSheet()"></div>
             <div class="bottom-sheet" id="filterSheet">
                 <div class="sheet-header">
@@ -529,17 +626,11 @@
                 <div class="sheet-content">
                     <div class="filter-section">
                         <div class="filter-section-header">
-                            <h4>ワークスペース</h4>
-                            <button class="btn-clear" onclick="clearWorkspaceFilters()">すべて解除</button>
+                            <h4>ワークスペース別フィルタ</h4>
+                            <button class="btn-clear" onclick="clearAllFilters()">すべて解除</button>
                         </div>
-                        <div id="workspaceFilters" class="filter-checkboxes"></div>
-                    </div>
-                    <div class="filter-section">
-                        <div class="filter-section-header">
-                            <h4>ドキュメント種別</h4>
-                            <button class="btn-clear" onclick="clearDocTypeFilters()">すべて解除</button>
-                        </div>
-                        <div id="docTypeFilters" class="filter-checkboxes"></div>
+                        <!-- 階層構造（アコーディオン）が動的に生成される -->
+                        <div id="hierarchyFilters" class="hierarchy-container"></div>
                     </div>
                 </div>
                 <button class="btn btn-primary btn-apply" onclick="applyFilters()">
@@ -577,53 +668,157 @@
         let currentDocuments = [];
         let selectedWorkspaces = [];
         let selectedDocTypes = [];
-        let availableWorkspaces = [];
-        let availableDocTypes = [];
+        let hierarchyData = []; // {name: 'workspace', doc_types: [...]}
 
-        // ✅ ページ読み込み時にフィルタ選択肢を取得
+        // ✅ ページ読み込み時に階層構造を取得
         window.onload = async function() {
             try {
                 const response = await fetch('/api/filters');
                 const data = await response.json();
 
                 if (data.success) {
-                    availableWorkspaces = data.workspaces || [];
-                    availableDocTypes = data.doc_types || [];
-
-                    // チェックボックスを動的生成
-                    renderFilterOptions();
-                    console.log(`[フィルタ読み込み] workspace: ${availableWorkspaces.length}件, doc_type: ${availableDocTypes.length}件`);
+                    hierarchyData = data.hierarchy || [];
+                    renderHierarchyFilters();
+                    console.log(`[フィルタ読み込み] ${hierarchyData.length} workspaces（階層構造）`);
                 }
             } catch (error) {
                 console.error('フィルタ取得エラー:', error);
             }
         };
 
-        function renderFilterOptions() {
-            const workspaceContainer = document.getElementById('workspaceFilters');
-            const docTypeContainer = document.getElementById('docTypeFilters');
+        function renderHierarchyFilters() {
+            const container = document.getElementById('hierarchyFilters');
 
-            // ワークスペースのチェックボックスを生成
-            workspaceContainer.innerHTML = availableWorkspaces.map(ws => `
-                <div class="filter-checkbox" onclick="toggleCheckbox('workspace-${ws}')">
-                    <input type="checkbox" id="workspace-${ws}" value="${ws}">
-                    <label for="workspace-${ws}">${escapeHtml(ws)}</label>
-                </div>
-            `).join('');
+            container.innerHTML = hierarchyData.map(workspace => {
+                const wsId = `ws-${workspace.name}`;
+                const docTypeCount = workspace.doc_types.length;
 
-            // ドキュメント種別のチェックボックスを生成
-            docTypeContainer.innerHTML = availableDocTypes.map(dt => `
-                <div class="filter-checkbox" onclick="toggleCheckbox('doctype-${dt}')">
-                    <input type="checkbox" id="doctype-${dt}" value="${dt}">
-                    <label for="doctype-${dt}">${escapeHtml(dt)}</label>
-                </div>
-            `).join('');
+                return `
+                    <div class="workspace-item">
+                        <div class="workspace-header" onclick="toggleWorkspaceExpansion('${workspace.name}')">
+                            <span class="workspace-toggle" id="toggle-${wsId}">▶</span>
+                            <input type="checkbox"
+                                   class="workspace-checkbox"
+                                   id="${wsId}"
+                                   value="${workspace.name}"
+                                   onclick="event.stopPropagation(); toggleWorkspace('${workspace.name}')"
+                                   onchange="onWorkspaceChange('${workspace.name}')">
+                            <label class="workspace-label" for="${wsId}" onclick="event.stopPropagation(); document.getElementById('${wsId}').click()">
+                                ${escapeHtml(workspace.name)}
+                            </label>
+                            <span class="workspace-count">${docTypeCount}件</span>
+                        </div>
+                        <div class="workspace-children" id="children-${wsId}">
+                            ${workspace.doc_types.map(dt => {
+                                const dtId = `dt-${workspace.name}-${dt}`;
+                                return `
+                                    <div class="doc-type-item" onclick="toggleCheckbox('${dtId}')">
+                                        <input type="checkbox"
+                                               class="doc-type-checkbox"
+                                               id="${dtId}"
+                                               value="${dt}"
+                                               data-workspace="${workspace.name}"
+                                               onclick="event.stopPropagation()"
+                                               onchange="onDocTypeChange('${workspace.name}')">
+                                        <label class="doc-type-label" for="${dtId}" onclick="event.stopPropagation()">
+                                            ${escapeHtml(dt)}
+                                        </label>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
         }
 
         function toggleCheckbox(id) {
             const checkbox = document.getElementById(id);
             if (checkbox) {
                 checkbox.checked = !checkbox.checked;
+                // 親のworkspaceを取得して変更イベントをトリガー
+                const workspace = checkbox.dataset.workspace;
+                if (workspace) {
+                    onDocTypeChange(workspace);
+                }
+            }
+        }
+
+        function toggleWorkspaceExpansion(workspaceName) {
+            const wsId = `ws-${workspaceName}`;
+            const toggle = document.getElementById(`toggle-${wsId}`);
+            const children = document.getElementById(`children-${wsId}`);
+
+            if (children.classList.contains('expanded')) {
+                children.classList.remove('expanded');
+                toggle.classList.remove('expanded');
+            } else {
+                children.classList.add('expanded');
+                toggle.classList.add('expanded');
+            }
+        }
+
+        function toggleWorkspace(workspaceName) {
+            const wsId = `ws-${workspaceName}`;
+            const checkbox = document.getElementById(wsId);
+            checkbox.checked = !checkbox.checked;
+            onWorkspaceChange(workspaceName);
+        }
+
+        // ✅ 親チェックボックスの変更時：子を連動
+        function onWorkspaceChange(workspaceName) {
+            const wsId = `ws-${workspaceName}`;
+            const wsCheckbox = document.getElementById(wsId);
+            const isChecked = wsCheckbox.checked;
+
+            // 配下の子（doc_type）をすべて同じ状態にする
+            const workspace = hierarchyData.find(w => w.name === workspaceName);
+            if (workspace) {
+                workspace.doc_types.forEach(dt => {
+                    const dtCheckbox = document.getElementById(`dt-${workspaceName}-${dt}`);
+                    if (dtCheckbox) {
+                        dtCheckbox.checked = isChecked;
+                    }
+                });
+            }
+
+            console.log(`[親チェック] ${workspaceName}: ${isChecked ? 'ON' : 'OFF'} → 子を連動`);
+        }
+
+        // ✅ 子チェックボックスの変更時：親の状態を更新
+        function onDocTypeChange(workspaceName) {
+            const wsId = `ws-${workspaceName}`;
+            const wsCheckbox = document.getElementById(wsId);
+
+            // 配下の子の状態を確認
+            const workspace = hierarchyData.find(w => w.name === workspaceName);
+            if (!workspace) return;
+
+            let allChecked = true;
+            let noneChecked = true;
+
+            workspace.doc_types.forEach(dt => {
+                const dtCheckbox = document.getElementById(`dt-${workspaceName}-${dt}`);
+                if (dtCheckbox) {
+                    if (dtCheckbox.checked) {
+                        noneChecked = false;
+                    } else {
+                        allChecked = false;
+                    }
+                }
+            });
+
+            // 親の状態を更新
+            if (allChecked) {
+                wsCheckbox.checked = true;
+                wsCheckbox.indeterminate = false;
+            } else if (noneChecked) {
+                wsCheckbox.checked = false;
+                wsCheckbox.indeterminate = false;
+            } else {
+                // 一部だけチェックされている場合はindeterminate
+                wsCheckbox.checked = false;
+                wsCheckbox.indeterminate = true;
             }
         }
 
@@ -639,28 +834,46 @@
             document.body.style.overflow = ''; // スクロール有効化
         }
 
-        function clearWorkspaceFilters() {
-            availableWorkspaces.forEach(ws => {
-                const checkbox = document.getElementById(`workspace-${ws}`);
-                if (checkbox) checkbox.checked = false;
-            });
-        }
+        function clearAllFilters() {
+            hierarchyData.forEach(workspace => {
+                // 親チェックボックスをクリア
+                const wsCheckbox = document.getElementById(`ws-${workspace.name}`);
+                if (wsCheckbox) {
+                    wsCheckbox.checked = false;
+                    wsCheckbox.indeterminate = false;
+                }
 
-        function clearDocTypeFilters() {
-            availableDocTypes.forEach(dt => {
-                const checkbox = document.getElementById(`doctype-${dt}`);
-                if (checkbox) checkbox.checked = false;
+                // 子チェックボックスをクリア
+                workspace.doc_types.forEach(dt => {
+                    const dtCheckbox = document.getElementById(`dt-${workspace.name}-${dt}`);
+                    if (dtCheckbox) dtCheckbox.checked = false;
+                });
             });
+
+            console.log('[すべて解除]');
         }
 
         function applyFilters() {
-            // チェックされた項目を取得
-            selectedWorkspaces = availableWorkspaces.filter(ws =>
-                document.getElementById(`workspace-${ws}`)?.checked
-            );
-            selectedDocTypes = availableDocTypes.filter(dt =>
-                document.getElementById(`doctype-${dt}`)?.checked
-            );
+            // チェックされたworkspaceとdoc_typeを収集
+            selectedWorkspaces = [];
+            selectedDocTypes = [];
+
+            hierarchyData.forEach(workspace => {
+                const wsName = workspace.name;
+
+                // 子（doc_type）のチェック状態を確認
+                workspace.doc_types.forEach(dt => {
+                    const dtCheckbox = document.getElementById(`dt-${wsName}-${dt}`);
+                    if (dtCheckbox && dtCheckbox.checked) {
+                        // workspaceを追加（重複回避）
+                        if (!selectedWorkspaces.includes(wsName)) {
+                            selectedWorkspaces.push(wsName);
+                        }
+                        // doc_typeを追加
+                        selectedDocTypes.push(dt);
+                    }
+                });
+            });
 
             console.log('[フィルタ適用]', { selectedWorkspaces, selectedDocTypes });
 
@@ -679,35 +892,57 @@
 
         function updateFilterChips() {
             const container = document.getElementById('activeFilters');
-            const allFilters = [
-                ...selectedWorkspaces.map(ws => ({ type: 'workspace', value: ws, label: `WS: ${ws}` })),
-                ...selectedDocTypes.map(dt => ({ type: 'doctype', value: dt, label: dt }))
-            ];
 
-            if (allFilters.length === 0) {
+            // workspace別にdoc_typeをグループ化して表示
+            const chipsByWorkspace = {};
+
+            hierarchyData.forEach(workspace => {
+                const wsName = workspace.name;
+                const checkedTypes = [];
+
+                workspace.doc_types.forEach(dt => {
+                    const dtCheckbox = document.getElementById(`dt-${wsName}-${dt}`);
+                    if (dtCheckbox && dtCheckbox.checked) {
+                        checkedTypes.push(dt);
+                    }
+                });
+
+                if (checkedTypes.length > 0) {
+                    chipsByWorkspace[wsName] = checkedTypes;
+                }
+            });
+
+            if (Object.keys(chipsByWorkspace).length === 0) {
                 container.innerHTML = '';
                 return;
             }
 
-            container.innerHTML = allFilters.map(filter => `
-                <span class="chip chip-active">
-                    ${escapeHtml(filter.label)}
-                    <span class="remove-chip" onclick="removeFilter('${filter.type}', '${escapeHtml(filter.value)}')">×</span>
-                </span>
-            `).join('');
-        }
-
-        function removeFilter(type, value) {
-            if (type === 'workspace') {
-                selectedWorkspaces = selectedWorkspaces.filter(ws => ws !== value);
-                const checkbox = document.getElementById(`workspace-${value}`);
-                if (checkbox) checkbox.checked = false;
-            } else if (type === 'doctype') {
-                selectedDocTypes = selectedDocTypes.filter(dt => dt !== value);
-                const checkbox = document.getElementById(`doctype-${value}`);
-                if (checkbox) checkbox.checked = false;
+            // チップを生成
+            const chips = [];
+            for (const [wsName, types] of Object.entries(chipsByWorkspace)) {
+                types.forEach(dt => {
+                    chips.push(`
+                        <span class="chip chip-active">
+                            ${escapeHtml(wsName)}: ${escapeHtml(dt)}
+                            <span class="remove-chip" onclick="removeFilter('${escapeHtml(wsName)}', '${escapeHtml(dt)}')">×</span>
+                        </span>
+                    `);
+                });
             }
 
+            container.innerHTML = chips.join('');
+        }
+
+        function removeFilter(workspaceName, docType) {
+            // 該当するdoc_typeのチェックを外す
+            const dtCheckbox = document.getElementById(`dt-${workspaceName}-${docType}`);
+            if (dtCheckbox) {
+                dtCheckbox.checked = false;
+                // 親の状態を更新
+                onDocTypeChange(workspaceName);
+            }
+
+            // フィルタチップを更新
             updateFilterChips();
 
             // 検索を再実行
