@@ -588,6 +588,28 @@ class DatabaseClient:
             print(f"Error getting available workspaces: {e}")
             return []
 
+    def get_available_doc_types(self) -> List[str]:
+        """
+        データベース内の利用可能なドキュメントタイプ一覧を取得
+
+        Returns:
+            ドキュメントタイプ名のリスト（重複なし、ソート済み）
+        """
+        try:
+            # 全ドキュメントからdoc_typeを取得
+            response = self.client.table('documents').select('doc_type').execute()
+
+            doc_types = set()
+            for doc in response.data:
+                dt = doc.get('doc_type')
+                if dt:  # NoneやNULLを除外
+                    doc_types.add(dt)
+
+            return sorted(list(doc_types))
+        except Exception as e:
+            print(f"Error getting available doc_types: {e}")
+            return []
+
     def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
         IDでドキュメントを取得

@@ -27,8 +27,17 @@ Google Classroomから直接取り込まれたドキュメントは、以下の�
    - OCRによる `full_text` 抽出
    - YAMLスキーマに基づく構造化 `metadata` 生成
    - Gemini Embeddingによるベクトル化
-5. **workspace修正**: `IKUYA_SCHOOL` に変更
+5. **workspace処理**: デフォルトで既存のworkspaceを保持（`ikuya_classroom`のまま）
 6. **古いレコード削除**: 新しいレコードが作成されるため、古いレコードは自動削除
+
+## 動的システム（重要な変更）
+
+**v2.0の重要な変更**: システムは完全に動的になりました：
+
+- ✅ **どんなworkspace名でも受け入れ**: `config/workspaces.py`に定義されていないworkspaceでもOK
+- ✅ **どんなdoc_typeでも受け入れ**: YAMLスキーマにないdoc_typeでもOK
+- ✅ **スキーマ検証は警告のみ**: 検証失敗でも処理は継続（信頼度が減点されるのみ）
+- ✅ **既存の値を尊重**: デフォルトで既存のworkspace/doc_typeを保持
 
 ## 使い方
 
@@ -50,7 +59,7 @@ python reprocess_classroom_documents.py --dry-run
   → 新しいworkspace: IKUYA_SCHOOL
 ```
 
-### 2. 実際の再処理を実行
+### 2. 実際の再処理を実行（workspaceを保持）
 
 ```bash
 python reprocess_classroom_documents.py
@@ -63,7 +72,17 @@ python reprocess_classroom_documents.py
 
 `y` を入力すると処理が開始されます。
 
-### 3. 件数を制限して実行
+**デフォルト動作**: 既存のworkspace（`ikuya_classroom`）を保持します。
+
+### 3. Stage1 AIにworkspaceを判定させる
+
+既存のworkspaceを無視して、AIに再判定させたい場合：
+
+```bash
+python reprocess_classroom_documents.py --no-preserve-workspace
+```
+
+### 4. 件数を制限して実行
 
 デフォルトでは最大100件を処理します。制限を変更する場合：
 
@@ -71,10 +90,11 @@ python reprocess_classroom_documents.py
 python reprocess_classroom_documents.py --limit=10
 ```
 
-### 4. Dry-run + 件数制限
+### 5. 複数オプションの組み合わせ
 
 ```bash
 python reprocess_classroom_documents.py --dry-run --limit=5
+python reprocess_classroom_documents.py --limit=10 --no-preserve-workspace
 ```
 
 ## オプション
@@ -83,6 +103,7 @@ python reprocess_classroom_documents.py --dry-run --limit=5
 |----------|------|----------|
 | `--dry-run` または `-n` | 確認のみ（実際の処理は行わない） | False |
 | `--limit=N` | 処理する最大件数 | 100 |
+| `--no-preserve-workspace` | 既存のworkspaceを無視してAIに判定させる | False（保持する） |
 
 ## 処理フロー詳細
 

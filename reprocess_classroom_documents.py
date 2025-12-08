@@ -19,9 +19,6 @@ import json
 
 from core.database.client import DatabaseClient
 from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
-from config.workspaces import Workspace
-
-
 class ClassroomReprocessor:
     """Google Classroomドキュメントの再処理"""
 
@@ -83,22 +80,25 @@ class ClassroomReprocessor:
 
         return ''
 
-    async def reprocess_document(self, doc: Dict[str, Any]) -> bool:
+    async def reprocess_document(self, doc: Dict[str, Any], preserve_workspace: bool = True) -> bool:
         """
         単一ドキュメントを再処理
 
         Args:
             doc: ドキュメント辞書
+            preserve_workspace: Trueの場合、既存のworkspaceを保持
 
         Returns:
             成功したかどうか
         """
         doc_id = doc['id']
         file_name = doc['file_name']
+        existing_workspace = doc.get('workspace', 'unknown')
 
         logger.info(f"\n{'='*80}")
         logger.info(f"再処理開始: {file_name}")
         logger.info(f"Document ID: {doc_id}")
+        logger.info(f"既存のworkspace: {existing_workspace}")
 
         # ファイルIDを取得
         file_id = self.extract_file_id(doc)
@@ -119,12 +119,19 @@ class ClassroomReprocessor:
             'mimeType': self._guess_mime_type(file_name)
         }
 
+        # workspaceを決定
+        if preserve_workspace:
+            workspace_to_use = existing_workspace
+            logger.info(f"既存のworkspaceを保持: {workspace_to_use}")
+        else:
+            workspace_to_use = "unknown"
+            logger.info(f"workspaceをStage1に判定させます")
+
         try:
             # 既存のパイプラインで処理
-            # workspace を IKUYA_SCHOOL に指定
             result = await self.pipeline.process_file(
                 file_meta=file_meta,
-                workspace=Workspace.IKUYA_SCHOOL
+                workspace=workspace_to_use
             )
 
             if result and result.get('success'):
@@ -163,13 +170,14 @@ class ClassroomReprocessor:
 
         return mime_map.get(ext, 'application/octet-stream')
 
-    async def run(self, limit: int = 100, dry_run: bool = False):
+    async def run(self, limit: int = 100, dry_run: bool = False, preserve_workspace: bool = True):
         """
         再処理を実行
 
         Args:
             limit: 処理する最大件数
             dry_run: Trueの場合、実際の処理は行わず確認のみ
+            preserve_workspace: Trueの場合、既存のworkspaceを保持
         """
         logger.info("\n" + "="*80)
         logger.info("Google Classroom ドキュメント再処理スクリプト")
@@ -186,7 +194,10 @@ class ClassroomReprocessor:
             return
 
         logger.info(f"\n処理予定: {len(documents)}件")
-        logger.info(f"Workspace: ikuya_classroom → {Workspace.IKUYA_SCHOOL}")
+        if preserve_workspace:
+            logger.info(f"Workspace: 既存の値を保持（ikuya_classroom のまま）")
+        else:
+            logger.info(f"Workspace: Stage1 AIに判定させる")
 
         # 確認
         if not dry_run:
@@ -210,11 +221,14 @@ class ClassroomReprocessor:
                 logger.info(f"  ファイルID: {file_id or 'NOT FOUND'}")
                 logger.info(f"  現在のworkspace: {doc.get('workspace')}")
                 logger.info(f"  現在のdoc_type: {doc.get('doc_type')}")
-                logger.info(f"  → 新しいworkspace: {Workspace.IKUYA_SCHOOL}")
+                if preserve_workspace:
+                    logger.info(f"  → workspace: {doc.get('workspace')} (保持)")
+                else:
+                    logger.info(f"  → workspace: Stage1が判定")
                 continue
 
             # 実際の再処理
-            success = await self.reprocess_document(doc)
+            success = await self.reprocess_document(doc, preserve_workspace=preserve_workspace)
 
             if success:
                 success_count += 1
@@ -239,6 +253,7 @@ async def main():
 
     # コマンドライン引数のパース
     dry_run = '--dry-run' in sys.argv or '-n' in sys.argv
+    preserve_workspace = '--preserve-workspace' not in sys.argv  # デフォルトTrue
     limit = 100
 
     # --limit オプションの処理
@@ -250,7 +265,7 @@ async def main():
                 pass
 
     reprocessor = ClassroomReprocessor()
-    await reprocessor.run(limit=limit, dry_run=dry_run)
+    await reprocessor.run(limit=limit, dry_run=dry_run, preserve_workspace=preserve_workspace)
 
 
 if __name__ == "__main__":
