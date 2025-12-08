@@ -60,7 +60,52 @@ class DatabaseClient:
 
         response = self.client.table(table).insert(data).execute()
         return response.data[0] if response.data else {}
-    
+
+    async def upsert_document(self, table: str, data: Dict[str, Any], conflict_column: str = 'source_id') -> Dict[str, Any]:
+        """
+        ドキュメントをupsert（既存レコードがあれば更新、なければ挿入）
+        空欄・nullの項目のみ上書き
+
+        Args:
+            table: テーブル名
+            data: 挿入・更新するデータ
+            conflict_column: 重複判定に使うカラム名（デフォルト: source_id）
+
+        Returns:
+            挿入・更新されたレコード
+        """
+        # embeddingをPostgreSQLのvector型形式に変換
+        if 'embedding' in data and data['embedding'] is not None:
+            embedding_list = data['embedding']
+            if isinstance(embedding_list, list):
+                data = data.copy()
+                data['embedding'] = '[' + ','.join(str(x) for x in embedding_list) + ']'
+
+        # 既存レコードを取得
+        existing = self.client.table(table).select('*').eq(conflict_column, data[conflict_column]).execute()
+
+        if existing.data and len(existing.data) > 0:
+            # 既存レコードがある場合：空欄・nullの項目のみ更新
+            existing_record = existing.data[0]
+            update_data = {}
+
+            for key, value in data.items():
+                # 既存値が空欄・nullの場合のみ更新
+                if existing_record.get(key) in [None, '', [], {}]:
+                    update_data[key] = value
+
+            if update_data:
+                # 更新するデータがある場合のみUPDATE
+                response = self.client.table(table).update(update_data).eq(conflict_column, data[conflict_column]).execute()
+                return response.data[0] if response.data else {}
+            else:
+                # 更新不要の場合は既存レコードを返す
+                return existing_record
+        else:
+            # 既存レコードがない場合：新規挿入
+            response = self.client.table(table).insert(data).execute()
+            return response.data[0] if response.data else {}
+
     async def search_documents(
         self,
         query: str,

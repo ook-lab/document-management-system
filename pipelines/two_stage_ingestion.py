@@ -185,19 +185,23 @@ class TwoStageIngestionPipeline:
     async def process_file(
         self,
         file_meta: Dict[str, Any],
-        workspace: str = "personal"
+        workspace: str = "personal",
+        force_reprocess: bool = False
     ) -> Optional[Dict[str, Any]]:
         """単一ファイルを2段階で処理"""
         file_id = file_meta['id']
         file_name = file_meta['name']
         mime_type = file_meta.get('mimeType', 'application/octet-stream')
-        
+
         logger.info(f"=== 2段階処理開始: {file_name} ===")
-        
+
         existing = self.db.get_document_by_source_id(file_id)
-        if existing:
+        if existing and not force_reprocess:
             logger.warning(f"既に処理済み (Source ID): {file_name}")
             return existing
+
+        if existing and force_reprocess:
+            logger.info(f"🔄 再処理モード: 既存レコードを上書きします")
         
         local_path = None
         # extraction_resultを初期化（NameError回避）
@@ -441,9 +445,10 @@ class TwoStageIngestionPipeline:
             }
 
             try:
-                result = await self.db.insert_document('documents', document_data)
+                # upsertを使用：既存レコードの空欄のみ更新
+                result = await self.db.upsert_document('documents', document_data, conflict_column='source_id')
                 document_id = result.get('id')
-                logger.info(f"Document保存完了: {document_id}")
+                logger.info(f"Document保存完了（upsert）: {document_id}")
 
                 # ============================================
                 # チャンク化処理（2階層：小チャンク検索用 + 大チャンク回答用）

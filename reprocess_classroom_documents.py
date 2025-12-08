@@ -62,8 +62,10 @@ class ClassroomReprocessor:
             return doc['drive_file_id']
 
         # 2. metadata->original_file_id を確認
-        metadata = doc.get('metadata', {})
-        if isinstance(metadata, str):
+        metadata = doc.get('metadata')
+        if metadata is None:
+            metadata = {}
+        elif isinstance(metadata, str):
             try:
                 metadata = json.loads(metadata)
             except:
@@ -128,20 +130,34 @@ class ClassroomReprocessor:
             logger.info(f"workspaceをStage1に判定させます")
 
         try:
-            # 既存のパイプラインで処理
+            # 既存のパイプラインで処理（force_reprocess=Trueで再処理を強制）
             result = await self.pipeline.process_file(
                 file_meta=file_meta,
-                workspace=workspace_to_use
+                workspace=workspace_to_use,
+                force_reprocess=True
             )
 
             if result and result.get('success'):
                 logger.success(f"✅ 再処理成功: {file_name}")
-
-                # 古いレコードを削除（新しいレコードが作成されるため）
-                logger.info(f"古いレコードを削除: {doc_id}")
+                return True
+            elif result and result.get('error') and 'duplicate key' in str(result.get('error')):
+                # 重複エラーの場合、古いレコードを削除して再試行
+                logger.warning(f"重複検出、古いレコードを削除して再試行: {file_name}")
                 self.db.client.table('documents').delete().eq('id', doc_id).execute()
 
-                return True
+                # 再試行
+                result = await self.pipeline.process_file(
+                    file_meta=file_meta,
+                    workspace=workspace_to_use,
+                    force_reprocess=True
+                )
+
+                if result and result.get('success'):
+                    logger.success(f"✅ 再処理成功（再試行）: {file_name}")
+                    return True
+                else:
+                    logger.error(f"❌ 再試行も失敗: {file_name}")
+                    return False
             else:
                 logger.error(f"❌ 再処理失敗: {file_name}")
                 return False

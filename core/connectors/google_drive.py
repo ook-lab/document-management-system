@@ -110,26 +110,44 @@ class GoogleDriveConnector:
             dest_path.parent.mkdir(parents=True, exist_ok=True)
 
             # DriveのMIMEタイプをチェックし、Google Docs形式の場合はエクスポート
-            file_metadata = self.service.files().get(fileId=file_id, fields='mimeType').execute()
+            # ★重要: 共有ドライブや他人所有のファイルにアクセスするためのフラグ
+            file_metadata = self.service.files().get(
+                fileId=file_id,
+                fields='mimeType',
+                supportsAllDrives=True
+            ).execute()
             mime_type = file_metadata['mimeType']
             logger.info(f"ファイルMIMEタイプ: {mime_type}")
 
             request = None
             if mime_type == 'application/vnd.google-apps.document':
                 # Google Docs -> DOCXとしてエクスポート
-                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                request = self.service.files().export(
+                    fileId=file_id,
+                    mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                )
                 dest_path = dest_path.with_suffix('.docx')
             elif mime_type == 'application/vnd.google-apps.spreadsheet':
                 # Google Sheets -> XLSXとしてエクスポート
-                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                request = self.service.files().export(
+                    fileId=file_id,
+                    mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
                 dest_path = dest_path.with_suffix('.xlsx')
             elif mime_type == 'application/vnd.google-apps.presentation':
                 # Google Slides -> PPTXとしてエクスポート
-                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+                request = self.service.files().export(
+                    fileId=file_id,
+                    mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                )
                 dest_path = dest_path.with_suffix('.pptx')
             else:
                 # 通常のファイル (PDF, DOCXなど) はダウンロード
-                request = self.service.files().get_media(fileId=file_id)
+                # ★重要: 共有ドライブや他人所有のファイルにアクセスするためのフラグ
+                request = self.service.files().get_media(
+                    fileId=file_id,
+                    supportsAllDrives=True
+                )
 
             with open(dest_path, 'wb') as fh:
                 downloader = MediaIoBaseDownload(fh, request)
@@ -145,6 +163,8 @@ class GoogleDriveConnector:
         except Exception as e:
             # loguruのフォーマットエラーを回避するため、文字列連結を使用
             logger.error("ファイルダウンロードエラー: " + file_name)
+            logger.error(f"エラー内容: {str(e)}")
+            logger.error(f"エラータイプ: {type(e).__name__}")
             logger.debug("エラー詳細", exc_info=True)
             return None
 
