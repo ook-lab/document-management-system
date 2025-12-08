@@ -24,6 +24,7 @@ from core.ai.json_validator import validate_metadata
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
 from core.utils.chunking import chunk_document, chunk_document_parent_child
+from core.utils.synthetic_chunks import create_all_synthetic_chunks
 from config.yaml_loader import get_classification_yaml_string
 
 
@@ -459,10 +460,10 @@ class TwoStageIngestionPipeline:
                 logger.info(f"Document保存完了（upsert, force_update={force_reprocess}）: {document_id}")
 
                 # ============================================
-                # チャンク化処理（2階層：小チャンク検索用 + 大チャンク回答用）
+                # チャンク化処理（2階層：小チャンク検索用 + 大チャンク回答用 + 合成チャンク）
                 # ============================================
                 if extracted_text and document_id:
-                    logger.info(f"  ドキュメントの2階層チャンク化開始（小・大）")
+                    logger.info(f"  ドキュメントの2階層チャンク化開始（小・大・合成）")
                     try:
                         # 小チャンク化（検索用）
                         small_chunks = chunk_document(
@@ -501,13 +502,12 @@ class TwoStageIngestionPipeline:
                         # ステップ2: 大チャンク（全文・回答生成用）を保存
                         logger.info(f"  大チャンク（全文）の保存開始")
                         large_chunk_success_count = 0
+                        current_chunk_index = len(small_chunks)
                         try:
                             # 全文を1つの大チャンクとして保存
-                            # chunk_indexは小チャンク数の次の値を使用（重複を避ける）
-                            large_chunk_index = len(small_chunks)
                             large_doc = {
                                 'document_id': document_id,
-                                'chunk_index': large_chunk_index,
+                                'chunk_index': current_chunk_index,
                                 'chunk_text': extracted_text,  # 全文テキスト
                                 'chunk_size': len(extracted_text),
                                 'embedding': embedding  # 全文のembedding を使用
@@ -516,20 +516,59 @@ class TwoStageIngestionPipeline:
                             chunk_result = await self.db.insert_document('document_chunks', large_doc)
                             if chunk_result:
                                 large_chunk_success_count = 1
+                                current_chunk_index += 1
                         except Exception as chunk_insert_error:
                             logger.error(f"  大チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
                             logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
 
                         logger.info(f"  大チャンク保存完了: {large_chunk_success_count}/1個")
 
-                        total_chunks = small_chunk_success_count + large_chunk_success_count
-                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（小{small_chunk_success_count}個 + 大{large_chunk_success_count}個）")
+                        # ステップ3: 合成チャンク（スケジュール・議題等）を生成・保存
+                        logger.info(f"  合成チャンク（構造化データ専用）の生成開始")
+                        synthetic_chunk_success_count = 0
+                        synthetic_chunks = create_all_synthetic_chunks(metadata, file_name)
 
-                        # ステップ3: document の chunk_count を更新
+                        if synthetic_chunks:
+                            logger.info(f"  合成チャンク生成完了: {len(synthetic_chunks)}個")
+                            for synthetic in synthetic_chunks:
+                                try:
+                                    synthetic_text = synthetic.get('content', '')
+                                    synthetic_type = synthetic.get('type', 'unknown')
+
+                                    if not synthetic_text:
+                                        continue
+
+                                    # 合成チャンク用のembeddingを生成
+                                    synthetic_embedding = self.llm_client.generate_embedding(synthetic_text)
+
+                                    synthetic_doc = {
+                                        'document_id': document_id,
+                                        'chunk_index': current_chunk_index,
+                                        'chunk_text': synthetic_text,
+                                        'chunk_size': len(synthetic_text),
+                                        'embedding': synthetic_embedding,
+                                        'section_title': f'[合成チャンク: {synthetic_type}]'  # 識別用
+                                    }
+
+                                    chunk_result = await self.db.insert_document('document_chunks', synthetic_doc)
+                                    if chunk_result:
+                                        synthetic_chunk_success_count += 1
+                                        current_chunk_index += 1
+                                        logger.info(f"  ✅ 合成チャンク保存成功: {synthetic_type} ({len(synthetic_text)}文字)")
+                                except Exception as chunk_insert_error:
+                                    logger.error(f"  合成チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
+                                    logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
+                        else:
+                            logger.info(f"  合成チャンク生成: 対象データなし（スキップ）")
+
+                        total_chunks = small_chunk_success_count + large_chunk_success_count + synthetic_chunk_success_count
+                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（小{small_chunk_success_count}個 + 大{large_chunk_success_count}個 + 合成{synthetic_chunk_success_count}個）")
+
+                        # ステップ4: document の chunk_count を更新
                         try:
                             update_data = {
                                 'chunk_count': total_chunks,
-                                'chunking_strategy': 'small_large_2tier'  # 2階層戦略
+                                'chunking_strategy': 'small_large_synthetic'  # 小チャンク + 大チャンク + 合成チャンク
                             }
                             response = (
                                 self.db.client.table('documents')

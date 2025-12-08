@@ -10,6 +10,7 @@ from flask_cors import CORS
 
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
+from core.utils.query_expansion import QueryExpander
 
 app = Flask(__name__)
 CORS(app)
@@ -17,6 +18,7 @@ CORS(app)
 # クライアントの初期化
 db_client = DatabaseClient()
 llm_client = LLMClient()
+query_expander = QueryExpander(llm_client=llm_client)
 
 
 @app.route('/')
@@ -28,7 +30,7 @@ def index():
 @app.route('/api/search', methods=['POST'])
 def search_documents():
     """
-    ベクトル検索API
+    ベクトル検索API（クエリ拡張対応）
     ユーザーの質問から関連文書を検索
     """
     try:
@@ -38,30 +40,54 @@ def search_documents():
         # 最大5件に強制制限（フロントエンドの指定を無視）
         limit = min(requested_limit, 5)
         workspace = data.get('workspace')
+        enable_query_expansion = data.get('enable_query_expansion', True)  # デフォルトで有効
 
         print(f"[DEBUG] 検索リクエスト: query='{query}', requested_limit={requested_limit}, actual_limit={limit}")
 
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
 
-        # Embeddingを生成
-        embedding = llm_client.generate_embedding(query)
+        # クエリ拡張を適用（有効な場合）
+        expanded_query = query
+        expansion_info = None
+        if enable_query_expansion:
+            expansion_result = query_expander.expand_query(query)
+            if expansion_result.get('expansion_applied'):
+                expanded_query = expansion_result.get('expanded_query', query)
+                expansion_info = {
+                    'original': query,
+                    'expanded': expanded_query,
+                    'keywords': expansion_result.get('keywords', [])
+                }
+                print(f"[DEBUG] クエリ拡張適用: '{query}' → '{expanded_query}'")
+            else:
+                print(f"[DEBUG] クエリ拡張スキップ: '{query}'")
+
+        # Embeddingを生成（拡張されたクエリを使用）
+        embedding = llm_client.generate_embedding(expanded_query)
 
         # ベクトル検索を実行（非同期関数を同期的に実行）
+        # 拡張されたクエリをテキスト検索にも使用
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
         results = loop.run_until_complete(
-            db_client.search_documents(query, embedding, limit, workspace)
+            db_client.search_documents(expanded_query, embedding, limit, workspace)
         )
         loop.close()
 
         print(f"[DEBUG] 検索結果: {len(results)} 件返却")
 
-        return jsonify({
+        response_data = {
             'success': True,
             'results': results,
             'count': len(results)
-        })
+        }
+
+        # クエリ拡張情報を含める（デバッグ用）
+        if expansion_info:
+            response_data['query_expansion'] = expansion_info
+
+        return jsonify(response_data)
 
     except Exception as e:
         return jsonify({

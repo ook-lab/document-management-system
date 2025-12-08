@@ -5,20 +5,31 @@ Supabaseデータベースへの接続と操作を管理
 from typing import Dict, Any, List, Optional
 from supabase import create_client, Client
 from config.settings import settings
+from core.utils.reranker import Reranker, RerankConfig
 
 
 class DatabaseClient:
     """Supabaseデータベースクライアント"""
-    
+
     def __init__(self):
         """Supabaseクライアントの初期化"""
         if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
             raise ValueError("SUPABASE_URL と SUPABASE_KEY が設定されていません")
-        
+
         self.client: Client = create_client(
             settings.SUPABASE_URL,
             settings.SUPABASE_KEY
         )
+
+        # Rerankerの初期化（Cohere優先、フォールバックでHugging Face）
+        self.reranker = None
+        if RerankConfig.ENABLED:
+            try:
+                self.reranker = Reranker(provider=RerankConfig.PROVIDER)
+                print(f"[Reranker] 初期化成功: {RerankConfig.PROVIDER}")
+            except Exception as e:
+                print(f"[Reranker] 初期化失敗: {e}")
+                self.reranker = None
     
     def get_document_by_source_id(self, source_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -207,8 +218,46 @@ class DatabaseClient:
                 }
                 final_results.append(doc_result)
 
-            print(f"[DEBUG] 最終結果: {len(final_results)} 件（2階層検索・Rerank対応）")
+            print(f"[DEBUG] 初期検索結果: {len(final_results)} 件（2階層検索）")
             print(f"[DEBUG] 検索戦略: 小チャンク検索 + 重複排除 + 大チャンク回答")
+
+            # ============================================
+            # Reranking（再ランク付け）
+            # ============================================
+            if self.reranker and RerankConfig.should_rerank(len(final_results)):
+                print(f"[DEBUG] Reranking開始: {len(final_results)} 件 → {RerankConfig.FINAL_RESULT_COUNT} 件")
+                try:
+                    # Rerankingを実行
+                    # text_key は 'content' を使用（大チャンクのテキスト）
+                    reranked_results = self.reranker.rerank(
+                        query=query,
+                        documents=final_results,
+                        top_k=RerankConfig.FINAL_RESULT_COUNT,
+                        text_key='content'  # 大チャンクのテキストで再評価
+                    )
+
+                    print(f"[DEBUG] Reranking完了: {len(reranked_results)} 件")
+
+                    # Rerankスコアをログ出力（デバッグ用）
+                    for idx, doc in enumerate(reranked_results[:3], 1):  # 上位3件のみ
+                        rerank_score = doc.get('rerank_score', 0)
+                        original_score = doc.get('similarity', 0)
+                        file_name = doc.get('file_name', 'Unknown')
+                        print(f"  [{idx}] {file_name}: original={original_score:.3f}, rerank={rerank_score:.3f}")
+
+                    final_results = reranked_results
+
+                except Exception as rerank_error:
+                    print(f"[WARNING] Reranking失敗: {rerank_error}")
+                    # エラー時は元の結果をそのまま使用
+                    print(f"[DEBUG] 元の検索結果を使用: {len(final_results)} 件")
+            else:
+                if not self.reranker:
+                    print("[DEBUG] Reranking無効: Rerankerが初期化されていません")
+                else:
+                    print(f"[DEBUG] Reranking不要: 検索結果が少ない（{len(final_results)} 件）")
+
+            print(f"[DEBUG] 最終結果: {len(final_results)} 件")
 
             return final_results
 
