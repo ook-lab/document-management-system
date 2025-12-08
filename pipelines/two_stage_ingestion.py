@@ -445,10 +445,18 @@ class TwoStageIngestionPipeline:
             }
 
             try:
-                # upsertを使用：既存レコードの空欄のみ更新
-                result = await self.db.upsert_document('documents', document_data, conflict_column='source_id')
+                # upsertを使用
+                # force_reprocess=True時は全フィールドを更新するが、GAS由来のフィールドは保持
+                preserve_fields = ['doc_type', 'workspace'] if force_reprocess else []
+                result = await self.db.upsert_document(
+                    'documents',
+                    document_data,
+                    conflict_column='source_id',
+                    force_update=force_reprocess,
+                    preserve_fields=preserve_fields
+                )
                 document_id = result.get('id')
-                logger.info(f"Document保存完了（upsert）: {document_id}")
+                logger.info(f"Document保存完了（upsert, force_update={force_reprocess}）: {document_id}")
 
                 # ============================================
                 # チャンク化処理（2階層：小チャンク検索用 + 大チャンク回答用）

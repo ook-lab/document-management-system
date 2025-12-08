@@ -61,15 +61,23 @@ class DatabaseClient:
         response = self.client.table(table).insert(data).execute()
         return response.data[0] if response.data else {}
 
-    async def upsert_document(self, table: str, data: Dict[str, Any], conflict_column: str = 'source_id') -> Dict[str, Any]:
+    async def upsert_document(
+        self,
+        table: str,
+        data: Dict[str, Any],
+        conflict_column: str = 'source_id',
+        force_update: bool = False,
+        preserve_fields: List[str] = None
+    ) -> Dict[str, Any]:
         """
         ドキュメントをupsert（既存レコードがあれば更新、なければ挿入）
-        空欄・nullの項目のみ上書き
 
         Args:
             table: テーブル名
             data: 挿入・更新するデータ
             conflict_column: 重複判定に使うカラム名（デフォルト: source_id）
+            force_update: Trueの場合、全てのフィールドを強制的に更新（再処理時用）
+            preserve_fields: force_update=Trueの時でも既存値を保持するフィールドのリスト
 
         Returns:
             挿入・更新されたレコード
@@ -85,14 +93,25 @@ class DatabaseClient:
         existing = self.client.table(table).select('*').eq(conflict_column, data[conflict_column]).execute()
 
         if existing.data and len(existing.data) > 0:
-            # 既存レコードがある場合：空欄・nullの項目のみ更新
+            # 既存レコードがある場合
             existing_record = existing.data[0]
             update_data = {}
 
-            for key, value in data.items():
-                # 既存値が空欄・nullの場合のみ更新
-                if existing_record.get(key) in [None, '', [], {}]:
+            if force_update:
+                # 再処理モード：基本的に全て更新するが、preserve_fieldsは既存値を保持
+                preserve_fields = preserve_fields or []
+
+                for key, value in data.items():
+                    if key in preserve_fields:
+                        # 保持対象フィールドは既存値が有効な場合のみ保持
+                        if existing_record.get(key) not in [None, '', [], {}]:
+                            continue  # 既存値を保持（更新しない）
                     update_data[key] = value
+            else:
+                # 通常モード：空欄・nullの項目のみ更新
+                for key, value in data.items():
+                    if existing_record.get(key) in [None, '', [], {}]:
+                        update_data[key] = value
 
             if update_data:
                 # 更新するデータがある場合のみUPDATE
