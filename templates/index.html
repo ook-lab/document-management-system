@@ -701,9 +701,9 @@
                                    class="workspace-checkbox"
                                    id="${wsId}"
                                    value="${workspace.name}"
-                                   onclick="event.stopPropagation(); toggleWorkspace('${workspace.name}')"
+                                   onclick="event.stopPropagation()"
                                    onchange="onWorkspaceChange('${workspace.name}')">
-                            <label class="workspace-label" for="${wsId}" onclick="event.stopPropagation(); document.getElementById('${wsId}').click()">
+                            <label class="workspace-label" for="${wsId}" onclick="event.stopPropagation()">
                                 ${escapeHtml(workspace.name)}
                             </label>
                             <span class="workspace-count">${docTypeCount}件</span>
@@ -756,13 +756,6 @@
                 children.classList.add('expanded');
                 toggle.classList.add('expanded');
             }
-        }
-
-        function toggleWorkspace(workspaceName) {
-            const wsId = `ws-${workspaceName}`;
-            const checkbox = document.getElementById(wsId);
-            checkbox.checked = !checkbox.checked;
-            onWorkspaceChange(workspaceName);
         }
 
         // ✅ 親チェックボックスの変更時：子を連動
