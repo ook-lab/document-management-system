@@ -254,6 +254,67 @@
             font-size: 0.8em;
         }
 
+        /* ✅ Classroom投稿専用スタイル */
+        .classroom-post {
+            background: #f8f9ff;
+            border-left: 4px solid #4285f4;
+            margin-top: 10px;
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .classroom-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        .classroom-sender {
+            font-weight: 600;
+            color: #4285f4;
+        }
+
+        .classroom-date {
+            color: #999;
+        }
+
+        .classroom-body {
+            color: #333;
+            line-height: 1.6;
+            margin-bottom: 10px;
+            white-space: pre-wrap;
+            font-size: 0.9em;
+        }
+
+        .classroom-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .attachment-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            background: #4285f4;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 0.85em;
+            transition: all 0.3s;
+        }
+
+        .attachment-link:hover {
+            background: #3367d6;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(66, 133, 244, 0.3);
+        }
+
         .error-message {
             background: #fee;
             border-left: 4px solid #f44;
@@ -1046,34 +1107,136 @@
                 documentList.innerHTML = '<div class="empty-state">関連する文書が見つかりませんでした</div>';
             } else {
                 documentList.innerHTML = documents.map(doc => {
-                    // ✅ タイトルはfile_nameを優先的に使用
-                    const title = doc.file_name || doc.title || '無題';
+                    try {
+                        // ✅ Classroom投稿かどうかを判定
+                        const sourceType = doc.source_type || '';
+                        const isClassroom = sourceType === 'classroom' || sourceType === 'classroom_text';
 
-                    // ✅ 要約があればそれを優先、なければ本文をトリミング
-                    const displayText = doc.summary || truncateText(doc.content || '', 200);
-
-                    // ✅ source_urlがあればリンクボタンを表示
-                    const sourceUrl = doc.source_url || '';
-                    const linkButton = sourceUrl ?
-                        `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 元ファイルを開く</a>` :
-                        '';
-
-                    return `
-                        <div class="document-card">
-                            <div class="document-title">${escapeHtml(title)}</div>
-                            <div class="document-meta">
-                                <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
-                            </div>
-                            <div class="document-content">
-                                ${escapeHtml(displayText)}
-                            </div>
-                            ${linkButton}
-                        </div>
-                    `;
+                        if (isClassroom) {
+                            return renderClassroomPost(doc);
+                        } else {
+                            return renderRegularDocument(doc);
+                        }
+                    } catch (error) {
+                        console.error('Document rendering error:', error, doc);
+                        return renderRegularDocument(doc);
+                    }
                 }).join('');
             }
 
             documentsSection.style.display = 'block';
+        }
+
+        function renderClassroomPost(doc) {
+            // タイトル（件名）
+            const title = doc.file_name || doc.title || 'Google Classroom投稿';
+
+            // 送信者情報（metadataから取得）
+            const metadata = doc.metadata || {};
+            const sender = metadata.author_name || metadata.sender || '不明';
+
+            // 送信日時（created_atまたはmetadataから）
+            const dateStr = doc.created_at || metadata.created_time || '';
+            const formattedDate = dateStr ? formatDate(dateStr) : '日時不明';
+
+            // 本文（full_textを優先）
+            const bodyText = doc.full_text || doc.content || doc.summary || '';
+
+            // 添付ファイル（source_urlまたはmetadataのmaterialsから）
+            const attachments = [];
+
+            // source_urlがある場合（Driveファイルへのリンク）
+            if (doc.source_url) {
+                const fileName = doc.file_name || 'ファイル';
+                attachments.push({
+                    url: doc.source_url,
+                    name: fileName,
+                    type: 'drive'
+                });
+            }
+
+            // metadataに追加の添付ファイル情報がある場合
+            if (metadata.materials && Array.isArray(metadata.materials)) {
+                metadata.materials.forEach(material => {
+                    if (material.driveFile && material.driveFile.url) {
+                        attachments.push({
+                            url: material.driveFile.url,
+                            name: material.driveFile.title || 'ファイル',
+                            type: 'material'
+                        });
+                    }
+                });
+            }
+
+            // 添付ファイルのHTML
+            const attachmentsHtml = attachments.length > 0 ? `
+                <div class="classroom-attachments">
+                    ${attachments.map(att => `
+                        <a href="${escapeHtml(att.url)}" target="_blank" class="attachment-link">
+                            📎 ${escapeHtml(att.name)}
+                        </a>
+                    `).join('')}
+                </div>
+            ` : '';
+
+            return `
+                <div class="document-card">
+                    <div class="document-title">📘 ${escapeHtml(title)}</div>
+                    <div class="document-meta">
+                        <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
+                        <span style="color: #4285f4; font-weight: 500;">Google Classroom</span>
+                    </div>
+                    <div class="classroom-post">
+                        <div class="classroom-header">
+                            <span class="classroom-sender">👤 ${escapeHtml(sender)}</span>
+                            <span class="classroom-date">🕒 ${escapeHtml(formattedDate)}</span>
+                        </div>
+                        <div class="classroom-body">${escapeHtml(bodyText)}</div>
+                        ${attachmentsHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRegularDocument(doc) {
+            // ✅ タイトルはfile_nameを優先的に使用
+            const title = doc.file_name || doc.title || '無題';
+
+            // ✅ 要約があればそれを優先、なければ本文をトリミング
+            const displayText = doc.summary || truncateText(doc.content || '', 200);
+
+            // ✅ source_urlがあればリンクボタンを表示
+            const sourceUrl = doc.source_url || '';
+            const linkButton = sourceUrl ?
+                `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 元ファイルを開く</a>` :
+                '';
+
+            return `
+                <div class="document-card">
+                    <div class="document-title">${escapeHtml(title)}</div>
+                    <div class="document-meta">
+                        <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
+                    </div>
+                    <div class="document-content">
+                        ${escapeHtml(displayText)}
+                    </div>
+                    ${linkButton}
+                </div>
+            `;
+        }
+
+        function formatDate(dateStr) {
+            try {
+                const date = new Date(dateStr);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}/${month}/${day} ${hours}:${minutes}`;
+            } catch (e) {
+                return dateStr;
+            }
         }
 
         function showResults() {

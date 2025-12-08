@@ -216,6 +216,17 @@ class DatabaseClient:
                     'year': result.get('year'),
                     'month': result.get('month')
                 }
+
+                # ✅ Classroom表示用の追加フィールド（存在する場合のみ追加）
+                if 'source_type' in result:
+                    doc_result['source_type'] = result.get('source_type')
+                if 'source_url' in result:
+                    doc_result['source_url'] = result.get('source_url')
+                if 'full_text' in result:
+                    doc_result['full_text'] = result.get('full_text')
+                if 'created_at' in result:
+                    doc_result['created_at'] = result.get('created_at')
+
                 final_results.append(doc_result)
 
             print(f"[DEBUG] 初期検索結果: {len(final_results)} 件（2階層検索）")
