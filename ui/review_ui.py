@@ -153,10 +153,12 @@ def pdf_review_ui():
     # サイドバー: 検索とフィルタ設定
     st.sidebar.header("🔍 検索 & フィルタ")
 
-    # Workspaceフィルタ
+    # Workspaceフィルタ（動的に取得）
+    available_workspaces = db_client.get_available_workspaces()
+    workspace_options = ["全て"] + available_workspaces
     workspace_filter = st.sidebar.selectbox(
         "Workspace",
-        options=["全て", "business", "personal"],
+        options=workspace_options,
         index=0,
         help="ワークスペースでフィルタリング"
     )

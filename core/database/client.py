@@ -566,6 +566,28 @@ class DatabaseClient:
                 'progress_percent': 0
             }
 
+    def get_available_workspaces(self) -> List[str]:
+        """
+        データベース内の利用可能なワークスペース一覧を取得
+
+        Returns:
+            ワークスペース名のリスト（重複なし、ソート済み）
+        """
+        try:
+            # 全ドキュメントからworkspaceを取得
+            response = self.client.table('documents').select('workspace').execute()
+
+            workspaces = set()
+            for doc in response.data:
+                ws = doc.get('workspace')
+                if ws:  # NoneやNULLを除外
+                    workspaces.add(ws)
+
+            return sorted(list(workspaces))
+        except Exception as e:
+            print(f"Error getting available workspaces: {e}")
+            return []
+
     def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
         IDでドキュメントを取得
