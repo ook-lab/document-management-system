@@ -572,7 +572,6 @@ def pdf_review_ui():
 
                             if structured_blocks:
                                 # 構造化データをDataFrameで表示
-                                import pandas as pd
                                 df_structured = pd.DataFrame(structured_blocks)
 
                                 # タイプを日本語に翻訳
