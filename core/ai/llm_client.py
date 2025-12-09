@@ -432,9 +432,9 @@ class LLMClient:
         if not self.gemini_api_key:
             return {"success": False, "error": "Gemini API key is missing", "model": "gemini-2.5-flash"}
 
-        # Gemini Flash を使用（画像処理に最適）
+        # Gemini 2.5 Pro を使用（Vision処理の精度向上）
         return self._call_gemini(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-2.5-pro",
             prompt=prompt,
             file_path=image_path,
             config={
