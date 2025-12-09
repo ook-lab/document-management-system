@@ -111,33 +111,19 @@ def search_documents():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        # ✅ workspaceフィルタ: 配列が空の場合はNoneを渡して全検索
-        workspace_filter = workspaces[0] if len(workspaces) == 1 else None
-
+        # ✅ workspaceとdoc_typeを配列でそのままデータベースに渡す
         results = loop.run_until_complete(
-            db_client.search_documents(expanded_query, embedding, limit * 2, workspace_filter)
+            db_client.search_documents(
+                expanded_query,
+                embedding,
+                limit,
+                workspaces if workspaces else None,
+                doc_types if doc_types else None
+            )
         )
         loop.close()
 
-        print(f"[DEBUG] 初期検索結果: {len(results)} 件")
-
-        # ✅ Pythonレベルでフィルタリング（複数workspace/doc_type対応）
-        if workspaces or doc_types:
-            filtered_results = []
-            for doc in results:
-                # workspaceフィルタチェック
-                if workspaces and doc.get('workspace') not in workspaces:
-                    continue
-                # doc_typeフィルタチェック
-                if doc_types and doc.get('doc_type') not in doc_types:
-                    continue
-                filtered_results.append(doc)
-
-            results = filtered_results[:limit]  # 制限件数まで
-            print(f"[DEBUG] フィルタ後: {len(results)} 件（workspaces={workspaces}, doc_types={doc_types}）")
-        else:
-            results = results[:limit]
-            print(f"[DEBUG] フィルタなし: {len(results)} 件")
+        print(f"[DEBUG] 検索結果: {len(results)} 件（workspaces={workspaces}, doc_types={doc_types}）")
 
         print(f"[DEBUG] 最終検索結果: {len(results)} 件返却")
 

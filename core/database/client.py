@@ -141,7 +141,8 @@ class DatabaseClient:
         query: str,
         embedding: List[float],
         limit: int = 50,
-        workspace: Optional[str] = None
+        workspaces: Optional[List[str]] = None,
+        doc_types: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
         2階層ハイブリッド検索：小チャンク検索 + 大チャンク回答（重複排除＆Rerank対応）
@@ -154,11 +155,12 @@ class DatabaseClient:
         Args:
             query: 検索クエリ
             embedding: クエリのembeddingベクトル
-            limit: 取得する最大件数（デフォルト: 50）→ 実際には上位10件に制限
-            workspace: ワークスペースフィルタ (オプション)
+            limit: 取得する最大件数
+            workspaces: ワークスペースフィルタ（配列、複数選択可能）
+            doc_types: ドキュメントタイプフィルタ（配列、複数選択可能）
 
         Returns:
-            検索結果のリスト（小チャンク検索スコア順、回答は大チャンク、最大10件）
+            検索結果のリスト（小チャンク検索スコア順、回答は大チャンク）
         """
         try:
             # クエリから日付を抽出
@@ -180,15 +182,16 @@ class DatabaseClient:
                 "query_text": query,
                 "query_embedding": embedding,
                 "match_threshold": 0.0,
-                "match_count": 10,  # Reranker向けに10件を常に取得
+                "match_count": limit,  # 指定された件数を取得
                 "vector_weight": 0.7,  # ベクトル検索70%
                 "fulltext_weight": 0.3,  # キーワード検索30%
                 "filter_year": filter_year,
                 "filter_month": filter_month,
-                "filter_workspace": workspace
+                "filter_workspaces": workspaces,  # 複数workspace対応（配列）
+                "filter_doc_types": doc_types  # 複数doc_type対応（配列）
             }
 
-            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}'")
+            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}', workspaces={workspaces}, doc_types={doc_types}")
             response = self.client.rpc("search_documents_final", rpc_params).execute()
             results = response.data if response.data else []
 
