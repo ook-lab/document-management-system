@@ -11,6 +11,8 @@ from flask_cors import CORS
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
 from core.utils.query_expansion import QueryExpander
+from core.utils.context_extractor import ContextExtractor
+from config.yaml_loader import load_user_context
 
 app = Flask(__name__)
 CORS(app)
@@ -87,13 +89,28 @@ def search_documents():
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
 
+        # ユーザーコンテキストを読み込み、関連情報を抽出（検索用：軽量）
+        user_context = load_user_context()
+        context_extractor = ContextExtractor(user_context)
+        extracted_context = context_extractor.extract_relevant_context(
+            query,
+            include_schedules=False  # 検索時はスケジュール不要
+        )
+        context_string = context_extractor.build_search_context_string(extracted_context)
+
         # クエリ拡張を適用（有効な場合）
         expanded_query = query
         expansion_info = None
+
+        # ユーザーコンテキストがあればクエリに追加
+        if context_string:
+            expanded_query = f"{query} {context_string}"
+            print(f"[DEBUG] コンテキスト追加: '{query}' → '{expanded_query}'")
+
         if enable_query_expansion:
-            expansion_result = query_expander.expand_query(query)
+            expansion_result = query_expander.expand_query(expanded_query)
             if expansion_result.get('expansion_applied'):
-                expanded_query = expansion_result.get('expanded_query', query)
+                expanded_query = expansion_result.get('expanded_query', expanded_query)
                 expansion_info = {
                     'original': query,
                     'expanded': expanded_query,
@@ -101,7 +118,7 @@ def search_documents():
                 }
                 print(f"[DEBUG] クエリ拡張適用: '{query}' → '{expanded_query}'")
             else:
-                print(f"[DEBUG] クエリ拡張スキップ: '{query}'")
+                print(f"[DEBUG] クエリ拡張スキップ: '{expanded_query}'")
 
         # Embeddingを生成（拡張されたクエリを使用）
         embedding = llm_client.generate_embedding(expanded_query)
@@ -160,6 +177,15 @@ def generate_answer():
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
 
+        # ユーザーコンテキストを読み込み、関連情報を抽出（回答生成用：詳細）
+        user_context = load_user_context()
+        context_extractor = ContextExtractor(user_context)
+        extracted_context = context_extractor.extract_relevant_context(
+            query,
+            include_schedules=True  # 回答生成時はスケジュールも含める
+        )
+        user_context_prompt = context_extractor.build_answer_context_string(extracted_context)
+
         # ドキュメントコンテキストを構築
         context = _build_context(documents)
 
@@ -169,9 +195,16 @@ def generate_answer():
             context = context[:MAX_CONTEXT_LENGTH] + "\n\n[... 以降は省略されました ...]"
             print(f"[WARNING] コンテキストを切り詰めました: {len(context)} → {MAX_CONTEXT_LENGTH} 文字")
 
-        # プロンプトを作成（Phase 2.2.3: 構造的クエリ対応）
-        prompt = f"""以下の文書情報を参考に、ユーザーの質問に日本語で回答してください。
+        # プロンプトを作成（Phase 2.2.3: 構造的クエリ対応 + ユーザーコンテキスト追加）
+        prompt_parts = []
 
+        prompt_parts.append("以下の文書情報を参考に、ユーザーの質問に日本語で回答してください。")
+
+        # ユーザーコンテキストがあれば追加
+        if user_context_prompt:
+            prompt_parts.append(f"\n{user_context_prompt}\n")
+
+        prompt_parts.append(f"""
 【質問】
 {query}
 
@@ -180,6 +213,7 @@ def generate_answer():
 
 【回答の条件】
 - 参考文書の情報を基に、正確に回答してください
+- **ユーザーの前提情報を考慮してください**（上記に記載された子供の情報、学校や塾のスケジュールなど）
 - **重要：ファイル名も重視してください**
   * ユーザーが特定のファイル名を質問している場合（例：「学年通信（29）」）、そのファイル名と完全一致または部分一致する文書を優先的に参照してください
   * ファイル名が一致する文書があれば、必ずその内容を回答に含めてください
@@ -192,7 +226,10 @@ def generate_answer():
 - 回答の最後に、参考にした文書のタイトルを列挙してください
 
 【回答】
-"""
+""")
+
+        # プロンプトを結合
+        prompt = "\n".join(prompt_parts)
 
         # GPT で回答生成（モデル選択対応）
         response = llm_client.call_model(
