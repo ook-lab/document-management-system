@@ -64,7 +64,7 @@ def _render_weekly_schedule_creator(doc_id: str, metadata: Dict[str, Any]) -> Op
     # テンプレート行数を指定
     num_rows = st.number_input("追加する日数", min_value=1, max_value=31, value=5, key=f"weekly_rows_{doc_id}")
 
-    # テンプレートデータフレーム作成
+    # テンプレートデータフレーム作成（DateColumn用にTextColumnを使用）
     template_data = []
     for i in range(num_rows):
         template_data.append({
@@ -76,14 +76,14 @@ def _render_weekly_schedule_creator(doc_id: str, metadata: Dict[str, Any]) -> Op
 
     df = pd.DataFrame(template_data)
 
-    # データエディタで編集
+    # データエディタで編集（DateColumnではなくTextColumnを使用）
     edited_df = st.data_editor(
         df,
         use_container_width=True,
         num_rows="dynamic",
         key=f"weekly_schedule_editor_{doc_id}",
         column_config={
-            "date": st.column_config.DateColumn("日付", format="YYYY-MM-DD"),
+            "date": st.column_config.TextColumn("日付 (YYYY-MM-DD)"),
             "day_of_week": st.column_config.SelectboxColumn(
                 "曜日",
                 options=["月曜日", "火曜日", "水曜日", "木曜日", "金曜日", "土曜日", "日曜日"]
@@ -131,14 +131,14 @@ def _render_monthly_schedule_creator(doc_id: str, metadata: Dict[str, Any]) -> O
 
     df = pd.DataFrame(template_data)
 
-    # データエディタで編集
+    # データエディタで編集（TextColumnを使用）
     edited_df = st.data_editor(
         df,
         use_container_width=True,
         num_rows="dynamic",
         key=f"monthly_schedule_editor_{doc_id}",
         column_config={
-            "date": st.column_config.DateColumn("日付", format="YYYY-MM-DD"),
+            "date": st.column_config.TextColumn("日付 (YYYY-MM-DD)"),
             "day_of_week": st.column_config.TextColumn("曜日"),
             "event": st.column_config.TextColumn("行事名"),
             "time": st.column_config.TextColumn("時刻"),
