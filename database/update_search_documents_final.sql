@@ -8,8 +8,9 @@ BEGIN;
 
 -- 既存の関数を削除（パラメータが変わるため）
 DROP FUNCTION IF EXISTS search_documents_final(TEXT, vector(1536), FLOAT, INT, FLOAT, FLOAT, INT, INT, TEXT);
+DROP FUNCTION IF EXISTS search_documents_final(TEXT, vector(1536), FLOAT, INT, FLOAT, FLOAT, INT, INT, TEXT[], TEXT[]);
 
--- 新しい関数を作成（複数workspace/doc_type対応）
+-- 新しい関数を作成（doc_typeのみで絞り込み）
 CREATE OR REPLACE FUNCTION search_documents_final(
     query_text TEXT,
     query_embedding vector(1536),
@@ -19,8 +20,7 @@ CREATE OR REPLACE FUNCTION search_documents_final(
     fulltext_weight FLOAT DEFAULT 0.3,
     filter_year INT DEFAULT NULL,
     filter_month INT DEFAULT NULL,
-    filter_workspaces TEXT[] DEFAULT NULL,  -- 配列に変更
-    filter_doc_types TEXT[] DEFAULT NULL     -- 新規追加
+    filter_doc_types TEXT[] DEFAULT NULL  -- doc_typeのみ
 )
 RETURNS TABLE (
     document_id UUID,
@@ -70,9 +70,7 @@ BEGIN
         AND (filter_year IS NULL OR EXTRACT(YEAR FROM d.document_date) = filter_year)
         -- 月フィルタ
         AND (filter_month IS NULL OR EXTRACT(MONTH FROM d.document_date) = filter_month)
-        -- 複数workspace対応（配列が空またはNULLならすべて、指定があれば該当のみ）
-        AND (filter_workspaces IS NULL OR cardinality(filter_workspaces) = 0 OR d.workspace = ANY(filter_workspaces))
-        -- 複数doc_type対応（配列が空またはNULLならすべて、指定があれば該当のみ）
+        -- doc_type絞り込み（配列が空またはNULLならすべて、指定があれば該当のみ）
         AND (filter_doc_types IS NULL OR cardinality(filter_doc_types) = 0 OR d.doc_type = ANY(filter_doc_types))
         -- 類似度フィルタ
         AND (1 - (d.embedding <=> query_embedding)) >= match_threshold
@@ -86,6 +84,9 @@ COMMIT;
 -- =========================================
 -- 実行後の確認クエリ（参考）
 -- =========================================
+-- 階層構造はフロントエンドで維持、検索はdoc_typeのみで絞り込み
+-- 理由: workspace内の全doc_typeがON = workspaceがON（冗長なため）
+--
 -- SELECT * FROM search_documents_final(
 --     'テストクエリ',
 --     '[0.1, 0.2, ...]'::vector(1536),
@@ -95,6 +96,5 @@ COMMIT;
 --     0.3,
 --     NULL,
 --     NULL,
---     ARRAY['ikuya_classroom']::TEXT[],
---     ARRAY['2025_5B']::TEXT[]
+--     ARRAY['2025_5B', '2025年度小オケ']::TEXT[]  -- doc_typeのみ
 -- );

@@ -141,7 +141,6 @@ class DatabaseClient:
         query: str,
         embedding: List[float],
         limit: int = 50,
-        workspaces: Optional[List[str]] = None,
         doc_types: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
@@ -152,11 +151,15 @@ class DatabaseClient:
         2. ドキュメント単位で重複排除（最高スコアのみ） → 重複を削減
         3. 大チャンク（全文）で回答生成 → 最も詳細な情報を使用
 
+        【フィルタの考え方】
+        - 階層構造（workspace > doc_type）はフロントエンドで維持
+        - データベース検索はdoc_typeのみで絞り込み
+        - 理由: workspace内の全doc_typeがON = workspaceがON（冗長なため）
+
         Args:
             query: 検索クエリ
             embedding: クエリのembeddingベクトル
             limit: 取得する最大件数
-            workspaces: ワークスペースフィルタ（配列、複数選択可能）
             doc_types: ドキュメントタイプフィルタ（配列、複数選択可能）
 
         Returns:
@@ -187,11 +190,10 @@ class DatabaseClient:
                 "fulltext_weight": 0.3,  # キーワード検索30%
                 "filter_year": filter_year,
                 "filter_month": filter_month,
-                "filter_workspaces": workspaces,  # 複数workspace対応（配列）
-                "filter_doc_types": doc_types  # 複数doc_type対応（配列）
+                "filter_doc_types": doc_types  # doc_typeのみで絞り込み
             }
 
-            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}', workspaces={workspaces}, doc_types={doc_types}")
+            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}', doc_types={doc_types}")
             response = self.client.rpc("search_documents_final", rpc_params).execute()
             results = response.data if response.data else []
 

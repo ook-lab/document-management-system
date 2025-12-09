@@ -111,19 +111,18 @@ def search_documents():
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
 
-        # ✅ workspaceとdoc_typeを配列でそのままデータベースに渡す
+        # ✅ doc_typeのみで絞り込み（階層構造はフロントエンドで維持）
         results = loop.run_until_complete(
             db_client.search_documents(
                 expanded_query,
                 embedding,
                 limit,
-                workspaces if workspaces else None,
                 doc_types if doc_types else None
             )
         )
         loop.close()
 
-        print(f"[DEBUG] 検索結果: {len(results)} 件（workspaces={workspaces}, doc_types={doc_types}）")
+        print(f"[DEBUG] 検索結果: {len(results)} 件（doc_types={doc_types}）")
 
         print(f"[DEBUG] 最終検索結果: {len(results)} 件返却")
 
