@@ -59,10 +59,15 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
             if isinstance(value, list):
                 logger.info(f"  First element type: {type(value[0]) if len(value) > 0 else 'empty'}")
 
-        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables, weekly_schedule, extracted_tables, text_blocks を構造化データとして認識
+        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables, weekly_schedule, extracted_tables を構造化データとして認識
+        # ただし text_blocks は除外（フォーム編集タブで編集可能にするため）
+        if key == "text_blocks":
+            logger.info(f"✓ '{key}' は text_blocks として検出されましたが、フォーム編集タブで表示するため除外します")
+            continue
+
         if (key.endswith("_list") or key.endswith("_blocks") or
             key.endswith("_matrix") or key.endswith("_tables") or
-            key == "structured_tables" or key == "weekly_schedule" or key == "extracted_tables" or key == "text_blocks"):
+            key == "structured_tables" or key == "weekly_schedule" or key == "extracted_tables"):
             logger.info(f"✓ '{key}' は構造化データフィールドとして検出")
 
             if not isinstance(value, list):
