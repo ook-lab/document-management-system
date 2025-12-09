@@ -80,7 +80,7 @@ def search_documents():
         if not workspaces and data.get('workspace'):
             workspaces = [data.get('workspace')]
 
-        enable_query_expansion = data.get('enable_query_expansion', True)  # デフォルトで有効
+        enable_query_expansion = data.get('enable_query_expansion', False)  # デフォルトで無効
 
         print(f"[DEBUG] 検索リクエスト: query='{query}', limit={limit}, workspaces={workspaces}, doc_types={doc_types}")
 
