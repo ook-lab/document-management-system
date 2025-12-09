@@ -231,10 +231,10 @@ class ClassroomReprocessorV2:
             source_type = doc.get('source_type', '')
 
             # ============================================
-            # テキストのみドキュメント（classroom_text）の処理
+            # テキストのみドキュメント（classroom_text, text_only）の処理
             # ============================================
-            if source_type == 'classroom_text':
-                logger.info("📝 テキストのみドキュメントを検出（classroom_text）")
+            if source_type in ['classroom_text', 'text_only']:
+                logger.info(f"📝 テキストのみドキュメントを検出（{source_type}）")
                 return await self._reprocess_text_only_document(
                     queue_id=queue_id,
                     document_id=document_id,
