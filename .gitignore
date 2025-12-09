@@ -10,3 +10,6 @@ credentials/google_credentials.json
 __pycache__/
 *.pyc
 project_codebase_*.md
+
+# macOS
+.DS_Store
