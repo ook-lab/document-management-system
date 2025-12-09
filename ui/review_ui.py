@@ -59,15 +59,10 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
             if isinstance(value, list):
                 logger.info(f"  First element type: {type(value[0]) if len(value) > 0 else 'empty'}")
 
-        # text_blocksはフォーム編集で表示するため、構造化フィールドとして検出しない
-        if key == "text_blocks":
-            logger.info(f"⚠️ '{key}' はフォーム編集で表示するため、構造化フィールドから除外")
-            continue
-
-        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables, weekly_schedule, extracted_tables を構造化データとして認識
+        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables, weekly_schedule, extracted_tables, text_blocks を構造化データとして認識
         if (key.endswith("_list") or key.endswith("_blocks") or
             key.endswith("_matrix") or key.endswith("_tables") or
-            key == "structured_tables" or key == "weekly_schedule" or key == "extracted_tables"):
+            key == "structured_tables" or key == "weekly_schedule" or key == "extracted_tables" or key == "text_blocks"):
             logger.info(f"✓ '{key}' は構造化データフィールドとして検出")
 
             if not isinstance(value, list):
@@ -144,9 +139,9 @@ def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
 
 
 def pdf_review_ui():
-    """PDFレビューUIロジック"""
-    st.markdown("#### 📋 PDFドキュメントレビュー")
-    st.caption("AIが抽出したメタデータを確認・修正できます")
+    """ドキュメントレビューUIロジック（全てのファイルタイプ対応）"""
+    st.markdown("#### 📋 ドキュメントレビュー")
+    st.caption("AIが抽出したメタデータを確認・修正できます（PDF、テキスト、メール等の全ファイルタイプ対応）")
 
     # データベースクライアントとスキーマ検出器の初期化
     try:
@@ -167,6 +162,15 @@ def pdf_review_ui():
         options=workspace_options,
         index=0,
         help="ワークスペースでフィルタリング"
+    )
+
+    # ファイルタイプフィルタ
+    file_type_options = ["全て", "pdf", "email", "text", "markdown", "csv", "json"]
+    file_type_filter = st.sidebar.selectbox(
+        "ファイルタイプ",
+        options=file_type_options,
+        index=0,
+        help="ファイルタイプでフィルタリング"
     )
 
     # 検索ボックス
@@ -211,16 +215,19 @@ def pdf_review_ui():
     if st.sidebar.button("🔄 リストを更新", use_container_width=True, key="refresh_pdf_list"):
         st.rerun()
 
-    # レビュー対象ドキュメントを取得（PDFのみ）
+    # レビュー対象ドキュメントを取得（全てのファイルタイプ）
     with st.spinner("ドキュメントを取得中..."):
         # Workspaceフィルタの値を変換（"全て"の場合はNone）
         workspace_value = workspace_filter if workspace_filter != "全て" else None
+
+        # ファイルタイプフィルタの値を変換（"全て"の場合はNone）
+        file_type_value = file_type_filter if file_type_filter != "全て" else None
 
         documents = db_client.get_documents_for_review(
             limit=limit,
             search_query=search_query if search_query else None,
             workspace=workspace_value,
-            file_type='pdf'  # PDFのみを取得
+            file_type=file_type_value  # 選択されたファイルタイプで絞り込み
         )
 
     # デバッグログ: 取得後の確認
@@ -492,11 +499,11 @@ def pdf_review_ui():
     col_left, col_right = st.columns([1, 1.2])
 
     with col_left:
-        st.markdown("### 📄 PDFプレビュー")
+        st.markdown("### 📄 ドキュメントプレビュー")
 
-        # PDFのダウンロードと表示
-        if file_id and file_name.lower().endswith('.pdf'):
-            with st.spinner("PDFをダウンロード中..."):
+        # ファイルのダウンロードと表示
+        if file_id:
+            with st.spinner("ファイルをダウンロード中..."):
                 file_path = download_file_from_drive(file_id, file_name)
 
             # デバッグ情報を表示
@@ -508,35 +515,22 @@ def pdf_review_ui():
                 st.info(f"パス: {file_path}")
 
             if file_path and Path(file_path).exists():
-                # デバッグログ: PDFプレビュー前の確認
-                import os
-                logger.info(f"PDFプレビュー開始。ローカルパス: {file_path}")
-                logger.info(f"ファイルサイズ: {os.path.getsize(file_path)} bytes")
+                # ファイルタイプに応じてプレビュー表示
+                file_extension = file_name.lower().split('.')[-1] if '.' in file_name else ''
 
-                # PDFプレビュー表示（ファイルパスを直接渡す）
-                try:
-                    from streamlit_pdf_viewer import pdf_viewer
-                    logger.info("streamlit_pdf_viewer を使用してPDF表示（ファイルパス直接渡し）")
-                    # ファイルパスを直接渡すことで、巨大なBase64文字列の生成を回避
-                    pdf_viewer(file_path, height=700)
-                except ImportError:
-                    logger.warning("streamlit_pdf_viewer がインストールされていません。ダウンロードボタンを表示します")
-                    st.warning("PDFビューアーライブラリがインストールされていません")
-                    # ダウンロードボタン用にバイトデータを読み込む
-                    with open(file_path, 'rb') as f:
-                        pdf_bytes = f.read()
-                    st.download_button(
-                        label="📥 PDFをダウンロード",
-                        data=pdf_bytes,
-                        file_name=file_name,
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                except Exception as e:
-                    logger.error(f"PDFプレビュー表示エラー: {e}", exc_info=True)
-                    st.warning(f"PDFプレビュー表示エラー: {e}")
-                    # エラー時のダウンロードボタン用にバイトデータを読み込む
+                # PDFの場合
+                if file_extension == 'pdf' or file_name.lower().endswith('.pdf'):
+                    import os
+                    logger.info(f"PDFプレビュー開始。ローカルパス: {file_path}")
+                    logger.info(f"ファイルサイズ: {os.path.getsize(file_path)} bytes")
+
                     try:
+                        from streamlit_pdf_viewer import pdf_viewer
+                        logger.info("streamlit_pdf_viewer を使用してPDF表示（ファイルパス直接渡し）")
+                        pdf_viewer(file_path, height=700)
+                    except ImportError:
+                        logger.warning("streamlit_pdf_viewer がインストールされていません。ダウンロードボタンを表示します")
+                        st.warning("PDFビューアーライブラリがインストールされていません")
                         with open(file_path, 'rb') as f:
                             pdf_bytes = f.read()
                         st.download_button(
@@ -546,14 +540,194 @@ def pdf_review_ui():
                             mime="application/pdf",
                             use_container_width=True
                         )
-                    except Exception as read_error:
-                        logger.error(f"PDFファイル読み込みエラー: {read_error}", exc_info=True)
-                        st.error("PDFファイルの読み込みに失敗しました")
+                    except Exception as e:
+                        logger.error(f"PDFプレビュー表示エラー: {e}", exc_info=True)
+                        st.warning(f"PDFプレビュー表示エラー: {e}")
+
+                # テキストファイルの場合（txt, md, csv, json, etc.）
+                elif file_extension in ['txt', 'md', 'markdown', 'csv', 'json', 'log', 'py', 'js', 'html', 'css']:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            text_content = f.read()
+
+                        st.markdown("#### 📝 テキストプレビュー")
+
+                        # タブで表示を切り替え
+                        text_tab1, text_tab2, text_tab3 = st.tabs(["原文", "構造化表示", "統計"])
+
+                        with text_tab1:
+                            # 原文表示
+                            st.text_area(
+                                "ファイル内容",
+                                value=text_content,
+                                height=500,
+                                disabled=True,
+                                key=f"text_preview_{doc_id}"
+                            )
+
+                        with text_tab2:
+                            # 構造化表示
+                            from ui.utils.text_structurer import TextStructurer
+                            structured_blocks = TextStructurer.structure_text(text_content)
+
+                            if structured_blocks:
+                                # 構造化データをDataFrameで表示
+                                import pandas as pd
+                                df_structured = pd.DataFrame(structured_blocks)
+
+                                # タイプを日本語に翻訳
+                                df_structured['type_ja'] = df_structured['type'].apply(
+                                    lambda t: TextStructurer._translate_type(t)
+                                )
+
+                                st.dataframe(
+                                    df_structured[['line_number', 'type_ja', 'content', 'length']],
+                                    column_config={
+                                        "line_number": st.column_config.NumberColumn("行番号", width="small"),
+                                        "type_ja": st.column_config.TextColumn("タイプ", width="small"),
+                                        "content": st.column_config.TextColumn("内容", width="large"),
+                                        "length": st.column_config.NumberColumn("文字数", width="small")
+                                    },
+                                    height=500,
+                                    use_container_width=True
+                                )
+
+                                # metadataに構造化データを追加
+                                if 'text_blocks' not in metadata:
+                                    metadata['text_blocks'] = structured_blocks
+                                    logger.info(f"テキスト構造化データをメタデータに追加: {len(structured_blocks)} ブロック")
+
+                        with text_tab3:
+                            # 統計情報
+                            from ui.utils.text_structurer import TextStructurer
+                            structured_blocks = TextStructurer.structure_text(text_content)
+                            stats = TextStructurer.get_statistics(structured_blocks)
+
+                            st.markdown("### 📊 テキスト統計")
+                            col_stat1, col_stat2, col_stat3 = st.columns(3)
+                            with col_stat1:
+                                st.metric("総行数", stats['total_lines'])
+                            with col_stat2:
+                                st.metric("ブロックタイプ数", stats['unique_types'])
+                            with col_stat3:
+                                total_chars = sum(block['length'] for block in structured_blocks)
+                                st.metric("総文字数", total_chars)
+
+                            st.markdown("### 📋 ブロックタイプ別件数")
+                            for block_type, count in sorted(stats['type_counts'].items(), key=lambda x: x[1], reverse=True):
+                                type_ja = TextStructurer._translate_type(block_type)
+                                st.write(f"- **{type_ja}**: {count} 行")
+
+                        # ダウンロードボタン
+                        st.download_button(
+                            label="📥 テキストファイルをダウンロード",
+                            data=text_content,
+                            file_name=file_name,
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+                    except UnicodeDecodeError:
+                        st.error("❌ テキストファイルのエンコーディングエラー。UTF-8でデコードできません。")
+                    except Exception as e:
+                        logger.error(f"テキストファイル読み込みエラー: {e}", exc_info=True)
+                        st.error(f"❌ ファイル読み込みエラー: {e}")
+
+                # その他のファイル
+                else:
+                    st.info(f"このファイルタイプ（.{file_extension}）のプレビューには対応していません")
+                    try:
+                        with open(file_path, 'rb') as f:
+                            file_bytes = f.read()
+                        st.download_button(
+                            label="📥 ファイルをダウンロード",
+                            data=file_bytes,
+                            file_name=file_name,
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        logger.error(f"ファイル読み込みエラー: {e}", exc_info=True)
+                        st.error("ファイルの読み込みに失敗しました")
             else:
-                logger.warning(f"PDFファイルを読み込めませんでした。file_path={file_path}, exists={Path(file_path).exists() if file_path else False}")
-                st.warning("PDFファイルを読み込めませんでした")
+                logger.warning(f"ファイルを読み込めませんでした。file_path={file_path}, exists={Path(file_path).exists() if file_path else False}")
+                st.warning("ファイルを読み込めませんでした")
         else:
-            st.info("PDFファイル以外はプレビューできません")
+            st.info("ファイルIDが見つかりません")
+
+        # ============================================
+        # 【新機能】手動テキスト補正（Human-in-the-loop）
+        # ============================================
+        # PDFまたはテキストファイルの場合、手動補正機能を表示
+        if file_path and Path(file_path).exists():
+            from ui.components.manual_text_correction import (
+                render_manual_text_correction,
+                execute_stage2_reprocessing
+            )
+
+            # full_textを取得（メタデータまたはファイルから）
+            extracted_text = selected_doc.get('full_text', '')
+
+            # 手動補正UIを表示
+            corrected_text = render_manual_text_correction(
+                doc_id=doc_id,
+                file_name=file_name,
+                extracted_text=extracted_text,
+                metadata=metadata,
+                doc_type=doc_type
+            )
+
+            # Stage 2再実行が要求された場合
+            if corrected_text:
+                with st.spinner("🔄 補正されたテキストでStage 2（構造化）を再実行中..."):
+                    try:
+                        # Stage 2再実行
+                        reprocessed_result = execute_stage2_reprocessing(
+                            corrected_text=corrected_text,
+                            file_name=file_name,
+                            metadata=metadata,
+                            workspace=selected_doc.get('workspace', 'personal')
+                        )
+
+                        # メタデータを更新
+                        new_metadata = reprocessed_result['metadata']
+                        new_confidence = reprocessed_result['confidence']
+
+                        # データベースに保存
+                        success = db_client.record_correction(
+                            doc_id=doc_id,
+                            new_metadata=new_metadata,
+                            new_doc_type=doc_type,
+                            corrector_email=None,
+                            notes="手動テキスト補正によるStage 2再実行"
+                        )
+
+                        if success:
+                            st.success("✅ Stage 2再実行が完了しました！構造化データが更新されました。")
+                            st.balloons()
+
+                            # 補正前後の比較を表示
+                            with st.expander("📊 補正前後の比較", expanded=True):
+                                col_before, col_after = st.columns(2)
+
+                                with col_before:
+                                    st.markdown("**補正前**")
+                                    st.metric("文字数", len(extracted_text))
+                                    st.metric("信頼度", f"{confidence:.2%}")
+
+                                with col_after:
+                                    st.markdown("**補正後**")
+                                    st.metric("文字数", len(corrected_text))
+                                    st.metric("信頼度", f"{new_confidence:.2%}")
+
+                            # ページをリロード
+                            import time
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error("❌ データベースへの保存に失敗しました")
+
+                    except Exception as e:
+                        logger.error(f"Stage 2再実行エラー: {e}", exc_info=True)
+                        st.error(f"❌ Stage 2再実行エラー: {e}")
 
     with col_right:
         st.markdown("### ✏️ メタデータ編集")
@@ -788,10 +962,10 @@ def main():
     )
 
     st.title("📚 Document Management System")
-    st.markdown("PDFレビューとメール受信トレイを統合管理")
+    st.markdown("ドキュメントレビューとメール受信トレイを統合管理（全ファイルタイプ対応）")
 
     # トップレベルのタブ
-    tab1, tab2 = st.tabs(["📋 PDFレビュー", "📬 メール受信トレイ"])
+    tab1, tab2 = st.tabs(["📋 ドキュメントレビュー", "📬 メール受信トレイ"])
 
     with tab1:
         pdf_review_ui()
