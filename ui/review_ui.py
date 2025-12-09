@@ -133,7 +133,8 @@ def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
         file_path = drive_connector.download_file(source_id, file_name, temp_dir)
         return file_path
     except Exception as e:
-        st.error(f"ファイルのダウンロードに失敗しました: {e}")
+        logger.error(f"ファイルのダウンロードに失敗: source_id={source_id}, file_name={file_name}", exc_info=True)
+        st.error(f"❌ Google Driveからのダウンロードエラー: {type(e).__name__}: {str(e)}")
         return None
 
 
@@ -492,6 +493,14 @@ def pdf_review_ui():
         if file_id and file_name.lower().endswith('.pdf'):
             with st.spinner("PDFをダウンロード中..."):
                 file_path = download_file_from_drive(file_id, file_name)
+
+            # デバッグ情報を表示
+            if not file_path:
+                st.error(f"❌ ファイルのダウンロードに失敗しました（file_path=None）")
+                st.info(f"file_id: {file_id}")
+            elif not Path(file_path).exists():
+                st.error(f"❌ ダウンロードされたファイルが見つかりません")
+                st.info(f"パス: {file_path}")
 
             if file_path and Path(file_path).exists():
                 # デバッグログ: PDFプレビュー前の確認
