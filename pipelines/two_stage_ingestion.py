@@ -236,13 +236,13 @@ class TwoStageIngestionPipeline:
                 text_content=extracted_text
             )
 
-            doc_type = stage1_result.get('doc_type', 'other')
-            workspace_detected = stage1_result.get('workspace', workspace)
+            # Stage1はdoc_typeとworkspaceを返さない（入力元で決定されるため）
+            # workspaceは引数で渡された値をそのまま使用
             summary = stage1_result.get('summary', '')
             relevant_date = stage1_result.get('relevant_date')
             stage1_confidence = stage1_result.get('confidence', 0.0)
 
-            logger.info(f"[Stage 1] 完了: doc_type={doc_type}, workspace={workspace_detected}, confidence={stage1_confidence:.2f}")
+            logger.info(f"[Stage 1] 完了: summary={summary[:50] if summary else ''}..., confidence={stage1_confidence:.2f}")
 
             # ============================================
             # テキスト抽出が失敗した場合でもsummaryを使用
@@ -261,11 +261,10 @@ class TwoStageIngestionPipeline:
                         full_text=extracted_text,
                         file_name=file_name,
                         stage1_result=stage1_result,
-                        workspace=workspace_detected
+                        workspace=workspace  # 引数で渡された元のworkspaceを使用
                     )
 
-                    # Stage 2の結果を反映
-                    doc_type = stage2_result.get('doc_type', doc_type)
+                    # Stage 2の結果を反映（doc_typeは使わない）
                     summary = stage2_result.get('summary', summary)
                     document_date = stage2_result.get('document_date')
                     tags = stage2_result.get('tags', [])
@@ -420,8 +419,8 @@ class TwoStageIngestionPipeline:
                 "drive_file_id": file_id,
                 "file_name": file_name,
                 "file_type": self._get_file_type(mime_type),
-                "doc_type": doc_type,
-                "workspace": workspace_detected,
+                "doc_type": workspace,  # doc_typeは入力元で決定（workspaceと同じ値を使用）
+                "workspace": workspace,  # 引数で渡された値を使用（入力元で決定）
                 "full_text": extracted_text,
                 "summary": summary,
                 "embedding": embedding,

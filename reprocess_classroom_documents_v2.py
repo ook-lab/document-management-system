@@ -413,13 +413,14 @@ class ClassroomReprocessorV2:
                 text_content=full_text
             )
 
-            stage1_doc_type = stage1_result.get('doc_type', 'other')
-            stage1_workspace = stage1_result.get('workspace', workspace_to_use)
+            # Stage1はdoc_typeとworkspaceを返さない（入力元で決定されるため）
+            stage1_doc_type = doc.get('doc_type', 'unknown')  # 元のdoc_typeを保持
+            stage1_workspace = doc.get('workspace', 'unknown')  # 元のworkspaceを保持
             stage1_confidence = stage1_result.get('confidence', 0.0)
             summary = stage1_result.get('summary', '')
             relevant_date = stage1_result.get('relevant_date')
 
-            logger.info(f"[Stage 1] 完了: doc_type={stage1_doc_type}, workspace={stage1_workspace}, confidence={stage1_confidence:.2f}")
+            logger.info(f"[Stage 1] 完了: summary={summary[:50]}..., confidence={stage1_confidence:.2f}")
 
             # ============================================
             # Stage 2: Claude詳細抽出
@@ -429,7 +430,7 @@ class ClassroomReprocessorV2:
                 full_text=full_text,
                 file_name=file_name,
                 stage1_result=stage1_result,
-                workspace=stage1_workspace
+                workspace=doc.get('workspace', 'unknown')  # 元のworkspaceを使用
             )
 
             # Stage 2の結果を反映
@@ -468,8 +469,9 @@ class ClassroomReprocessorV2:
                 'stage1_doc_type': stage1_doc_type,
                 'stage1_workspace': stage1_workspace,
                 'stage1_confidence': stage1_confidence,
-                'doc_type': doc_type,
-                'workspace': stage1_workspace if preserve_workspace else workspace_to_use,
+                # doc_type と workspace は入力元の反映なので更新しない（破壊行為になる）
+                # 'doc_type': doc_type,
+                # 'workspace': workspace_to_use,
                 'summary': summary,
                 'metadata': metadata,
                 'embedding': embedding,
