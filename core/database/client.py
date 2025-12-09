@@ -283,9 +283,9 @@ class DatabaseClient:
             import traceback
             traceback.print_exc()
 
-            # フォールバック: 従来のベクトル検索
+            # フォールバック: 従来のベクトル検索（workspaceフィルタなし）
             print("[WARNING] フォールバックモード: match_documents を使用")
-            return await self._fallback_vector_search(embedding, limit, workspace)
+            return await self._fallback_vector_search(embedding, limit, None)
 
     async def _fallback_vector_search(
         self,
