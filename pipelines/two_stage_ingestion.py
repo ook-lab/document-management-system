@@ -249,116 +249,112 @@ class TwoStageIngestionPipeline:
             logger.info(f"[Stage 1] 完了: doc_type={doc_type}, workspace={workspace_detected}, confidence={stage1_confidence:.2f}")
 
             # ============================================
-            # テキスト抽出が失敗した場合の処理
+            # テキスト抽出が失敗した場合でもsummaryを使用
             # ============================================
             if not extraction_result["success"]:
+                logger.warning("[テキスト抽出] 失敗 → summaryをfull_textとして使用")
                 extracted_text = summary
+
+            # ============================================
+            # Stage 2判定・実行（テキスト抽出失敗でも実行）
+            # ============================================
+            if self._should_run_stage2(stage1_result, extracted_text):
+                logger.info("[Stage 2] Claude詳細抽出開始...")
+                try:
+                    stage2_result = self.stage2_extractor.extract_metadata(
+                        full_text=extracted_text,
+                        file_name=file_name,
+                        stage1_result=stage1_result,
+                        workspace=workspace_detected
+                    )
+
+                    # Stage 2の結果を反映
+                    doc_type = stage2_result.get('doc_type', doc_type)
+                    summary = stage2_result.get('summary', summary)
+                    document_date = stage2_result.get('document_date')
+                    tags = stage2_result.get('tags', [])
+                    tables = stage2_result.get('tables', [])  # 表データを取得
+                    stage2_metadata = stage2_result.get('metadata', {})
+                    stage2_confidence = stage2_result.get('extraction_confidence', 0.0)
+
+                    # metadataをマージ（Stage 2優先）
+                    metadata = {
+                        **base_metadata,
+                        **stage2_metadata,
+                        'stage2_attempted': True
+                    }
+                    if tags:
+                        metadata['tags'] = tags
+                    if document_date:
+                        metadata['document_date'] = document_date
+                    if tables:
+                        metadata['tables'] = tables  # 表データをmetadataに追加
+
+                    # 最終的な信頼度（Stage 1とStage 2の加重平均）
+                    confidence = (stage1_confidence * 0.3 + stage2_confidence * 0.7)
+                    processing_stage = 'stage1_and_stage2'
+                    stage2_model = 'claude-haiku-4-5-20251001'  # 最新のHaiku 4.5モデル
+
+                    logger.info(f"[Stage 2] 完了: confidence={stage2_confidence:.2f}, metadata_fields={len(stage2_metadata)}")
+
+                    # ============================================
+                    # JSON Schema検証（Phase 2 - Track 1）
+                    # ============================================
+                    logger.info("[JSON検証] メタデータ検証開始...")
+                    is_valid, validation_error = validate_metadata(
+                        metadata=stage2_metadata,
+                        doc_type=doc_type
+                    )
+
+                    if not is_valid:
+                        # 検証失敗時の処理
+                        # KeyError回避: エラーメッセージを安全に文字列化
+                        safe_validation_error = str(validation_error).replace('{', '{{').replace('}', '}}')
+                        logger.error(f"[JSON検証] 検証失敗: {safe_validation_error}")
+
+                        # metadataに検証失敗情報を記録
+                        metadata['schema_validation'] = {
+                            'is_valid': False,
+                            'error_message': validation_error,
+                            'validated_at': datetime.now().isoformat()
+                        }
+
+                        # 信頼度を減点（検証失敗は重大な品質問題）
+                        confidence = confidence * 0.8  # 20%減点
+                        logger.warning(f"[JSON検証] 信頼度を減点: {confidence:.2f} (検証失敗のため)")
+                    else:
+                        logger.info("[JSON検証] [OK] 検証成功")
+                        metadata['schema_validation'] = {
+                            'is_valid': True,
+                            'validated_at': datetime.now().isoformat()
+                        }
+
+                except Exception as e:
+                    error_msg = str(e)
+                    error_traceback = traceback.format_exc()
+                    # KeyError回避: エラーメッセージを安全に文字列化
+                    safe_error_msg = error_msg.replace('{', '{{').replace('}', '}}')
+                    safe_traceback = error_traceback.replace('{', '{{').replace('}', '}}')
+                    logger.error(f"[Stage 2] 処理エラー: {safe_error_msg}\n{safe_traceback}")
+
+                    # エラー情報をmetadataに記録
+                    metadata = {
+                        **base_metadata,
+                        'stage2_attempted': True,
+                        'stage2_error': str(e),
+                        'stage2_error_type': type(e).__name__,
+                        'stage2_error_timestamp': datetime.now().isoformat()
+                    }
+
+                    confidence = stage1_confidence
+                    processing_stage = 'stage2_failed'
+                    stage2_model = None
+            else:
+                # Stage 1のみで完結
                 confidence = stage1_confidence
                 processing_stage = 'stage1_only'
-                metadata = {}
+                metadata = {**base_metadata, 'stage2_attempted': False}
                 stage2_model = None
-            else:
-                
-                # ============================================
-                # Stage 2判定・実行
-                # ============================================
-                if self._should_run_stage2(stage1_result, extracted_text):
-                    logger.info("[Stage 2] Claude詳細抽出開始...")
-                    try:
-                        stage2_result = self.stage2_extractor.extract_metadata(
-                            full_text=extracted_text,
-                            file_name=file_name,
-                            stage1_result=stage1_result,
-                            workspace=workspace_detected
-                        )
-                        
-                        # Stage 2の結果を反映
-                        doc_type = stage2_result.get('doc_type', doc_type)
-                        summary = stage2_result.get('summary', summary)
-                        document_date = stage2_result.get('document_date')
-                        tags = stage2_result.get('tags', [])
-                        tables = stage2_result.get('tables', [])  # 表データを取得
-                        stage2_metadata = stage2_result.get('metadata', {})
-                        stage2_confidence = stage2_result.get('extraction_confidence', 0.0)
-
-                        # metadataをマージ（Stage 2優先）
-                        metadata = {
-                            **base_metadata,
-                            **stage2_metadata,
-                            'stage2_attempted': True
-                        }
-                        if tags:
-                            metadata['tags'] = tags
-                        if document_date:
-                            metadata['document_date'] = document_date
-                        if tables:
-                            metadata['tables'] = tables  # 表データをmetadataに追加
-                        
-                        # 最終的な信頼度（Stage 1とStage 2の加重平均）
-                        confidence = (stage1_confidence * 0.3 + stage2_confidence * 0.7)
-                        processing_stage = 'stage1_and_stage2'
-                        stage2_model = 'claude-haiku-4-5-20251001'  # 最新のHaiku 4.5モデル
-
-                        logger.info(f"[Stage 2] 完了: confidence={stage2_confidence:.2f}, metadata_fields={len(stage2_metadata)}")
-
-                        # ============================================
-                        # JSON Schema検証（Phase 2 - Track 1）
-                        # ============================================
-                        logger.info("[JSON検証] メタデータ検証開始...")
-                        is_valid, validation_error = validate_metadata(
-                            metadata=stage2_metadata,
-                            doc_type=doc_type
-                        )
-
-                        if not is_valid:
-                            # 検証失敗時の処理
-                            # KeyError回避: エラーメッセージを安全に文字列化
-                            safe_validation_error = str(validation_error).replace('{', '{{').replace('}', '}}')
-                            logger.error(f"[JSON検証] 検証失敗: {safe_validation_error}")
-
-                            # metadataに検証失敗情報を記録
-                            metadata['schema_validation'] = {
-                                'is_valid': False,
-                                'error_message': validation_error,
-                                'validated_at': datetime.now().isoformat()
-                            }
-
-                            # 信頼度を減点（検証失敗は重大な品質問題）
-                            confidence = confidence * 0.8  # 20%減点
-                            logger.warning(f"[JSON検証] 信頼度を減点: {confidence:.2f} (検証失敗のため)")
-                        else:
-                            logger.info("[JSON検証] [OK] 検証成功")
-                            metadata['schema_validation'] = {
-                                'is_valid': True,
-                                'validated_at': datetime.now().isoformat()
-                            }
-
-                    except Exception as e:
-                        error_msg = str(e)
-                        error_traceback = traceback.format_exc()
-                        # KeyError回避: エラーメッセージを安全に文字列化
-                        safe_error_msg = error_msg.replace('{', '{{').replace('}', '}}')
-                        safe_traceback = error_traceback.replace('{', '{{').replace('}', '}}')
-                        logger.error(f"[Stage 2] 処理エラー: {safe_error_msg}\n{safe_traceback}")
-
-                        # エラー情報をmetadataに記録
-                        metadata = {
-                            **base_metadata,
-                            'stage2_attempted': True,
-                            'stage2_error': str(e),
-                            'stage2_error_type': type(e).__name__,
-                            'stage2_error_timestamp': datetime.now().isoformat()
-                        }
-
-                        confidence = stage1_confidence
-                        processing_stage = 'stage2_failed'
-                        stage2_model = None
-                else:
-                    # Stage 1のみで完結
-                    confidence = stage1_confidence
-                    processing_stage = 'stage1_only'
-                    metadata = {**base_metadata, 'stage2_attempted': False}
-                    stage2_model = None
 
             # ============================================
             # 複合信頼度計算（Phase 2 - Track 1）
