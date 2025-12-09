@@ -7,8 +7,8 @@ import os
 from typing import List, Dict, Any, Optional, Union
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-from io import FileIO
+from googleapiclient.http import MediaIoBaseDownload, MediaFileUpload, MediaInMemoryUpload
+from io import FileIO, BytesIO
 from loguru import logger
 from pathlib import Path
 
@@ -110,26 +110,44 @@ class GoogleDriveConnector:
             dest_path.parent.mkdir(parents=True, exist_ok=True)
 
             # DriveのMIMEタイプをチェックし、Google Docs形式の場合はエクスポート
-            file_metadata = self.service.files().get(fileId=file_id, fields='mimeType').execute()
+            # ★重要: 共有ドライブや他人所有のファイルにアクセスするためのフラグ
+            file_metadata = self.service.files().get(
+                fileId=file_id,
+                fields='mimeType',
+                supportsAllDrives=True
+            ).execute()
             mime_type = file_metadata['mimeType']
             logger.info(f"ファイルMIMEタイプ: {mime_type}")
 
             request = None
             if mime_type == 'application/vnd.google-apps.document':
                 # Google Docs -> DOCXとしてエクスポート
-                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document')
+                request = self.service.files().export(
+                    fileId=file_id,
+                    mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                )
                 dest_path = dest_path.with_suffix('.docx')
             elif mime_type == 'application/vnd.google-apps.spreadsheet':
                 # Google Sheets -> XLSXとしてエクスポート
-                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
+                request = self.service.files().export(
+                    fileId=file_id,
+                    mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                )
                 dest_path = dest_path.with_suffix('.xlsx')
             elif mime_type == 'application/vnd.google-apps.presentation':
                 # Google Slides -> PPTXとしてエクスポート
-                request = self.service.files().export(fileId=file_id, mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation')
+                request = self.service.files().export(
+                    fileId=file_id,
+                    mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                )
                 dest_path = dest_path.with_suffix('.pptx')
             else:
                 # 通常のファイル (PDF, DOCXなど) はダウンロード
-                request = self.service.files().get_media(fileId=file_id)
+                # ★重要: 共有ドライブや他人所有のファイルにアクセスするためのフラグ
+                request = self.service.files().get_media(
+                    fileId=file_id,
+                    supportsAllDrives=True
+                )
 
             with open(dest_path, 'wb') as fh:
                 downloader = MediaIoBaseDownload(fh, request)
@@ -143,8 +161,13 @@ class GoogleDriveConnector:
             return str(dest_path)
 
         except Exception as e:
-            logger.error(f"ファイルダウンロードエラー ({file_name}): {e}", exc_info=True)
-            return None
+            # loguruのフォーマットエラーを回避するため、文字列連結を使用
+            logger.error("ファイルダウンロードエラー: " + file_name)
+            logger.error(f"エラー内容: {str(e)}")
+            logger.error(f"エラータイプ: {type(e).__name__}")
+            logger.debug("エラー詳細", exc_info=True)
+            # エラーを再スローして呼び出し側で処理できるようにする
+            raise
 
     def get_inbox_folder_id(self) -> Optional[str]:
         """
@@ -238,4 +261,159 @@ class GoogleDriveConnector:
 
         except Exception as e:
             logger.error(f"ファイル移動エラー ({file_id}): {e}")
+            return False
+
+    def upload_file(
+        self,
+        file_content: Union[bytes, str],
+        file_name: str,
+        mime_type: str,
+        folder_id: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        ファイルをGoogle Driveにアップロード（共有ドライブ対応）
+
+        Args:
+            file_content: ファイルの内容（バイトまたは文字列）
+            file_name: ファイル名
+            mime_type: MIMEタイプ（例: 'text/html', 'application/pdf'）
+            folder_id: 保存先フォルダID（Noneの場合はルート）
+
+        Returns:
+            アップロードされたファイルのID、失敗時はNone
+        """
+        try:
+            # ファイルメタデータ
+            file_metadata = {'name': file_name}
+            if folder_id:
+                file_metadata['parents'] = [folder_id]
+
+            # 文字列の場合はバイトに変換
+            if isinstance(file_content, str):
+                file_content = file_content.encode('utf-8')
+
+            # メモリ上のデータからアップロード
+            media = MediaInMemoryUpload(
+                file_content,
+                mimetype=mime_type,
+                resumable=True
+            )
+
+            # 共有ドライブ対応: supportsAllDrives=True を追加
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, name, webViewLink',
+                supportsAllDrives=True
+            ).execute()
+
+            logger.info(f"ファイルアップロード成功: {file_name} (ID: {file['id']})")
+            return file['id']
+
+        except Exception as e:
+            logger.error(f"ファイルアップロードエラー ({file_name}): {e}")
+            return None
+
+    def upload_file_from_path(
+        self,
+        file_path: Union[str, Path],
+        folder_id: Optional[str] = None,
+        mime_type: Optional[str] = None
+    ) -> Optional[str]:
+        """
+        ローカルファイルをGoogle Driveにアップロード（共有ドライブ対応）
+
+        Args:
+            file_path: ローカルファイルのパス
+            folder_id: 保存先フォルダID（Noneの場合はルート）
+            mime_type: MIMEタイプ（Noneの場合は自動判定）
+
+        Returns:
+            アップロードされたファイルのID、失敗時はNone
+        """
+        try:
+            file_path = Path(file_path)
+            if not file_path.exists():
+                logger.error(f"ファイルが見つかりません: {file_path}")
+                return None
+
+            # ファイルメタデータ
+            file_metadata = {'name': file_path.name}
+            if folder_id:
+                file_metadata['parents'] = [folder_id]
+
+            # MIMEタイプの自動判定
+            if mime_type is None:
+                import mimetypes
+                mime_type, _ = mimetypes.guess_type(str(file_path))
+                mime_type = mime_type or 'application/octet-stream'
+
+            # ファイルからアップロード
+            media = MediaFileUpload(
+                str(file_path),
+                mimetype=mime_type,
+                resumable=True
+            )
+
+            # 共有ドライブ対応: supportsAllDrives=True を追加
+            file = self.service.files().create(
+                body=file_metadata,
+                media_body=media,
+                fields='id, name, webViewLink',
+                supportsAllDrives=True
+            ).execute()
+
+            logger.info(f"ファイルアップロード成功: {file_path.name} (ID: {file['id']})")
+            return file['id']
+
+        except Exception as e:
+            logger.error(f"ファイルアップロードエラー ({file_path}): {e}")
+            return None
+
+    def trash_file(self, file_id: str) -> bool:
+        """
+        ファイルをゴミ箱に移動（安全な削除）
+
+        Args:
+            file_id: ゴミ箱に移動するファイルのID
+
+        Returns:
+            成功した場合True、失敗した場合False
+        """
+        try:
+            # trashedフラグをTrueに設定してゴミ箱に移動
+            self.service.files().update(
+                fileId=file_id,
+                body={'trashed': True},
+                supportsAllDrives=True
+            ).execute()
+
+            logger.info(f"ファイルをゴミ箱に移動しました: {file_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"ファイルのゴミ箱移動エラー ({file_id}): {e}")
+            return False
+
+    def delete_file_permanently(self, file_id: str) -> bool:
+        """
+        ファイルを完全に削除（復元不可能）
+
+        Args:
+            file_id: 完全に削除するファイルのID
+
+        Returns:
+            成功した場合True、失敗した場合False
+        """
+        try:
+            self.service.files().delete(
+                fileId=file_id,
+                supportsAllDrives=True
+            ).execute()
+
+            logger.info(f"ファイルを完全に削除しました: {file_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"ファイルの完全削除エラー ({file_id}): {e}")
             return False

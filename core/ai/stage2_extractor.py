@@ -54,17 +54,19 @@ class Stage2Extractor:
         full_text: str,
         file_name: str,
         stage1_result: Dict,
-        workspace: str = "personal"
+        workspace: str = "personal",
+        tier: str = "stage2_extraction"
     ) -> Dict:
         """
         詳細メタデータを抽出
-        
+
         Args:
             full_text: 抽出済みテキスト
             file_name: ファイル名
             stage1_result: Stage 1結果
             workspace: ワークスペース
-        
+            tier: モデル階層（デフォルト: "stage2_extraction"、メール用: "email_stage2_extraction"）
+
         Returns:
             抽出結果辞書:
             {
@@ -77,20 +79,21 @@ class Stage2Extractor:
             }
         """
         doc_type = stage1_result.get("doc_type", "other")
-        
-        logger.info(f"[Stage 2] 詳細抽出開始: doc_type={doc_type}")
-        
+
+        logger.info(f"[Stage 2] 詳細抽出開始: doc_type={doc_type}, tier={tier}")
+
         prompt = self._build_extraction_prompt(
             full_text=full_text,
             file_name=file_name,
             doc_type=doc_type,
             workspace=workspace,
-            stage1_confidence=stage1_result.get("confidence", 0.0)
+            stage1_confidence=stage1_result.get("confidence", 0.0),
+            tier=tier
         )
-        
+
         try:
             response = self.llm.call_model(
-                tier="stage2_extraction",
+                tier=tier,
                 prompt=prompt
             )
 
@@ -101,10 +104,10 @@ class Stage2Extractor:
             # JSON抽出（リトライ機能付き）
             content = response.get("content", "")
 
-            # ✅ DEBUG: Claude から得られた生のコンテンツ全体を出力
-            logger.debug(f"[Stage 2 Input] Raw Claude response content starts with: {content[:500]}")
+            # ✅ DEBUG: LLM から得られた生のコンテンツ全体を出力
+            logger.debug(f"[Stage 2 Input] Raw LLM response content starts with: {content[:500]}")
 
-            result = self._extract_json_with_retry(content, tier="stage2_extraction", max_retries=2)
+            result = self._extract_json_with_retry(content, tier=tier, max_retries=2)
             
             # doc_typeの上書き(Stage 2の方が精度高い可能性)
             result["doc_type"] = result.get("doc_type", doc_type)
@@ -128,7 +131,8 @@ class Stage2Extractor:
         file_name: str,
         doc_type: str,
         workspace: str,
-        stage1_confidence: float
+        stage1_confidence: float,
+        tier: str = "stage2_extraction"
     ) -> str:
         """抽出プロンプト生成"""
         
@@ -138,11 +142,19 @@ class Stage2Extractor:
         # 表構造抽出テンプレートをロード (Phase 2.2.2)
         table_extraction_guidelines = self._load_table_extraction_template()
 
-        # テキストを適切な長さに切り詰め (Claudeのコンテキスト制限を考慮)
-        max_text_length = 8000
+        # テキストを適切な長さに切り詰め
+        # Claude 4.5 Haikuは200Kトークン対応のため、大幅に拡張
+        if tier == "email_stage2_extraction":
+            max_text_length = 20000  # メール用: 拡張（5000→20000）
+        else:
+            max_text_length = 30000  # PDF用: 大幅拡張（8000→30000）
+
+        # 切り捨てが発生する場合は警告ログを出力
         truncated_text = full_text[:max_text_length]
         if len(full_text) > max_text_length:
             truncated_text += "\n\n...(以下省略)..."
+            logger.warning(f"[Stage 2] テキストが長すぎるため切り詰めました: {len(full_text)} → {max_text_length} 文字")
+            logger.warning(f"[Stage 2] 切り捨てられた文字数: {len(full_text) - max_text_length} 文字")
 
         prompt = f"""あなたは文書分析の専門家です。以下の文書から詳細な情報を抽出し、JSON形式で回答してください。
 
@@ -325,10 +337,6 @@ class Stage2Extractor:
          ]
        }
      ],
-     "important_notes": [
-       "短い箇条書きの連絡事項1（原文そのまま）",
-       "短い箇条書きの連絡事項2（原文そのまま）"
-     ],
      "special_events": [
        "特別イベント1",
        "特別イベント2"
@@ -337,15 +345,17 @@ class Stage2Extractor:
 
    【データ振り分けルール - 必ず守ること】:
 
-   1. **text_blocks**: まとまった文章セクション（見出し+本文）
-      - 朝会の話、今日のふりかえり、道徳の内容、先生からのメッセージなど
-      - 学級通信や学年通信の記事、お知らせ本文など
-      - 見出しが明確にあり、その後に長めの文章が続く場合
+   1. **text_blocks**: すべてのテキストコンテンツをトピックごとに分けたもの
+      - 朝会の話、今日のふりかえり、道徳の内容、先生からのメッセージ、連絡事項、お知らせなど
+      - 学級通信や学年通信の記事、お知らせ本文、箇条書きの連絡事項など
+      - **すべてのテキスト**（長文でも短い箇条書きでも）を text_blocks に含めてください
+      - 見出しがない場合は適切なタイトルをつけてください（例: 「連絡事項」「お知らせ」「持ち物について」）
       - title（見出し）と content（本文全文）のペアで記録
       - **content は一切省略せず、原文そのまま全文を記録**
       - 例: [
           {"title": "朝会「マナーとルールについて」", "content": "今週の朝会では、学校生活におけるマナーとルールについて話しました...（全文）"},
-          {"title": "今日のふりかえり", "content": "今日は算数の時間に分数の計算を学びました...（全文）"}
+          {"title": "今日のふりかえり", "content": "今日は算数の時間に分数の計算を学びました...（全文）"},
+          {"title": "連絡事項", "content": "11月20日(水)は遠足のため弁当を持参してください。雨天の場合は通常授業となります。"}
         ]
 
    2. **weekly_schedule**: 日ごとの時間割・スケジュール（時間割表、週間予定表）
@@ -368,17 +378,13 @@ class Stage2Extractor:
    4. **basic_info**: 学校名、学年、発行日、対象期間などの基本情報
       - 文書の一番上に記載されている学校名や学年、日付を抽出
 
-   5. **important_notes**: 短い箇条書きの連絡事項
-      - 「11月20日(水)は遠足のため弁当を持参してください」のような短い文
-      - 原文そのまま配列に格納（要約・言い換え厳禁）
-
-   6. **special_events**: 特別イベント・行事
+   5. **special_events**: 特別イベント・行事
       - 通常授業以外の特別な予定
 
    【絶対原則】:
    - **情報の欠損・省略は一切禁止**
    - 原文の全量を構造化データに落とし込む
-   - **要約・言い換えは厳禁**（特に text_blocks の content、important_notes、note フィールド）
+   - **要約・言い換えは厳禁**（特に text_blocks の content、note フィールド）
    - **【配列フィールドの完全抽出】**: text_blocks, weekly_schedule, structured_tables などの配列フィールドは、表内の**全ての行**を抽出すること（一部だけを代表例として抽出し、残りを省略することは絶対に禁止）
    - 日付は必ず YYYY-MM-DD 形式で統一
    - 見つからない情報は null または空のリスト [] を設定
@@ -421,37 +427,28 @@ class Stage2Extractor:
      ※科目名だけでなく、括弧内の説明（例: 「算数（持ち物:定規）」）や詳細情報も全て含めてください
    - special_events: 特別な予定やイベント（該当する場合のみ）
      ※原文そのままリスト化してください。省略・要約は厳禁です
-   - important_notes: 連絡事項・注意事項のリスト（該当する場合のみ）
-     【絶対原則: 情報の完全性】
-     - 時間割表の外に記載されている**全ての**文章・段落を、原文そのままリスト化してください
-     - 対象: 連絡事項、持ち物、注意事項、行事の詳細、保護者へのお知らせ、コメント、備考など
-     - **要約・省略・言い換えは厳禁**: 「11月20日(水)は遠足のため弁当を持参してください。雨天の場合は通常授業となります」のように、
-       文書に書かれている文章を一切省略せず、そのまま格納してください
-     - 文末の「です・ます」などもそのまま残してください
-     - 1つの段落が長くても、全文を1つの配列要素として入れてください
-     例: ["11月20日(水)は遠足のため弁当を持参してください。雨天の場合は通常授業となります。",
-          "体操服は毎週金曜日に持ち帰り、週末に洗濯をお願いします。",
-          "漢字テストは11月22日(金)の1時間目に実施します。範囲は教科書p.50-60です。"]
-   - text_blocks: 文章セクション（記事ブロック）のリスト（該当する場合のみ）
-     【役割分担: 表データとまとまった文章を分離】
-     - 表以外の場所にある、まとまった文章セクションを抽出してください
-     - 各セクションは「見出し（title）」と「本文（content）」のペアで構成されます
-     - 対象となる文章セクション:
-       * 朝会の話（例: 朝会「マナーとルールについて」）
-       * 道徳の内容
-       * 今日のふりかえり / 今週のふりかえり
-       * 先生からのメッセージ / コラム
-       * 学習のまとめ
-       * その他、見出しと本文が明確にセットになっている記事・エッセイ的な文章
-     - 抽出方法:
-       * 見出し（太字、大きな文字、「」で囲まれている部分など）を `title` に設定
-       * その直後に続く文章全体を `content` に設定（一切省略せず、原文そのまま）
-       * content は長文でもOK（複数段落にまたがっても全文を格納）
+  - text_blocks: すべてのテキストコンテンツをトピックごとに分けたもの（該当する場合のみ）
+    【重要】表以外のすべてのテキスト（長文でも短い箇条書きでも）を text_blocks に含めてください
+    - 各セクションは「見出し（title）」と「本文（content）」のペアで構成されます
+    - 対象となる文章セクション（すべて含める）:
+      * 朝会の話（例: 朝会「マナーとルールについて」）
+      * 道徳の内容
+      * 今日のふりかえり / 今週のふりかえり
+      * 先生からのメッセージ / コラム
+      * 学習のまとめ
+      * 連絡事項 / お知らせ（短い箇条書きでもOK）
+      * 持ち物・注意事項
+      * その他、すべてのテキストセクション
+    - 抽出方法:
+      * 見出しがある場合は、見出し（太字、大きな文字、「」で囲まれている部分など）を `title` に設定
+      * 見出しがない場合は、適切なタイトルをつける（例: 「連絡事項」「お知らせ」「持ち物について」）
+      * その内容全体を `content` に設定（一切省略せず、原文そのまま）
+      * content は長文でもOK、短い箇条書きでもOK（複数段落にまたがっても全文を格納）
+
      例: [
        {"title": "朝会「マナーとルールについて」", "content": "今週の朝会では、学校生活におけるマナーとルールについて話しました。廊下を走らないこと、友達に優しくすること...（全文）"},
        {"title": "今日のふりかえり", "content": "今日は算数の時間に分数の計算を学びました。最初は難しかったですが...（全文）"}
      ]
-     ※important_notes との使い分け: 短い箇条書きは important_notes、見出し付きのまとまった文章は text_blocks へ
      【重要】daily_scheduleは通常授業を含む全ての時間割を抽出してください。
    算数、国語、理科、社会などの通常科目も必ず含めてください。
             """,

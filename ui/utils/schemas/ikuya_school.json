@@ -215,8 +215,8 @@
     },
     "text_blocks": {
       "type": ["array", "null"],
-      "title": "文章セクション（記事ブロック）",
-      "description": "表以外の場所にある、まとまった文章セクション（朝会の話、振り返り、道徳の内容など）。テキストと表の論理的分離。",
+      "title": "文章セクション（トピックごと）",
+      "description": "文書内のすべてのテキストコンテンツをトピックごとに分けたもの（朝会の話、振り返り、道徳、連絡事項、お知らせなど、すべてのテキストセクション）。テキストと表の論理的分離。",
       "items": {
         "type": "object",
         "properties": {
@@ -232,14 +232,6 @@
           }
         },
         "required": ["title", "content"]
-      }
-    },
-    "important_notes": {
-      "type": ["array", "null"],
-      "title": "連絡事項・重要事項",
-      "description": "箇条書きの連絡事項や注意事項（原文そのまま）",
-      "items": {
-        "type": "string"
       }
     }
   },

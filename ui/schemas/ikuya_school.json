@@ -189,14 +189,6 @@
         "required": ["rows"]
       }
     },
-    "important_notes": {
-      "type": ["array", "null"],
-      "title": "連絡事項・重要事項",
-      "description": "箇条書きの連絡事項や注意事項（原文そのまま）",
-      "items": {
-        "type": "string"
-      }
-    },
     "special_events": {
       "type": ["array", "null"],
       "title": "特別イベント",

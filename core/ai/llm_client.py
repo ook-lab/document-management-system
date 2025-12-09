@@ -46,6 +46,106 @@ class LLMClient:
         else:
             self.openai_client = None
     
+    def generate_with_images(
+        self,
+        prompt: str,
+        image_data: Union[str, List[str]],
+        model: str = "gemini-2.0-flash-lite",
+        temperature: float = 0.0,
+        max_tokens: int = 2048
+    ) -> str:
+        """
+        画像データを使ってGemini Vision APIを呼び出し
+
+        Args:
+            prompt: プロンプト
+            image_data: Base64エンコードされた画像データ（単一または複数）
+            model: モデル名
+            temperature: 温度パラメータ
+            max_tokens: 最大トークン数
+
+        Returns:
+            生成されたテキスト
+        """
+        import base64
+
+        if not self.gemini_api_key:
+            raise ValueError("Gemini API key is missing")
+
+        try:
+            model_obj = genai.GenerativeModel(model)
+
+            # 画像データをリスト化
+            if isinstance(image_data, str):
+                image_data_list = [image_data]
+            else:
+                image_data_list = image_data
+
+            # コンテンツパーツを構築
+            content_parts = [prompt]
+
+            # 画像を追加
+            for img_base64 in image_data_list:
+                # Base64をバイトにデコード
+                img_bytes = base64.b64decode(img_base64)
+
+                # Geminiの画像形式に変換
+                image_part = {
+                    'mime_type': 'image/png',
+                    'data': img_bytes
+                }
+                content_parts.append(image_part)
+
+            # 安全フィルター設定
+            safety_settings = [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ]
+
+            # APIを呼び出し
+            response = model_obj.generate_content(
+                content_parts,
+                generation_config=genai.GenerationConfig(
+                    max_output_tokens=max_tokens,
+                    temperature=temperature
+                ),
+                safety_settings=safety_settings
+            )
+
+            # レスポンスの検証
+            if not response.candidates:
+                raise ValueError("Gemini returned no candidates")
+
+            candidate = response.candidates[0]
+
+            # finish_reason をチェック
+            if candidate.finish_reason != 1:  # 1 = STOP (正常終了)
+                finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
+                error_details = {
+                    "finish_reason": candidate.finish_reason,
+                    "finish_reason_name": finish_reason_name
+                }
+                if hasattr(candidate, 'safety_ratings') and candidate.safety_ratings:
+                    error_details["safety_ratings"] = [
+                        {
+                            "category": rating.category.name if hasattr(rating.category, 'name') else str(rating.category),
+                            "probability": rating.probability.name if hasattr(rating.probability, 'name') else str(rating.probability)
+                        }
+                        for rating in candidate.safety_ratings
+                    ]
+                logger.error(f"Gemini Vision失敗: {error_details}")
+                raise ValueError(f"Gemini finish_reason: {finish_reason_name} ({candidate.finish_reason})")
+
+            # テキストを取得
+            text_content = candidate.content.parts[0].text if candidate.content.parts else ""
+            return text_content
+
+        except Exception as e:
+            logger.error(f"Gemini Vision API エラー: {e}")
+            raise
+
     def call_model(
         self,
         tier: str,
@@ -55,13 +155,13 @@ class LLMClient:
     ) -> Dict[str, Any]:
         """
         指定されたタスクに最適なモデルを呼び出し
-        
+
         Args:
             tier: モデル階層("stage1_classification", "stage2_extraction", "ui_response")
             prompt: プロンプト
             file_path: ファイルパス (GeminiのStage 1分類用)
             **kwargs: 追加パラメータ
-        
+
         Returns:
             モデルレスポンス
         """
@@ -89,7 +189,7 @@ class LLMClient:
             if not self.openai_client:
                 return {"success": False, "error": "OpenAI API key is missing", "model": model_name}
             return self._call_openai(model_name, prompt, config, **kwargs)
-        
+
         else:
             raise ValueError(f"未対応のプロバイダー: {provider}")
 
@@ -332,9 +432,9 @@ class LLMClient:
         if not self.gemini_api_key:
             return {"success": False, "error": "Gemini API key is missing", "model": "gemini-2.5-flash"}
 
-        # Gemini Flash を使用（画像処理に最適）
+        # Gemini 2.5 Pro を使用（Vision処理の精度向上）
         return self._call_gemini(
-            model_name="gemini-2.5-flash",
+            model_name="gemini-2.5-pro",
             prompt=prompt,
             file_path=image_path,
             config={

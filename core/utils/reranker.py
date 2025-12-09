@@ -96,8 +96,14 @@ class Reranker:
         text_key: str
     ) -> List[Dict[str, Any]]:
         """Cohere Rerankを使用した再スコアリング"""
-        # ドキュメントのテキストを抽出
-        texts = [doc.get(text_key, "") for doc in documents]
+        # ドキュメントのテキストを抽出（Noneを空文字列に変換）
+        texts = []
+        for doc in documents:
+            text = doc.get(text_key) or ""
+            # テキストが文字列でない場合は空文字列に変換
+            if not isinstance(text, str):
+                text = ""
+            texts.append(text)
 
         # Cohere Rerank API呼び出し
         response = self.client.rerank(
@@ -129,8 +135,14 @@ class Reranker:
             logger.warning("[Reranker] モデルが初期化されていません")
             return documents[:top_k]
 
-        # クエリとドキュメントのペアを作成
-        pairs = [[query, doc.get(text_key, "")] for doc in documents]
+        # クエリとドキュメントのペアを作成（Noneを空文字列に変換）
+        pairs = []
+        for doc in documents:
+            text = doc.get(text_key) or ""
+            # テキストが文字列でない場合は空文字列に変換
+            if not isinstance(text, str):
+                text = ""
+            pairs.append([query, text])
 
         # スコアを計算
         scores = self.model.predict(pairs)

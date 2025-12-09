@@ -254,6 +254,67 @@
             font-size: 0.8em;
         }
 
+        /* ✅ Classroom投稿専用スタイル */
+        .classroom-post {
+            background: #f8f9ff;
+            border-left: 4px solid #4285f4;
+            margin-top: 10px;
+            padding: 12px;
+            border-radius: 6px;
+        }
+
+        .classroom-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+            font-size: 0.85em;
+            color: #666;
+        }
+
+        .classroom-sender {
+            font-weight: 600;
+            color: #4285f4;
+        }
+
+        .classroom-date {
+            color: #999;
+        }
+
+        .classroom-body {
+            color: #333;
+            line-height: 1.6;
+            margin-bottom: 10px;
+            white-space: pre-wrap;
+            font-size: 0.9em;
+        }
+
+        .classroom-attachments {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 10px;
+        }
+
+        .attachment-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 12px;
+            background: #4285f4;
+            color: white;
+            text-decoration: none;
+            border-radius: 6px;
+            font-size: 0.85em;
+            transition: all 0.3s;
+        }
+
+        .attachment-link:hover {
+            background: #3367d6;
+            transform: translateY(-1px);
+            box-shadow: 0 3px 8px rgba(66, 133, 244, 0.3);
+        }
+
         .error-message {
             background: #fee;
             border-left: 4px solid #f44;
@@ -267,6 +328,306 @@
             text-align: center;
             padding: 40px;
             color: #999;
+        }
+
+        /* ✅ フィルターチップ */
+        .filter-chips {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            flex-wrap: wrap;
+            margin-bottom: 15px;
+        }
+
+        .chip {
+            padding: 8px 15px;
+            border: 1px solid #e0e0e0;
+            border-radius: 20px;
+            background: white;
+            font-size: 14px;
+            cursor: pointer;
+            transition: all 0.3s;
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+        }
+
+        .chip-filter {
+            background: #667eea;
+            color: white;
+            border-color: #667eea;
+        }
+
+        .chip-filter:hover {
+            background: #5568d3;
+            transform: translateY(-1px);
+        }
+
+        .chip-active {
+            background: #f0f0f0;
+            border-color: #667eea;
+            color: #667eea;
+            padding-right: 8px;
+        }
+
+        .chip-active .remove-chip {
+            margin-left: 5px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .active-filters {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+
+        /* ✅ Bottom Sheet */
+        .bottom-sheet-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.5);
+            opacity: 0;
+            visibility: hidden;
+            transition: all 0.3s;
+            z-index: 999;
+        }
+
+        .bottom-sheet-overlay.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .bottom-sheet {
+            position: fixed;
+            bottom: -100%;
+            left: 0;
+            right: 0;
+            background: white;
+            border-radius: 20px 20px 0 0;
+            box-shadow: 0 -5px 20px rgba(0, 0, 0, 0.3);
+            transition: bottom 0.3s ease;
+            z-index: 1000;
+            max-height: 80vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .bottom-sheet.active {
+            bottom: 0;
+        }
+
+        .sheet-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 20px 20px 15px;
+            border-bottom: 1px solid #e0e0e0;
+        }
+
+        .sheet-header h3 {
+            margin: 0;
+            font-size: 1.2em;
+            color: #333;
+        }
+
+        .btn-close {
+            background: none;
+            border: none;
+            font-size: 28px;
+            color: #999;
+            cursor: pointer;
+            padding: 0;
+            width: 30px;
+            height: 30px;
+            line-height: 1;
+        }
+
+        .sheet-content {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+        }
+
+        .filter-section {
+            margin-bottom: 25px;
+        }
+
+        .filter-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .filter-section h4 {
+            margin: 0;
+            font-size: 1em;
+            color: #555;
+        }
+
+        .btn-clear {
+            background: none;
+            border: none;
+            color: #667eea;
+            font-size: 0.85em;
+            cursor: pointer;
+            text-decoration: underline;
+        }
+
+        .filter-checkboxes {
+            display: grid;
+            gap: 8px;
+        }
+
+        .filter-checkbox {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .filter-checkbox:hover {
+            background: #f8f9ff;
+            border-color: #667eea;
+        }
+
+        .filter-checkbox input[type="checkbox"] {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .filter-checkbox label {
+            flex: 1;
+            cursor: pointer;
+            margin: 0;
+        }
+
+        /* ✅ 階層構造（アコーディオン）用CSS */
+        .hierarchy-container {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .workspace-item {
+            border: 1px solid #e0e0e0;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+
+        .workspace-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 12px;
+            background: #f8f9ff;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .workspace-header:hover {
+            background: #eef1ff;
+        }
+
+        .workspace-toggle {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            transition: transform 0.3s;
+            color: #667eea;
+        }
+
+        .workspace-toggle.expanded {
+            transform: rotate(90deg);
+        }
+
+        .workspace-checkbox {
+            width: 18px;
+            height: 18px;
+            cursor: pointer;
+        }
+
+        .workspace-label {
+            flex: 1;
+            font-weight: 600;
+            color: #333;
+            cursor: pointer;
+        }
+
+        .workspace-count {
+            font-size: 0.85em;
+            color: #999;
+        }
+
+        .workspace-children {
+            max-height: 0;
+            overflow: hidden;
+            transition: max-height 0.3s ease;
+        }
+
+        .workspace-children.expanded {
+            max-height: 1000px; /* 十分に大きな値 */
+        }
+
+        .doc-type-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px 10px 42px; /* 左にインデント */
+            border-top: 1px solid #f0f0f0;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .doc-type-item:hover {
+            background: #f8f9ff;
+        }
+
+        .doc-type-checkbox {
+            width: 16px;
+            height: 16px;
+            cursor: pointer;
+        }
+
+        .doc-type-label {
+            flex: 1;
+            cursor: pointer;
+            font-size: 0.95em;
+            color: #555;
+        }
+
+        .btn-apply {
+            margin: 15px 20px 20px;
+            width: calc(100% - 40px);
+        }
+
+        /* スマホ対応 */
+        @media (max-width: 768px) {
+            .bottom-sheet {
+                max-height: 90vh;
+            }
+
+            .filter-chips {
+                font-size: 13px;
+            }
+
+            .chip {
+                padding: 6px 12px;
+                font-size: 13px;
+            }
         }
     </style>
 </head>
@@ -292,6 +653,14 @@
                     </button>
                 </div>
 
+                <!-- ✅ フィルターチップ -->
+                <div class="filter-chips" id="filterChips">
+                    <button class="chip chip-filter" onclick="openFilterSheet()">
+                        ⚙️ 絞り込み
+                    </button>
+                    <div id="activeFilters" class="active-filters"></div>
+                </div>
+
                 <div class="options">
                     <label>
                         検索件数:
@@ -300,11 +669,34 @@
                     <label>
                         AIモデル:
                         <select id="model-select" style="padding: 5px; border: 1px solid #e0e0e0; border-radius: 4px;">
-                            <option value="gpt-5-mini" selected>GPT-5 mini (高速・安価)</option>
-                            <option value="gpt-5.1">GPT-5.1 (高性能)</option>
+                            <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (デフォルト・高速・安定)</option>
+                            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (超高速・超低コスト)</option>
+                            <option value="gpt-5.1">GPT-5.1 (最高精度・推論)</option>
                         </select>
                     </label>
                 </div>
+            </div>
+
+            <!-- ✅ Bottom Sheet（フィルター選択・階層構造） -->
+            <div class="bottom-sheet-overlay" id="filterSheetOverlay" onclick="closeFilterSheet()"></div>
+            <div class="bottom-sheet" id="filterSheet">
+                <div class="sheet-header">
+                    <h3>検索条件を選択</h3>
+                    <button class="btn-close" onclick="closeFilterSheet()">×</button>
+                </div>
+                <div class="sheet-content">
+                    <div class="filter-section">
+                        <div class="filter-section-header">
+                            <h4>ワークスペース別フィルタ</h4>
+                            <button class="btn-clear" onclick="clearAllFilters()">すべて解除</button>
+                        </div>
+                        <!-- 階層構造（アコーディオン）が動的に生成される -->
+                        <div id="hierarchyFilters" class="hierarchy-container"></div>
+                    </div>
+                </div>
+                <button class="btn btn-primary btn-apply" onclick="applyFilters()">
+                    決定して検索
+                </button>
             </div>
 
             <!-- ローディング -->
@@ -335,6 +727,284 @@
 
     <script>
         let currentDocuments = [];
+        let selectedWorkspaces = [];
+        let selectedDocTypes = [];
+        let hierarchyData = []; // {name: 'workspace', doc_types: [...]}
+
+        // ✅ ページ読み込み時に階層構造を取得
+        window.onload = async function() {
+            try {
+                const response = await fetch('/api/filters');
+                const data = await response.json();
+
+                if (data.success) {
+                    hierarchyData = data.hierarchy || [];
+                    renderHierarchyFilters();
+                    console.log(`[フィルタ読み込み] ${hierarchyData.length} workspaces（階層構造）`);
+                }
+            } catch (error) {
+                console.error('フィルタ取得エラー:', error);
+            }
+        };
+
+        function renderHierarchyFilters() {
+            const container = document.getElementById('hierarchyFilters');
+
+            container.innerHTML = hierarchyData.map(workspace => {
+                const wsId = `ws-${workspace.name}`;
+                const docTypeCount = workspace.doc_types.length;
+
+                return `
+                    <div class="workspace-item">
+                        <div class="workspace-header" onclick="toggleWorkspaceExpansion('${workspace.name}')">
+                            <span class="workspace-toggle" id="toggle-${wsId}">▶</span>
+                            <input type="checkbox"
+                                   class="workspace-checkbox"
+                                   id="${wsId}"
+                                   value="${workspace.name}"
+                                   onclick="event.stopPropagation()"
+                                   onchange="onWorkspaceChange('${workspace.name}')">
+                            <label class="workspace-label" for="${wsId}" onclick="event.stopPropagation()">
+                                ${escapeHtml(workspace.name)}
+                            </label>
+                            <span class="workspace-count">${docTypeCount}件</span>
+                        </div>
+                        <div class="workspace-children" id="children-${wsId}">
+                            ${workspace.doc_types.map(dt => {
+                                const dtId = `dt-${workspace.name}-${dt}`;
+                                return `
+                                    <div class="doc-type-item" onclick="toggleCheckbox('${dtId}')">
+                                        <input type="checkbox"
+                                               class="doc-type-checkbox"
+                                               id="${dtId}"
+                                               value="${dt}"
+                                               data-workspace="${workspace.name}"
+                                               onclick="event.stopPropagation()"
+                                               onchange="onDocTypeChange('${workspace.name}')">
+                                        <label class="doc-type-label" for="${dtId}" onclick="event.stopPropagation()">
+                                            ${escapeHtml(dt)}
+                                        </label>
+                                    </div>
+                                `;
+                            }).join('')}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+        }
+
+        function toggleCheckbox(id) {
+            const checkbox = document.getElementById(id);
+            if (checkbox) {
+                checkbox.checked = !checkbox.checked;
+                // 親のworkspaceを取得して変更イベントをトリガー
+                const workspace = checkbox.dataset.workspace;
+                if (workspace) {
+                    onDocTypeChange(workspace);
+                }
+            }
+        }
+
+        function toggleWorkspaceExpansion(workspaceName) {
+            const wsId = `ws-${workspaceName}`;
+            const toggle = document.getElementById(`toggle-${wsId}`);
+            const children = document.getElementById(`children-${wsId}`);
+
+            if (children.classList.contains('expanded')) {
+                children.classList.remove('expanded');
+                toggle.classList.remove('expanded');
+            } else {
+                children.classList.add('expanded');
+                toggle.classList.add('expanded');
+            }
+        }
+
+        // ✅ 親チェックボックスの変更時：子を連動
+        function onWorkspaceChange(workspaceName) {
+            const wsId = `ws-${workspaceName}`;
+            const wsCheckbox = document.getElementById(wsId);
+            const isChecked = wsCheckbox.checked;
+
+            // 配下の子（doc_type）をすべて同じ状態にする
+            const workspace = hierarchyData.find(w => w.name === workspaceName);
+            if (workspace) {
+                workspace.doc_types.forEach(dt => {
+                    const dtCheckbox = document.getElementById(`dt-${workspaceName}-${dt}`);
+                    if (dtCheckbox) {
+                        dtCheckbox.checked = isChecked;
+                    }
+                });
+            }
+
+            console.log(`[親チェック] ${workspaceName}: ${isChecked ? 'ON' : 'OFF'} → 子を連動`);
+        }
+
+        // ✅ 子チェックボックスの変更時：親の状態を更新
+        function onDocTypeChange(workspaceName) {
+            const wsId = `ws-${workspaceName}`;
+            const wsCheckbox = document.getElementById(wsId);
+
+            // 配下の子の状態を確認
+            const workspace = hierarchyData.find(w => w.name === workspaceName);
+            if (!workspace) return;
+
+            let allChecked = true;
+            let noneChecked = true;
+
+            workspace.doc_types.forEach(dt => {
+                const dtCheckbox = document.getElementById(`dt-${workspaceName}-${dt}`);
+                if (dtCheckbox) {
+                    if (dtCheckbox.checked) {
+                        noneChecked = false;
+                    } else {
+                        allChecked = false;
+                    }
+                }
+            });
+
+            // 親の状態を更新
+            if (allChecked) {
+                wsCheckbox.checked = true;
+                wsCheckbox.indeterminate = false;
+            } else if (noneChecked) {
+                wsCheckbox.checked = false;
+                wsCheckbox.indeterminate = false;
+            } else {
+                // 一部だけチェックされている場合はindeterminate
+                wsCheckbox.checked = false;
+                wsCheckbox.indeterminate = true;
+            }
+        }
+
+        function openFilterSheet() {
+            document.getElementById('filterSheet').classList.add('active');
+            document.getElementById('filterSheetOverlay').classList.add('active');
+            document.body.style.overflow = 'hidden'; // スクロール無効化
+        }
+
+        function closeFilterSheet() {
+            document.getElementById('filterSheet').classList.remove('active');
+            document.getElementById('filterSheetOverlay').classList.remove('active');
+            document.body.style.overflow = ''; // スクロール有効化
+        }
+
+        function clearAllFilters() {
+            hierarchyData.forEach(workspace => {
+                // 親チェックボックスをクリア
+                const wsCheckbox = document.getElementById(`ws-${workspace.name}`);
+                if (wsCheckbox) {
+                    wsCheckbox.checked = false;
+                    wsCheckbox.indeterminate = false;
+                }
+
+                // 子チェックボックスをクリア
+                workspace.doc_types.forEach(dt => {
+                    const dtCheckbox = document.getElementById(`dt-${workspace.name}-${dt}`);
+                    if (dtCheckbox) dtCheckbox.checked = false;
+                });
+            });
+
+            console.log('[すべて解除]');
+        }
+
+        function applyFilters() {
+            // チェックされたworkspaceとdoc_typeを収集
+            selectedWorkspaces = [];
+            selectedDocTypes = [];
+
+            hierarchyData.forEach(workspace => {
+                const wsName = workspace.name;
+
+                // 子（doc_type）のチェック状態を確認
+                workspace.doc_types.forEach(dt => {
+                    const dtCheckbox = document.getElementById(`dt-${wsName}-${dt}`);
+                    if (dtCheckbox && dtCheckbox.checked) {
+                        // workspaceを追加（重複回避）
+                        if (!selectedWorkspaces.includes(wsName)) {
+                            selectedWorkspaces.push(wsName);
+                        }
+                        // doc_typeを追加
+                        selectedDocTypes.push(dt);
+                    }
+                });
+            });
+
+            console.log('[フィルタ適用]', { selectedWorkspaces, selectedDocTypes });
+
+            // フィルタチップを更新
+            updateFilterChips();
+
+            // Bottom Sheetを閉じる
+            closeFilterSheet();
+
+            // 検索を実行（クエリがある場合のみ）
+            const query = document.getElementById('queryInput').value.trim();
+            if (query) {
+                performSearch();
+            }
+        }
+
+        function updateFilterChips() {
+            const container = document.getElementById('activeFilters');
+
+            // workspace別にdoc_typeをグループ化して表示
+            const chipsByWorkspace = {};
+
+            hierarchyData.forEach(workspace => {
+                const wsName = workspace.name;
+                const checkedTypes = [];
+
+                workspace.doc_types.forEach(dt => {
+                    const dtCheckbox = document.getElementById(`dt-${wsName}-${dt}`);
+                    if (dtCheckbox && dtCheckbox.checked) {
+                        checkedTypes.push(dt);
+                    }
+                });
+
+                if (checkedTypes.length > 0) {
+                    chipsByWorkspace[wsName] = checkedTypes;
+                }
+            });
+
+            if (Object.keys(chipsByWorkspace).length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+
+            // チップを生成
+            const chips = [];
+            for (const [wsName, types] of Object.entries(chipsByWorkspace)) {
+                types.forEach(dt => {
+                    chips.push(`
+                        <span class="chip chip-active">
+                            ${escapeHtml(wsName)}: ${escapeHtml(dt)}
+                            <span class="remove-chip" onclick="removeFilter('${escapeHtml(wsName)}', '${escapeHtml(dt)}')">×</span>
+                        </span>
+                    `);
+                });
+            }
+
+            container.innerHTML = chips.join('');
+        }
+
+        function removeFilter(workspaceName, docType) {
+            // 該当するdoc_typeのチェックを外す
+            const dtCheckbox = document.getElementById(`dt-${workspaceName}-${docType}`);
+            if (dtCheckbox) {
+                dtCheckbox.checked = false;
+                // 親の状態を更新
+                onDocTypeChange(workspaceName);
+            }
+
+            // フィルタチップを更新
+            updateFilterChips();
+
+            // 検索を再実行
+            const query = document.getElementById('queryInput').value.trim();
+            if (query) {
+                performSearch();
+            }
+        }
 
         function handleKeyPress(event) {
             if (event.key === 'Enter') {
@@ -357,13 +1027,22 @@
             hideResults();
 
             try {
-                // ステップ1: ベクトル検索
+                // ステップ1: ベクトル検索（✅ フィルタ配列を送信）
+                const searchPayload = {
+                    query,
+                    limit,
+                    workspaces: selectedWorkspaces,
+                    doc_types: selectedDocTypes
+                };
+
+                console.log('[検索実行]', searchPayload);
+
                 const searchResponse = await fetch('/api/search', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json',
                     },
-                    body: JSON.stringify({ query, limit })
+                    body: JSON.stringify(searchPayload)
                 });
 
                 const searchData = await searchResponse.json();
@@ -428,34 +1107,136 @@
                 documentList.innerHTML = '<div class="empty-state">関連する文書が見つかりませんでした</div>';
             } else {
                 documentList.innerHTML = documents.map(doc => {
-                    // ✅ タイトルはfile_nameを優先的に使用
-                    const title = doc.file_name || doc.title || '無題';
+                    try {
+                        // ✅ Classroom投稿かどうかを判定
+                        const sourceType = doc.source_type || '';
+                        const isClassroom = sourceType === 'classroom' || sourceType === 'classroom_text';
 
-                    // ✅ 要約があればそれを優先、なければ本文をトリミング
-                    const displayText = doc.summary || truncateText(doc.content || '', 200);
-
-                    // ✅ source_urlがあればリンクボタンを表示
-                    const sourceUrl = doc.source_url || '';
-                    const linkButton = sourceUrl ?
-                        `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 元ファイルを開く</a>` :
-                        '';
-
-                    return `
-                        <div class="document-card">
-                            <div class="document-title">${escapeHtml(title)}</div>
-                            <div class="document-meta">
-                                <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
-                            </div>
-                            <div class="document-content">
-                                ${escapeHtml(displayText)}
-                            </div>
-                            ${linkButton}
-                        </div>
-                    `;
+                        if (isClassroom) {
+                            return renderClassroomPost(doc);
+                        } else {
+                            return renderRegularDocument(doc);
+                        }
+                    } catch (error) {
+                        console.error('Document rendering error:', error, doc);
+                        return renderRegularDocument(doc);
+                    }
                 }).join('');
             }
 
             documentsSection.style.display = 'block';
+        }
+
+        function renderClassroomPost(doc) {
+            // タイトル（件名）
+            const title = doc.file_name || doc.title || 'Google Classroom投稿';
+
+            // 送信者情報（metadataから取得）
+            const metadata = doc.metadata || {};
+            const sender = metadata.author_name || metadata.sender || '不明';
+
+            // 送信日時（created_atまたはmetadataから）
+            const dateStr = doc.created_at || metadata.created_time || '';
+            const formattedDate = dateStr ? formatDate(dateStr) : '日時不明';
+
+            // 本文（full_textを優先）
+            const bodyText = doc.full_text || doc.content || doc.summary || '';
+
+            // 添付ファイル（source_urlまたはmetadataのmaterialsから）
+            const attachments = [];
+
+            // source_urlがある場合（Driveファイルへのリンク）
+            if (doc.source_url) {
+                const fileName = doc.file_name || 'ファイル';
+                attachments.push({
+                    url: doc.source_url,
+                    name: fileName,
+                    type: 'drive'
+                });
+            }
+
+            // metadataに追加の添付ファイル情報がある場合
+            if (metadata.materials && Array.isArray(metadata.materials)) {
+                metadata.materials.forEach(material => {
+                    if (material.driveFile && material.driveFile.url) {
+                        attachments.push({
+                            url: material.driveFile.url,
+                            name: material.driveFile.title || 'ファイル',
+                            type: 'material'
+                        });
+                    }
+                });
+            }
+
+            // 添付ファイルのHTML
+            const attachmentsHtml = attachments.length > 0 ? `
+                <div class="classroom-attachments">
+                    ${attachments.map(att => `
+                        <a href="${escapeHtml(att.url)}" target="_blank" class="attachment-link">
+                            📎 ${escapeHtml(att.name)}
+                        </a>
+                    `).join('')}
+                </div>
+            ` : '';
+
+            return `
+                <div class="document-card">
+                    <div class="document-title">📘 ${escapeHtml(title)}</div>
+                    <div class="document-meta">
+                        <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
+                        <span style="color: #4285f4; font-weight: 500;">Google Classroom</span>
+                    </div>
+                    <div class="classroom-post">
+                        <div class="classroom-header">
+                            <span class="classroom-sender">👤 ${escapeHtml(sender)}</span>
+                            <span class="classroom-date">🕒 ${escapeHtml(formattedDate)}</span>
+                        </div>
+                        <div class="classroom-body">${escapeHtml(bodyText)}</div>
+                        ${attachmentsHtml}
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderRegularDocument(doc) {
+            // ✅ タイトルはfile_nameを優先的に使用
+            const title = doc.file_name || doc.title || '無題';
+
+            // ✅ 要約があればそれを優先、なければ本文をトリミング
+            const displayText = doc.summary || truncateText(doc.content || '', 200);
+
+            // ✅ source_urlがあればリンクボタンを表示
+            const sourceUrl = doc.source_url || '';
+            const linkButton = sourceUrl ?
+                `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 元ファイルを開く</a>` :
+                '';
+
+            return `
+                <div class="document-card">
+                    <div class="document-title">${escapeHtml(title)}</div>
+                    <div class="document-meta">
+                        <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
+                    </div>
+                    <div class="document-content">
+                        ${escapeHtml(displayText)}
+                    </div>
+                    ${linkButton}
+                </div>
+            `;
+        }
+
+        function formatDate(dateStr) {
+            try {
+                const date = new Date(dateStr);
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                const hours = String(date.getHours()).padStart(2, '0');
+                const minutes = String(date.getMinutes()).padStart(2, '0');
+                return `${year}/${month}/${day} ${hours}:${minutes}`;
+            } catch (e) {
+                return dateStr;
+            }
         }
 
         function showResults() {

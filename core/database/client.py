@@ -5,20 +5,31 @@ Supabaseデータベースへの接続と操作を管理
 from typing import Dict, Any, List, Optional
 from supabase import create_client, Client
 from config.settings import settings
+from core.utils.reranker import Reranker, RerankConfig
 
 
 class DatabaseClient:
     """Supabaseデータベースクライアント"""
-    
+
     def __init__(self):
         """Supabaseクライアントの初期化"""
         if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
             raise ValueError("SUPABASE_URL と SUPABASE_KEY が設定されていません")
-        
+
         self.client: Client = create_client(
             settings.SUPABASE_URL,
             settings.SUPABASE_KEY
         )
+
+        # Rerankerの初期化（Cohere優先、フォールバックでHugging Face）
+        self.reranker = None
+        if RerankConfig.ENABLED:
+            try:
+                self.reranker = Reranker(provider=RerankConfig.PROVIDER)
+                print(f"[Reranker] 初期化成功: {RerankConfig.PROVIDER}")
+            except Exception as e:
+                print(f"[Reranker] 初期化失敗: {e}")
+                self.reranker = None
     
     def get_document_by_source_id(self, source_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -60,118 +71,257 @@ class DatabaseClient:
 
         response = self.client.table(table).insert(data).execute()
         return response.data[0] if response.data else {}
-    
+
+    async def upsert_document(
+        self,
+        table: str,
+        data: Dict[str, Any],
+        conflict_column: str = 'source_id',
+        force_update: bool = False,
+        preserve_fields: List[str] = None
+    ) -> Dict[str, Any]:
+        """
+        ドキュメントをupsert（既存レコードがあれば更新、なければ挿入）
+
+        Args:
+            table: テーブル名
+            data: 挿入・更新するデータ
+            conflict_column: 重複判定に使うカラム名（デフォルト: source_id）
+            force_update: Trueの場合、全てのフィールドを強制的に更新（再処理時用）
+            preserve_fields: force_update=Trueの時でも既存値を保持するフィールドのリスト
+
+        Returns:
+            挿入・更新されたレコード
+        """
+        # embeddingをPostgreSQLのvector型形式に変換
+        if 'embedding' in data and data['embedding'] is not None:
+            embedding_list = data['embedding']
+            if isinstance(embedding_list, list):
+                data = data.copy()
+                data['embedding'] = '[' + ','.join(str(x) for x in embedding_list) + ']'
+
+        # 既存レコードを取得
+        existing = self.client.table(table).select('*').eq(conflict_column, data[conflict_column]).execute()
+
+        if existing.data and len(existing.data) > 0:
+            # 既存レコードがある場合
+            existing_record = existing.data[0]
+            update_data = {}
+
+            if force_update:
+                # 再処理モード：基本的に全て更新するが、preserve_fieldsは既存値を保持
+                preserve_fields = preserve_fields or []
+
+                for key, value in data.items():
+                    if key in preserve_fields:
+                        # 保持対象フィールドは既存値が有効な場合のみ保持
+                        if existing_record.get(key) not in [None, '', [], {}]:
+                            continue  # 既存値を保持（更新しない）
+                    update_data[key] = value
+            else:
+                # 通常モード：空欄・nullの項目のみ更新
+                for key, value in data.items():
+                    if existing_record.get(key) in [None, '', [], {}]:
+                        update_data[key] = value
+
+            if update_data:
+                # 更新するデータがある場合のみUPDATE
+                response = self.client.table(table).update(update_data).eq(conflict_column, data[conflict_column]).execute()
+                return response.data[0] if response.data else {}
+            else:
+                # 更新不要の場合は既存レコードを返す
+                return existing_record
+        else:
+            # 既存レコードがない場合：新規挿入
+            response = self.client.table(table).insert(data).execute()
+            return response.data[0] if response.data else {}
+
     async def search_documents(
         self,
         query: str,
         embedding: List[float],
         limit: int = 50,
-        workspace: Optional[str] = None
+        doc_types: Optional[List[str]] = None
     ) -> List[Dict[str, Any]]:
         """
-        ハイブリッド検索：ベクトル検索 + file_name キーワードマッチ
+        2階層ハイブリッド検索：小チャンク検索 + 大チャンク回答（重複排除＆Rerank対応）
+
+        【検索フロー】
+        1. 小チャンク（300文字）でベクトル + 全文検索 → 関連ドキュメントを検出
+        2. ドキュメント単位で重複排除（最高スコアのみ） → 重複を削減
+        3. 大チャンク（全文）で回答生成 → 最も詳細な情報を使用
+
+        【フィルタの考え方】
+        - 階層構造（workspace > doc_type）はフロントエンドで維持
+        - データベース検索はdoc_typeのみで絞り込み
+        - 理由: workspace内の全doc_typeがON = workspaceがON（冗長なため）
 
         Args:
             query: 検索クエリ
             embedding: クエリのembeddingベクトル
-            limit: 取得する最大件数（デフォルト: 50）
-            workspace: ワークスペースフィルタ (オプション)
+            limit: 取得する最大件数
+            doc_types: ドキュメントタイプフィルタ（配列、複数選択可能）
 
         Returns:
-            検索結果のリスト（file_name マッチを優先）
+            検索結果のリスト（小チャンク検索スコア順、回答は大チャンク）
         """
-        # 1. ベクトル検索を実行
-        rpc_params = {
-            "query_embedding": embedding,
-            "match_threshold": 0.0,
-            "match_count": limit
-        }
-        vector_response = self.client.rpc("match_documents", rpc_params).execute()
-        vector_results = vector_response.data if vector_response.data else []
+        try:
+            # クエリから日付を抽出
+            target_date = self._extract_date(query)
+            filter_year = None
+            filter_month = None
 
-        # 2. クエリから日付とキーワードを抽出
-        target_date = self._extract_date(query)
-        keywords = self._extract_keywords(query)
+            if target_date:
+                try:
+                    parts = target_date.split('-')
+                    filter_year = int(parts[0])
+                    filter_month = int(parts[1])
+                    print(f"[DEBUG] 日付フィルタ: {filter_year}年{filter_month}月")
+                except:
+                    pass
 
-        print(f"[DEBUG] 抽出された日付: {target_date}")
-        print(f"[DEBUG] 抽出されたキーワード: {keywords}")
+            # DB関数を呼び出し（小チャンク検索＋重複排除＋大チャンク取得）
+            rpc_params = {
+                "query_text": query,
+                "query_embedding": embedding,
+                "match_threshold": 0.0,
+                "match_count": limit,  # 指定された件数を取得
+                "vector_weight": 0.7,  # ベクトル検索70%
+                "fulltext_weight": 0.3,  # キーワード検索30%
+                "filter_year": filter_year,
+                "filter_month": filter_month,
+                "filter_doc_types": doc_types  # doc_typeのみで絞り込み
+            }
 
-        # 3. file_name でキーワード検索（いずれかのキーワードにマッチ）
-        keyword_results = []
-        seen_keyword_ids = set()
+            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}', doc_types={doc_types}")
+            response = self.client.rpc("search_documents_final", rpc_params).execute()
+            results = response.data if response.data else []
 
-        if keywords:
-            try:
-                # 各キーワードで個別に検索し、結果をマージ
-                for keyword in keywords:
-                    query_response = (
-                        self.client.table('documents')
-                        .select('*')
-                        .ilike('file_name', f'%{keyword}%')
-                        .eq('processing_status', 'completed')
-                        .not_.is_('embedding', 'null')
-                        .limit(limit)
-                        .execute()
+            print(f"[DEBUG] search_documents_final 結果: {len(results)} 件")
+
+            # 結果を整形（既に重複排除済みだが、確認用）
+            final_results = []
+            for result in results:
+                doc_result = {
+                    'id': result.get('document_id'),
+                    'file_name': result.get('file_name'),
+                    'doc_type': result.get('doc_type'),
+                    'workspace': result.get('workspace'),
+                    'document_date': result.get('document_date'),
+                    'metadata': result.get('metadata'),
+                    'summary': result.get('summary'),
+
+                    # 回答用：大チャンク（全文）
+                    'content': result.get('large_chunk_text'),
+                    'large_chunk_id': result.get('large_chunk_id'),
+
+                    # 検索スコア：小チャンクの検索スコア
+                    'similarity': result.get('combined_score', 0),
+                    'small_chunk_id': result.get('small_chunk_id'),
+
+                    'year': result.get('year'),
+                    'month': result.get('month')
+                }
+
+                # ✅ Classroom表示用の追加フィールド（存在する場合のみ追加）
+                if 'source_type' in result:
+                    doc_result['source_type'] = result.get('source_type')
+                if 'source_url' in result:
+                    doc_result['source_url'] = result.get('source_url')
+                if 'full_text' in result:
+                    doc_result['full_text'] = result.get('full_text')
+                if 'created_at' in result:
+                    doc_result['created_at'] = result.get('created_at')
+
+                final_results.append(doc_result)
+
+            print(f"[DEBUG] 初期検索結果: {len(final_results)} 件（2階層検索）")
+            print(f"[DEBUG] 検索戦略: 小チャンク検索 + 重複排除 + 大チャンク回答")
+
+            # ============================================
+            # Reranking（再ランク付け）
+            # ============================================
+            if self.reranker and RerankConfig.should_rerank(len(final_results)):
+                print(f"[DEBUG] Reranking開始: {len(final_results)} 件 → {RerankConfig.FINAL_RESULT_COUNT} 件")
+                try:
+                    # Rerankingを実行
+                    # text_key は 'content' を使用（大チャンクのテキスト）
+                    reranked_results = self.reranker.rerank(
+                        query=query,
+                        documents=final_results,
+                        top_k=RerankConfig.FINAL_RESULT_COUNT,
+                        text_key='content'  # 大チャンクのテキストで再評価
                     )
 
-                    if query_response.data:
-                        for doc in query_response.data:
-                            doc_id = doc.get('id')
-                            if doc_id not in seen_keyword_ids:
-                                keyword_results.append(doc)
-                                seen_keyword_ids.add(doc_id)
+                    print(f"[DEBUG] Reranking完了: {len(reranked_results)} 件")
 
-            except Exception as e:
-                print(f"Keyword search error: {e}")
-
-        # 4. 結果をマージ（file_name マッチを優先、重複削除）
-        merged_results = []
-        seen_ids = set()
-
-        # file_name マッチを優先的に追加（一致度に応じてスコアを計算）
-        for doc in keyword_results:
-            doc_id = doc.get('id')
-            if doc_id not in seen_ids:
-                # file_name とクエリの一致度を計算
-                file_name = doc.get('file_name', '')
-                match_score = self._calculate_keyword_match_score(file_name, keywords, query)
-
-                # 日付マッチングでスコアをブースト
-                if target_date:
-                    date_match_score = self._check_date_match(doc, target_date)
-                    if date_match_score > 0:
-                        match_score = min(1.0, match_score + date_match_score)
-                        print(f"[DEBUG] 日付マッチ: {file_name} → スコア: {match_score}")
-
-                doc['similarity'] = match_score
-                merged_results.append(doc)
-                seen_ids.add(doc_id)
-
-        # ベクトル検索結果を追加（重複を除く）
-        for doc in vector_results:
-            doc_id = doc.get('id')
-            if doc_id not in seen_ids:
-                # 日付マッチングでスコアをブースト
-                if target_date:
-                    date_match_score = self._check_date_match(doc, target_date)
-                    if date_match_score > 0:
+                    # Rerankスコアをログ出力（デバッグ用）
+                    for idx, doc in enumerate(reranked_results[:3], 1):  # 上位3件のみ
+                        rerank_score = doc.get('rerank_score', 0)
                         original_score = doc.get('similarity', 0)
-                        doc['similarity'] = min(1.0, original_score + date_match_score)
-                        print(f"[DEBUG] 日付マッチ（ベクトル検索）: {doc.get('file_name')} → スコア: {doc['similarity']}")
+                        file_name = doc.get('file_name', 'Unknown')
+                        print(f"  [{idx}] {file_name}: original={original_score:.3f}, rerank={rerank_score:.3f}")
 
-                merged_results.append(doc)
-                seen_ids.add(doc_id)
+                    final_results = reranked_results
 
-        # 類似度でソート（高い順）
-        merged_results.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+                except Exception as rerank_error:
+                    print(f"[WARNING] Reranking失敗: {rerank_error}")
+                    # エラー時は元の結果をそのまま使用
+                    print(f"[DEBUG] 元の検索結果を使用: {len(final_results)} 件")
+            else:
+                if not self.reranker:
+                    print("[DEBUG] Reranking無効: Rerankerが初期化されていません")
+                else:
+                    print(f"[DEBUG] Reranking不要: 検索結果が少ない（{len(final_results)} 件）")
 
-        # 上位のみに制限（最大でも5件）
-        max_limit = min(limit, 5)
-        final_results = merged_results[:max_limit]
+            print(f"[DEBUG] 最終結果: {len(final_results)} 件")
 
-        print(f"[DEBUG] 最終結果: {len(final_results)} 件（limit={limit}, max_limit={max_limit}）")
+            return final_results
 
-        return final_results
+        except Exception as e:
+            print(f"2-tier hybrid search error: {e}")
+            import traceback
+            traceback.print_exc()
+
+            # フォールバック: 従来のベクトル検索（workspaceフィルタなし）
+            print("[WARNING] フォールバックモード: match_documents を使用")
+            return await self._fallback_vector_search(embedding, limit, None)
+
+    async def _fallback_vector_search(
+        self,
+        embedding: List[float],
+        limit: int,
+        workspace: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        フォールバック用のベクトル検索（エラー時に使用）
+
+        Args:
+            embedding: クエリのembeddingベクトル
+            limit: 取得する最大件数
+            workspace: ワークスペースフィルタ
+
+        Returns:
+            検索結果のリスト
+        """
+        try:
+            rpc_params = {
+                "query_embedding": embedding,
+                "match_threshold": 0.0,
+                "match_count": min(limit, 5)
+            }
+            if workspace:
+                rpc_params["filter_workspace"] = workspace
+
+            response = self.client.rpc("match_documents", rpc_params).execute()
+            results = response.data if response.data else []
+
+            print(f"[DEBUG] フォールバック検索結果: {len(results)} 件")
+            return results
+
+        except Exception as e:
+            print(f"Fallback search error: {e}")
+            return []
 
     def _check_date_match(self, doc: Dict[str, Any], target_date: str) -> float:
         """
@@ -368,29 +518,261 @@ class DatabaseClient:
 
     def get_documents_for_review(
         self,
-        limit: int = 100
+        limit: int = 100,
+        search_query: Optional[str] = None,
+        workspace: Optional[str] = None,
+        file_type: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
-        レビュー対象のドキュメントを取得（全ステータス・全信頼度）
+        レビュー対象のドキュメントを取得
+
+        通常モード（search_query=None）: 未レビューのドキュメントのみ取得
+        検索モード（search_query指定）: レビュー状態に関係なく全件から検索
 
         Args:
             limit: 取得する最大件数
+            search_query: 検索クエリ（IDまたはファイル名で部分一致）
+            workspace: ワークスペースフィルタ（'business', 'personal', またはNone）
+            file_type: ファイルタイプフィルタ（'pdf', 'email', またはNone）
 
         Returns:
             ドキュメントのリスト（更新日時降順）
         """
         try:
-            response = (
-                self.client.table('documents')
-                .select('*')
-                .order('updated_at', desc=True)
-                .limit(limit)
-                .execute()
-            )
-            return response.data if response.data else []
+            query = self.client.table('documents').select('*')
+
+            # File typeフィルタを適用
+            if file_type:
+                query = query.eq('file_type', file_type)
+
+            # Workspaceフィルタを適用
+            if workspace:
+                query = query.eq('workspace', workspace)
+
+            if search_query:
+                # 検索モード: レビュー状態に関係なく検索
+                # IDでの完全一致検索を試みる
+                if len(search_query) == 36 or len(search_query) == 8:  # UUID形式またはID先頭8文字
+                    # IDで検索（部分一致）
+                    response_id = query.ilike('id', f'{search_query}%').limit(limit).execute()
+                    if response_id.data:
+                        return response_id.data
+
+                # ファイル名で部分一致検索
+                response = (
+                    query
+                    .ilike('file_name', f'%{search_query}%')
+                    .order('updated_at', desc=True)
+                    .limit(limit)
+                    .execute()
+                )
+                return response.data if response.data else []
+            else:
+                # 通常モード: 未レビューのドキュメントのみ取得
+                response = (
+                    query
+                    .eq('is_reviewed', False)
+                    .order('updated_at', desc=True)
+                    .limit(limit)
+                    .execute()
+                )
+                return response.data if response.data else []
+
         except Exception as e:
             print(f"Error getting documents for review: {e}")
             return []
+
+    def mark_document_reviewed(
+        self,
+        doc_id: str,
+        reviewed_by: Optional[str] = None
+    ) -> bool:
+        """
+        ドキュメントをレビュー済みとしてマークする
+
+        Args:
+            doc_id: ドキュメントID
+            reviewed_by: レビュー担当者のメールアドレス（オプション）
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            from datetime import datetime
+
+            update_data = {
+                'is_reviewed': True,
+                'reviewed_at': datetime.utcnow().isoformat()
+            }
+            if reviewed_by:
+                update_data['reviewed_by'] = reviewed_by
+
+            response = (
+                self.client.table('documents')
+                .update(update_data)
+                .eq('id', doc_id)
+                .execute()
+            )
+            return bool(response.data)
+        except Exception as e:
+            print(f"Error marking document as reviewed: {e}")
+            return False
+
+    def mark_document_unreviewed(
+        self,
+        doc_id: str
+    ) -> bool:
+        """
+        ドキュメントを未レビュー状態に戻す
+
+        Args:
+            doc_id: ドキュメントID
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            update_data = {
+                'is_reviewed': False,
+                'reviewed_at': None,
+                'reviewed_by': None
+            }
+
+            response = (
+                self.client.table('documents')
+                .update(update_data)
+                .eq('id', doc_id)
+                .execute()
+            )
+            return bool(response.data)
+        except Exception as e:
+            print(f"Error marking document as unreviewed: {e}")
+            return False
+
+    def get_review_progress(self) -> Dict[str, Any]:
+        """
+        レビュー進捗状況を取得
+
+        Returns:
+            進捗情報の辞書
+        """
+        try:
+            # 未レビューの件数
+            unreviewed_response = (
+                self.client.table('documents')
+                .select('*', count='exact')
+                .eq('is_reviewed', False)
+                .execute()
+            )
+            unreviewed_count = unreviewed_response.count if unreviewed_response else 0
+
+            # レビュー済みの件数
+            reviewed_response = (
+                self.client.table('documents')
+                .select('*', count='exact')
+                .eq('is_reviewed', True)
+                .execute()
+            )
+            reviewed_count = reviewed_response.count if reviewed_response else 0
+
+            # 総件数
+            total_count = unreviewed_count + reviewed_count
+
+            # 進捗率
+            progress_percent = (reviewed_count / total_count * 100) if total_count > 0 else 0
+
+            return {
+                'total': total_count,
+                'reviewed': reviewed_count,
+                'unreviewed': unreviewed_count,
+                'progress_percent': round(progress_percent, 2)
+            }
+        except Exception as e:
+            print(f"Error getting review progress: {e}")
+            return {
+                'total': 0,
+                'reviewed': 0,
+                'unreviewed': 0,
+                'progress_percent': 0
+            }
+
+    def get_available_workspaces(self) -> List[str]:
+        """
+        データベース内の利用可能なワークスペース一覧を取得
+
+        Returns:
+            ワークスペース名のリスト（重複なし、ソート済み）
+        """
+        try:
+            # 全ドキュメントからworkspaceを取得
+            response = self.client.table('documents').select('workspace').execute()
+
+            workspaces = set()
+            for doc in response.data:
+                ws = doc.get('workspace')
+                if ws:  # NoneやNULLを除外
+                    workspaces.add(ws)
+
+            return sorted(list(workspaces))
+        except Exception as e:
+            print(f"Error getting available workspaces: {e}")
+            return []
+
+    def get_available_doc_types(self) -> List[str]:
+        """
+        データベース内の利用可能なドキュメントタイプ一覧を取得
+
+        Returns:
+            ドキュメントタイプ名のリスト（重複なし、ソート済み）
+        """
+        try:
+            # 全ドキュメントからdoc_typeを取得
+            response = self.client.table('documents').select('doc_type').execute()
+
+            doc_types = set()
+            for doc in response.data:
+                dt = doc.get('doc_type')
+                if dt:  # NoneやNULLを除外
+                    doc_types.add(dt)
+
+            return sorted(list(doc_types))
+        except Exception as e:
+            print(f"Error getting available doc_types: {e}")
+            return []
+
+    def get_workspace_hierarchy(self) -> Dict[str, List[str]]:
+        """
+        workspace別のdoc_type階層構造を取得
+
+        Returns:
+            {workspace: [doc_type1, doc_type2, ...]} の辞書
+        """
+        try:
+            # workspaceとdoc_typeの組み合わせを取得
+            response = self.client.table('documents').select('workspace, doc_type').execute()
+
+            hierarchy = {}
+            for doc in response.data:
+                workspace = doc.get('workspace')
+                doc_type = doc.get('doc_type')
+
+                if workspace and doc_type:
+                    if workspace not in hierarchy:
+                        hierarchy[workspace] = set()
+                    hierarchy[workspace].add(doc_type)
+
+            # setをソート済みリストに変換
+            result = {ws: sorted(list(types)) for ws, types in hierarchy.items()}
+
+            # workspaceもソート
+            result = dict(sorted(result.items()))
+
+            print(f"[DEBUG] workspace階層構造: {len(result)} workspaces")
+            return result
+
+        except Exception as e:
+            print(f"Error getting workspace hierarchy: {e}")
+            return {}
 
     def get_document_by_id(self, doc_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -688,4 +1070,35 @@ class DatabaseClient:
         except Exception as e:
             print(f"Error checking duplicate hash: {e}")
             # エラー時は安全側に倒して重複なしとして扱う
+            return False
+
+    def delete_document(self, doc_id: str) -> bool:
+        """
+        ドキュメントをデータベースから削除
+
+        Args:
+            doc_id: 削除するドキュメントのID
+
+        Returns:
+            True: 削除成功
+            False: 削除失敗
+        """
+        try:
+            # ドキュメントを削除（ON DELETE CASCADEにより関連データも削除される）
+            response = (
+                self.client.table('documents')
+                .delete()
+                .eq('id', doc_id)
+                .execute()
+            )
+
+            if response.data:
+                print(f"✅ ドキュメントを削除しました: {doc_id}")
+                return True
+            else:
+                print(f"⚠️  ドキュメントが見つかりませんでした: {doc_id}")
+                return False
+
+        except Exception as e:
+            print(f"❌ ドキュメント削除エラー: {e}")
             return False

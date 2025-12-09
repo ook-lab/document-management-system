@@ -59,12 +59,12 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
             if isinstance(value, list):
                 logger.info(f"  First element type: {type(value[0]) if len(value) > 0 else 'empty'}")
 
-        # text_blocksはフォーム編集で表示するため、構造化フィールドとして検出しない
+        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables, weekly_schedule, extracted_tables を構造化データとして認識
+        # ただし text_blocks は除外（フォーム編集タブで編集可能にするため）
         if key == "text_blocks":
-            logger.info(f"⚠️ '{key}' はフォーム編集で表示するため、構造化フィールドから除外")
+            logger.info(f"✓ '{key}' は text_blocks として検出されましたが、フォーム編集タブで表示するため除外します")
             continue
 
-        # _list, _blocks, _matrix, _tables で終わるキー、または structured_tables, weekly_schedule, extracted_tables を構造化データとして認識
         if (key.endswith("_list") or key.endswith("_blocks") or
             key.endswith("_matrix") or key.endswith("_tables") or
             key == "structured_tables" or key == "weekly_schedule" or key == "extracted_tables"):
@@ -133,20 +133,20 @@ def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
         file_path = drive_connector.download_file(source_id, file_name, temp_dir)
         return file_path
     except Exception as e:
-        st.error(f"ファイルのダウンロードに失敗しました: {e}")
+        error_type = type(e).__name__
+        error_msg = str(e)
+        logger.error(f"ファイルのダウンロードに失敗: source_id={source_id}, file_name={file_name}", exc_info=True)
+        st.error(f"❌ Google Driveエラー")
+        st.error(f"エラータイプ: {error_type}")
+        st.error(f"エラー詳細: {error_msg}")
+        st.code(f"file_id: {source_id}\nfile_name: {file_name}")
         return None
 
 
-def main():
-    """メインUIロジック"""
-    st.set_page_config(
-        page_title="Document Review UI v2.0",
-        layout="wide",
-        initial_sidebar_state="expanded"
-    )
-
-    st.title("📋 Document Review UI v2.0")
-    st.markdown("AIが抽出したメタデータを**3つのタブ**で確認・修正できます")
+def pdf_review_ui():
+    """ドキュメントレビューUIロジック（全てのファイルタイプ対応）"""
+    st.markdown("#### 📋 ドキュメントレビュー")
+    st.caption("AIが抽出したメタデータを確認・修正できます（PDF、テキスト、メール等の全ファイルタイプ対応）")
 
     # データベースクライアントとスキーマ検出器の初期化
     try:
@@ -156,24 +156,83 @@ def main():
         st.error(f"初期化エラー: {e}")
         st.stop()
 
-    # サイドバー: フィルタ設定
-    st.sidebar.header("🔧 フィルタ設定")
+    # サイドバー: 検索とフィルタ設定
+    st.sidebar.header("🔍 検索 & フィルタ")
+
+    # Workspaceフィルタ（動的に取得）
+    available_workspaces = db_client.get_available_workspaces()
+    workspace_options = ["全て"] + available_workspaces
+    workspace_filter = st.sidebar.selectbox(
+        "Workspace",
+        options=workspace_options,
+        index=0,
+        help="ワークスペースでフィルタリング"
+    )
+
+    # ファイルタイプフィルタ
+    file_type_options = ["全て", "pdf", "email", "text", "markdown", "csv", "json"]
+    file_type_filter = st.sidebar.selectbox(
+        "ファイルタイプ",
+        options=file_type_options,
+        index=0,
+        help="ファイルタイプでフィルタリング"
+    )
+
+    # 検索ボックス
+    search_query = st.sidebar.text_input(
+        "IDやファイル名で検索",
+        placeholder="例: 学年通信, abc123...",
+        help="検索ワードを入力すると、レビュー状態に関係なく全データから検索します"
+    )
+
+    # 取得件数
     limit = st.sidebar.number_input(
         "取得件数",
         min_value=10,
         max_value=500,
-        value=100,
+        value=50,
         step=10,
         help="表示するドキュメントの最大件数"
     )
 
-    # レビュー対象ドキュメントを取得
-    if st.sidebar.button("🔄 リストを更新", use_container_width=True):
+    # モード表示
+    if search_query:
+        st.sidebar.info("🔎 **検索モード**: 全データから検索中")
+    else:
+        st.sidebar.success("📝 **通常モード**: 未レビューのみ表示")
+
+    # 進捗表示
+    st.sidebar.markdown("---")
+    st.sidebar.header("📊 レビュー進捗")
+    progress_data = db_client.get_review_progress()
+
+    col_p1, col_p2 = st.sidebar.columns(2)
+    with col_p1:
+        st.metric("未レビュー", f"{progress_data['unreviewed']} 件")
+    with col_p2:
+        st.metric("完了", f"{progress_data['reviewed']} 件")
+
+    st.sidebar.progress(progress_data['progress_percent'] / 100)
+    st.sidebar.caption(f"進捗率: {progress_data['progress_percent']}%")
+
+    # リスト更新ボタン
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 リストを更新", use_container_width=True, key="refresh_pdf_list"):
         st.rerun()
 
+    # レビュー対象ドキュメントを取得（全てのファイルタイプ）
     with st.spinner("ドキュメントを取得中..."):
+        # Workspaceフィルタの値を変換（"全て"の場合はNone）
+        workspace_value = workspace_filter if workspace_filter != "全て" else None
+
+        # ファイルタイプフィルタの値を変換（"全て"の場合はNone）
+        file_type_value = file_type_filter if file_type_filter != "全て" else None
+
         documents = db_client.get_documents_for_review(
-            limit=limit
+            limit=limit,
+            search_query=search_query if search_query else None,
+            workspace=workspace_value,
+            file_type=file_type_value  # 選択されたファイルタイプで絞り込み
         )
 
     # デバッグログ: 取得後の確認
@@ -185,31 +244,122 @@ def main():
 
     st.sidebar.success(f"✅ {len(documents)}件のドキュメント")
 
-    # ドキュメントリストをDataFrameで表示
-    df = pd.DataFrame([
-        {
+    # ドキュメントリストをDataFrameで表示（チェックボックス付き）
+    df_data = []
+    for idx, doc in enumerate(documents):
+        df_data.append({
+            '選択': False,  # チェックボックス用
             'ID': doc.get('id', '')[:8],
             'ファイル名': doc.get('file_name', ''),
             '文書タイプ': doc.get('doc_type', ''),
             '信頼度': round(doc.get('confidence') or 0, 3),
             '作成日時': doc.get('created_at', '')[:10]
-        }
-        for doc in documents
-    ])
+        })
+
+    df = pd.DataFrame(df_data)
 
     # デバッグログ: DataFrame作成後の確認
     logger.info(f"表示用DataFrameの行数: {len(df)}件")
 
     st.subheader("📁 レビュー対象ドキュメント一覧")
-    st.dataframe(df, use_container_width=True, height=200)
+
+    # まとめて削除機能
+    col_list_header, col_bulk_delete = st.columns([3, 1])
+    with col_list_header:
+        st.markdown("一覧から選択してまとめて削除できます")
+    with col_bulk_delete:
+        # セッション状態でチェックボックスの状態を管理
+        if 'selected_docs' not in st.session_state:
+            st.session_state.selected_docs = []
+
+    # データエディタでチェックボックス付きの表を表示
+    edited_df = st.data_editor(
+        df,
+        use_container_width=True,
+        height=200,
+        hide_index=True,
+        column_config={
+            "選択": st.column_config.CheckboxColumn(
+                "選択",
+                help="削除するドキュメントを選択",
+                default=False,
+            )
+        },
+        disabled=["ID", "ファイル名", "文書タイプ", "信頼度", "作成日時"],
+        key="document_list_editor"
+    )
+
+    # 選択されたドキュメントを取得
+    selected_indices = edited_df[edited_df['選択'] == True].index.tolist()
+    selected_count = len(selected_indices)
+
+    # まとめて削除ボタン
+    if selected_count > 0:
+        col_bulk1, col_bulk2, col_spacer = st.columns([1, 1, 2])
+
+        with col_bulk1:
+            st.warning(f"⚠️ {selected_count}件のドキュメントが選択されています")
+
+        with col_bulk2:
+            # 一括削除確認用のセッション状態
+            if 'bulk_delete_confirm' not in st.session_state:
+                st.session_state.bulk_delete_confirm = False
+
+            if not st.session_state.bulk_delete_confirm:
+                if st.button(f"🗑️ {selected_count}件をまとめて削除", use_container_width=True, type="secondary"):
+                    st.session_state.bulk_delete_confirm = True
+                    st.rerun()
+            else:
+                if st.button(f"✅ {selected_count}件の削除を実行", use_container_width=True, type="primary"):
+                    with st.spinner(f"{selected_count}件のドキュメントを削除中..."):
+                        success_count = 0
+                        fail_count = 0
+
+                        for idx in selected_indices:
+                            doc = documents[idx]
+                            doc_id = doc.get('id')
+                            file_id = doc.get('drive_file_id') or doc.get('source_id')
+
+                            # Google Driveから削除
+                            if file_id:
+                                try:
+                                    drive_connector = GoogleDriveConnector()
+                                    drive_connector.trash_file(file_id)
+                                except Exception as e:
+                                    logger.error(f"Google Drive削除エラー: {e}")
+
+                            # データベースから削除
+                            if db_client.delete_document(doc_id):
+                                success_count += 1
+                            else:
+                                fail_count += 1
+
+                        if success_count > 0:
+                            st.success(f"✅ {success_count}件のドキュメントを削除しました")
+                        if fail_count > 0:
+                            st.error(f"❌ {fail_count}件の削除に失敗しました")
+
+                        st.session_state.bulk_delete_confirm = False
+                        st.balloons()
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+
+                if st.button("❌ キャンセル", use_container_width=True):
+                    st.session_state.bulk_delete_confirm = False
+                    st.rerun()
 
     # ドキュメント選択
     st.subheader("🔍 ドキュメント詳細")
+
+    # セレクトボックスのキーに検索クエリを含めることで、モード変更時にリセット
+    selector_key = f"document_selector_{search_query or 'normal'}"
+
     selected_index = st.selectbox(
         "編集するドキュメントを選択",
         range(len(documents)),
         format_func=lambda i: f"{documents[i].get('file_name', 'Unknown')} (信頼度: {documents[i].get('confidence') or 0:.3f})",
-        key="document_selector"  # 明示的なキーを追加
+        key=selector_key
     )
 
     selected_doc = documents[selected_index]
@@ -339,10 +489,10 @@ def main():
                         col_before, col_after = st.columns(2)
                         with col_before:
                             st.markdown("**修正前**")
-                            st.json(correction.get('old_metadata', {}), expanded=False)
+                            st.json(correction.get('old_metadata', {}), expanded=True)
                         with col_after:
                             st.markdown("**修正後**")
-                            st.json(correction.get('new_metadata', {}), expanded=False)
+                            st.json(correction.get('new_metadata', {}), expanded=True)
 
                         st.markdown("---")
             else:
@@ -354,43 +504,38 @@ def main():
     col_left, col_right = st.columns([1, 1.2])
 
     with col_left:
-        st.markdown("### 📄 PDFプレビュー")
+        st.markdown("### 📄 ドキュメントプレビュー")
 
-        # PDFのダウンロードと表示
-        if file_id and file_name.lower().endswith('.pdf'):
-            with st.spinner("PDFをダウンロード中..."):
+        # ファイルのダウンロードと表示
+        if file_id:
+            with st.spinner("ファイルをダウンロード中..."):
                 file_path = download_file_from_drive(file_id, file_name)
 
-            if file_path and Path(file_path).exists():
-                # デバッグログ: PDFプレビュー前の確認
-                import os
-                logger.info(f"PDFプレビュー開始。ローカルパス: {file_path}")
-                logger.info(f"ファイルサイズ: {os.path.getsize(file_path)} bytes")
+            # デバッグ情報を表示
+            if not file_path:
+                st.error(f"❌ ファイルのダウンロードに失敗しました（file_path=None）")
+                st.info(f"file_id: {file_id}")
+            elif not Path(file_path).exists():
+                st.error(f"❌ ダウンロードされたファイルが見つかりません")
+                st.info(f"パス: {file_path}")
 
-                # PDFプレビュー表示（ファイルパスを直接渡す）
-                try:
-                    from streamlit_pdf_viewer import pdf_viewer
-                    logger.info("streamlit_pdf_viewer を使用してPDF表示（ファイルパス直接渡し）")
-                    # ファイルパスを直接渡すことで、巨大なBase64文字列の生成を回避
-                    pdf_viewer(file_path, height=700)
-                except ImportError:
-                    logger.warning("streamlit_pdf_viewer がインストールされていません。ダウンロードボタンを表示します")
-                    st.warning("PDFビューアーライブラリがインストールされていません")
-                    # ダウンロードボタン用にバイトデータを読み込む
-                    with open(file_path, 'rb') as f:
-                        pdf_bytes = f.read()
-                    st.download_button(
-                        label="📥 PDFをダウンロード",
-                        data=pdf_bytes,
-                        file_name=file_name,
-                        mime="application/pdf",
-                        use_container_width=True
-                    )
-                except Exception as e:
-                    logger.error(f"PDFプレビュー表示エラー: {e}", exc_info=True)
-                    st.warning(f"PDFプレビュー表示エラー: {e}")
-                    # エラー時のダウンロードボタン用にバイトデータを読み込む
+            if file_path and Path(file_path).exists():
+                # ファイルタイプに応じてプレビュー表示
+                file_extension = file_name.lower().split('.')[-1] if '.' in file_name else ''
+
+                # PDFの場合
+                if file_extension == 'pdf' or file_name.lower().endswith('.pdf'):
+                    import os
+                    logger.info(f"PDFプレビュー開始。ローカルパス: {file_path}")
+                    logger.info(f"ファイルサイズ: {os.path.getsize(file_path)} bytes")
+
                     try:
+                        from streamlit_pdf_viewer import pdf_viewer
+                        logger.info("streamlit_pdf_viewer を使用してPDF表示（ファイルパス直接渡し）")
+                        pdf_viewer(file_path, height=700)
+                    except ImportError:
+                        logger.warning("streamlit_pdf_viewer がインストールされていません。ダウンロードボタンを表示します")
+                        st.warning("PDFビューアーライブラリがインストールされていません")
                         with open(file_path, 'rb') as f:
                             pdf_bytes = f.read()
                         st.download_button(
@@ -400,14 +545,193 @@ def main():
                             mime="application/pdf",
                             use_container_width=True
                         )
-                    except Exception as read_error:
-                        logger.error(f"PDFファイル読み込みエラー: {read_error}", exc_info=True)
-                        st.error("PDFファイルの読み込みに失敗しました")
+                    except Exception as e:
+                        logger.error(f"PDFプレビュー表示エラー: {e}", exc_info=True)
+                        st.warning(f"PDFプレビュー表示エラー: {e}")
+
+                # テキストファイルの場合（txt, md, csv, json, etc.）
+                elif file_extension in ['txt', 'md', 'markdown', 'csv', 'json', 'log', 'py', 'js', 'html', 'css']:
+                    try:
+                        with open(file_path, 'r', encoding='utf-8') as f:
+                            text_content = f.read()
+
+                        st.markdown("#### 📝 テキストプレビュー")
+
+                        # タブで表示を切り替え
+                        text_tab1, text_tab2, text_tab3 = st.tabs(["原文", "構造化表示", "統計"])
+
+                        with text_tab1:
+                            # 原文表示
+                            st.text_area(
+                                "ファイル内容",
+                                value=text_content,
+                                height=500,
+                                disabled=True,
+                                key=f"text_preview_{doc_id}"
+                            )
+
+                        with text_tab2:
+                            # 構造化表示
+                            from ui.utils.text_structurer import TextStructurer
+                            structured_blocks = TextStructurer.structure_text(text_content)
+
+                            if structured_blocks:
+                                # 構造化データをDataFrameで表示
+                                df_structured = pd.DataFrame(structured_blocks)
+
+                                # タイプを日本語に翻訳
+                                df_structured['type_ja'] = df_structured['type'].apply(
+                                    lambda t: TextStructurer._translate_type(t)
+                                )
+
+                                st.dataframe(
+                                    df_structured[['line_number', 'type_ja', 'content', 'length']],
+                                    column_config={
+                                        "line_number": st.column_config.NumberColumn("行番号", width="small"),
+                                        "type_ja": st.column_config.TextColumn("タイプ", width="small"),
+                                        "content": st.column_config.TextColumn("内容", width="large"),
+                                        "length": st.column_config.NumberColumn("文字数", width="small")
+                                    },
+                                    height=500,
+                                    use_container_width=True
+                                )
+
+                                # metadataに構造化データを追加
+                                if 'text_blocks' not in metadata:
+                                    metadata['text_blocks'] = structured_blocks
+                                    logger.info(f"テキスト構造化データをメタデータに追加: {len(structured_blocks)} ブロック")
+
+                        with text_tab3:
+                            # 統計情報
+                            from ui.utils.text_structurer import TextStructurer
+                            structured_blocks = TextStructurer.structure_text(text_content)
+                            stats = TextStructurer.get_statistics(structured_blocks)
+
+                            st.markdown("### 📊 テキスト統計")
+                            col_stat1, col_stat2, col_stat3 = st.columns(3)
+                            with col_stat1:
+                                st.metric("総行数", stats['total_lines'])
+                            with col_stat2:
+                                st.metric("ブロックタイプ数", stats['unique_types'])
+                            with col_stat3:
+                                total_chars = sum(block['length'] for block in structured_blocks)
+                                st.metric("総文字数", total_chars)
+
+                            st.markdown("### 📋 ブロックタイプ別件数")
+                            for block_type, count in sorted(stats['type_counts'].items(), key=lambda x: x[1], reverse=True):
+                                type_ja = TextStructurer._translate_type(block_type)
+                                st.write(f"- **{type_ja}**: {count} 行")
+
+                        # ダウンロードボタン
+                        st.download_button(
+                            label="📥 テキストファイルをダウンロード",
+                            data=text_content,
+                            file_name=file_name,
+                            mime="text/plain",
+                            use_container_width=True
+                        )
+                    except UnicodeDecodeError:
+                        st.error("❌ テキストファイルのエンコーディングエラー。UTF-8でデコードできません。")
+                    except Exception as e:
+                        logger.error(f"テキストファイル読み込みエラー: {e}", exc_info=True)
+                        st.error(f"❌ ファイル読み込みエラー: {e}")
+
+                # その他のファイル
+                else:
+                    st.info(f"このファイルタイプ（.{file_extension}）のプレビューには対応していません")
+                    try:
+                        with open(file_path, 'rb') as f:
+                            file_bytes = f.read()
+                        st.download_button(
+                            label="📥 ファイルをダウンロード",
+                            data=file_bytes,
+                            file_name=file_name,
+                            use_container_width=True
+                        )
+                    except Exception as e:
+                        logger.error(f"ファイル読み込みエラー: {e}", exc_info=True)
+                        st.error("ファイルの読み込みに失敗しました")
             else:
-                logger.warning(f"PDFファイルを読み込めませんでした。file_path={file_path}, exists={Path(file_path).exists() if file_path else False}")
-                st.warning("PDFファイルを読み込めませんでした")
+                logger.warning(f"ファイルを読み込めませんでした。file_path={file_path}, exists={Path(file_path).exists() if file_path else False}")
+                st.warning("ファイルを読み込めませんでした")
         else:
-            st.info("PDFファイル以外はプレビューできません")
+            st.info("ファイルIDが見つかりません")
+
+        # ============================================
+        # 【新機能】手動テキスト補正（Human-in-the-loop）
+        # ============================================
+        # PDFまたはテキストファイルの場合、手動補正機能を表示
+        if file_path and Path(file_path).exists():
+            from ui.components.manual_text_correction import (
+                render_manual_text_correction,
+                execute_stage2_reprocessing
+            )
+
+            # full_textを取得（メタデータまたはファイルから）
+            extracted_text = selected_doc.get('full_text', '')
+
+            # 手動補正UIを表示
+            corrected_text = render_manual_text_correction(
+                doc_id=doc_id,
+                file_name=file_name,
+                extracted_text=extracted_text,
+                metadata=metadata,
+                doc_type=doc_type
+            )
+
+            # Stage 2再実行が要求された場合
+            if corrected_text:
+                with st.spinner("🔄 補正されたテキストでStage 2（構造化）を再実行中..."):
+                    try:
+                        # Stage 2再実行
+                        reprocessed_result = execute_stage2_reprocessing(
+                            corrected_text=corrected_text,
+                            file_name=file_name,
+                            metadata=metadata,
+                            workspace=selected_doc.get('workspace', 'personal')
+                        )
+
+                        # メタデータを更新
+                        new_metadata = reprocessed_result['metadata']
+                        new_confidence = reprocessed_result['confidence']
+
+                        # データベースに保存
+                        success = db_client.record_correction(
+                            doc_id=doc_id,
+                            new_metadata=new_metadata,
+                            new_doc_type=doc_type,
+                            corrector_email=None,
+                            notes="手動テキスト補正によるStage 2再実行"
+                        )
+
+                        if success:
+                            st.success("✅ Stage 2再実行が完了しました！構造化データが更新されました。")
+                            st.balloons()
+
+                            # 補正前後の比較を表示
+                            with st.expander("📊 補正前後の比較", expanded=True):
+                                col_before, col_after = st.columns(2)
+
+                                with col_before:
+                                    st.markdown("**補正前**")
+                                    st.metric("文字数", len(extracted_text))
+                                    st.metric("信頼度", f"{confidence:.2%}")
+
+                                with col_after:
+                                    st.markdown("**補正後**")
+                                    st.metric("文字数", len(corrected_text))
+                                    st.metric("信頼度", f"{new_confidence:.2%}")
+
+                            # ページをリロード
+                            import time
+                            time.sleep(2)
+                            st.rerun()
+                        else:
+                            st.error("❌ データベースへの保存に失敗しました")
+
+                    except Exception as e:
+                        logger.error(f"Stage 2再実行エラー: {e}", exc_info=True)
+                        st.error(f"❌ Stage 2再実行エラー: {e}")
 
     with col_right:
         st.markdown("### ✏️ メタデータ編集")
@@ -437,7 +761,8 @@ def main():
             logger.info(f"  タブ追加: {field['label']} (キー: {field['key']})")
             tab_names.append(field["label"])
 
-        # 固定タブ：JSONプレビュー
+        # 固定タブ：表を追加、JSONプレビュー
+        tab_names.append("➕ 表を追加")
         tab_names.append("🔍 JSONプレビュー")
 
         logger.info(f"📑 生成されるタブ一覧 ({len(tab_names)} 個): {tab_names}")
@@ -484,13 +809,32 @@ def main():
                 edited_metadata[field["key"]] = edited_value
                 logger.info(f"  ✓ {field['label']} タブのレンダリング完了")
 
+        # 最後から2番目のタブ: 表を追加
+        with tabs[-2]:
+            from ui.components.table_creator import render_table_creator
+
+            updated_metadata = render_table_creator(doc_id, metadata.copy())
+
+            if updated_metadata:
+                edited_metadata = updated_metadata
+                st.info("💡 追加した表を保存するには、下の「💾 保存」ボタンを押してください")
+
         # 最後のタブ: JSONプレビュー
         with tabs[-1]:
             edited_metadata = render_json_preview(metadata, editable=True, key_suffix=doc_id)
 
         # 保存ボタンエリア
         st.markdown("---")
-        col_save, col_validate, col_cancel = st.columns([1, 1, 1])
+
+        # レビュー状態の表示
+        is_reviewed = selected_doc.get('is_reviewed', False)
+        if is_reviewed:
+            reviewed_at = selected_doc.get('reviewed_at', '')
+            reviewed_by = selected_doc.get('reviewed_by', '')
+            st.info(f"✅ レビュー済み（{reviewed_at[:10] if reviewed_at else '日時不明'}）" +
+                   (f" by {reviewed_by}" if reviewed_by else ""))
+
+        col_save, col_validate, col_review, col_cancel = st.columns([1, 1, 1, 1])
 
         with col_validate:
             if st.button("🔍 変更を確認", use_container_width=True):
@@ -529,8 +873,89 @@ def main():
                     else:
                         st.error("❌ 保存に失敗しました")
 
+        with col_review:
+            # レビュー状態切り替えボタン
+            if is_reviewed:
+                # レビュー済み → 未完了に戻す
+                if st.button("↩️ 未完了に戻す", use_container_width=True, type="secondary"):
+                    success = db_client.mark_document_unreviewed(doc_id)
+                    if success:
+                        st.success("✅ 未完了に戻しました")
+                        st.rerun()
+                    else:
+                        st.error("❌ 操作に失敗しました")
+            else:
+                # 未レビュー → チェック完了
+                if st.button("✅ チェック完了", use_container_width=True, type="primary"):
+                    success = db_client.mark_document_reviewed(doc_id)
+                    if success:
+                        st.success("✅ レビュー完了としてマークしました")
+                        st.balloons()
+                        st.rerun()
+                    else:
+                        st.error("❌ 操作に失敗しました")
+
         with col_cancel:
             if st.button("🔄 リセット", use_container_width=True):
+                st.rerun()
+
+    # 削除機能（危険な操作のため、別セクションに配置）
+    st.markdown("---")
+    st.markdown("### ⚠️ 危険な操作")
+
+    # 削除確認用のセッション状態
+    delete_confirm_key = f"delete_confirm_{doc_id}"
+    if delete_confirm_key not in st.session_state:
+        st.session_state[delete_confirm_key] = False
+
+    col_delete1, col_delete2, col_spacer = st.columns([1, 1, 2])
+
+    with col_delete1:
+        if not st.session_state[delete_confirm_key]:
+            if st.button("🗑️ データを削除", use_container_width=True, type="secondary"):
+                st.session_state[delete_confirm_key] = True
+                st.rerun()
+        else:
+            st.warning("本当に削除しますか？")
+
+    with col_delete2:
+        if st.session_state[delete_confirm_key]:
+            if st.button("✅ 削除を実行", use_container_width=True, type="primary"):
+                with st.spinner("削除中..."):
+                    # 1. まずGoogle Driveからファイルをゴミ箱に移動
+                    drive_success = False
+                    if file_id:
+                        try:
+                            drive_connector = GoogleDriveConnector()
+                            drive_success = drive_connector.trash_file(file_id)
+                            if drive_success:
+                                st.success(f"✅ Google Driveのファイルをゴミ箱に移動しました")
+                            else:
+                                st.warning(f"⚠️ Google Driveファイルの削除に失敗しましたが、データベースからは削除します")
+                        except Exception as e:
+                            st.error(f"Google Drive削除エラー: {e}")
+                            st.warning(f"⚠️ Google Driveファイルの削除に失敗しましたが、データベースからは削除します")
+                    else:
+                        st.warning("Google DriveのファイルIDが見つかりません。データベースのみ削除します。")
+
+                    # 2. データベースから削除
+                    db_success = db_client.delete_document(doc_id)
+
+                    if db_success:
+                        st.success("✅ データベースからドキュメントを削除しました")
+                        st.balloons()
+                        # 削除確認状態をリセット
+                        st.session_state[delete_confirm_key] = False
+                        # 少し待ってからリロード
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ データベースからの削除に失敗しました")
+                        st.session_state[delete_confirm_key] = False
+
+            if st.button("❌ キャンセル", use_container_width=True):
+                st.session_state[delete_confirm_key] = False
                 st.rerun()
 
     # フッター
@@ -540,6 +965,30 @@ def main():
         st.caption("Document Management System - Review UI v2.0 (Tab Edition)")
     with col_footer2:
         st.caption(f"🎨 検出スキーマ: {detected_schema or 'N/A'}")
+
+
+def main():
+    """メインUIロジック - タブ切り替え"""
+    st.set_page_config(
+        page_title="Document Management System",
+        page_icon="📚",
+        layout="wide",
+        initial_sidebar_state="expanded"
+    )
+
+    st.title("📚 Document Management System")
+    st.markdown("ドキュメントレビューとメール受信トレイを統合管理（全ファイルタイプ対応）")
+
+    # トップレベルのタブ
+    tab1, tab2 = st.tabs(["📋 ドキュメントレビュー", "📬 メール受信トレイ"])
+
+    with tab1:
+        pdf_review_ui()
+
+    with tab2:
+        # メールUIをインポートして表示
+        from ui.email_inbox import email_inbox_ui
+        email_inbox_ui()
 
 
 if __name__ == "__main__":

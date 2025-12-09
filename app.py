@@ -10,6 +10,9 @@ from flask_cors import CORS
 
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
+from core.utils.query_expansion import QueryExpander
+from core.utils.context_extractor import ContextExtractor
+from config.yaml_loader import load_user_context
 
 app = Flask(__name__)
 CORS(app)
@@ -17,6 +20,7 @@ CORS(app)
 # クライアントの初期化
 db_client = DatabaseClient()
 llm_client = LLMClient()
+query_expander = QueryExpander(llm_client=llm_client)
 
 
 @app.route('/')
@@ -25,10 +29,42 @@ def index():
     return render_template('index.html')
 
 
+@app.route('/api/filters', methods=['GET'])
+def get_filters():
+    """
+    フィルタオプション取得API（階層構造対応）
+    workspace（親）→ doc_type（子）の階層データを返す
+    """
+    try:
+        # workspace別のdoc_type階層構造を取得
+        hierarchy = db_client.get_workspace_hierarchy()
+
+        # 階層構造をリスト形式に変換（フロントエンド用）
+        workspace_list = []
+        for workspace, doc_types in hierarchy.items():
+            workspace_list.append({
+                'name': workspace,
+                'doc_types': doc_types
+            })
+
+        print(f"[DEBUG] フィルタ取得: {len(workspace_list)} workspaces（階層構造）")
+
+        return jsonify({
+            'success': True,
+            'hierarchy': workspace_list
+        })
+    except Exception as e:
+        print(f"[ERROR] フィルタ取得エラー: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/search', methods=['POST'])
 def search_documents():
     """
-    ベクトル検索API
+    ベクトル検索API（クエリ拡張対応 + 複数フィルタ対応）
     ユーザーの質問から関連文書を検索
     """
     try:
@@ -37,31 +73,87 @@ def search_documents():
         requested_limit = data.get('limit', 3)
         # 最大5件に強制制限（フロントエンドの指定を無視）
         limit = min(requested_limit, 5)
-        workspace = data.get('workspace')
 
-        print(f"[DEBUG] 検索リクエスト: query='{query}', requested_limit={requested_limit}, actual_limit={limit}")
+        # ✅ 配列で受け取る（後方互換性のため単一値もサポート）
+        workspaces = data.get('workspaces', [])
+        doc_types = data.get('doc_types', [])
+
+        # 後方互換性: 単一のworkspaceパラメータもサポート
+        if not workspaces and data.get('workspace'):
+            workspaces = [data.get('workspace')]
+
+        enable_query_expansion = data.get('enable_query_expansion', False)  # デフォルトで無効
+
+        print(f"[DEBUG] 検索リクエスト: query='{query}', limit={limit}, workspaces={workspaces}, doc_types={doc_types}")
 
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
 
-        # Embeddingを生成
-        embedding = llm_client.generate_embedding(query)
+        # ユーザーコンテキストを読み込み、関連情報を抽出（検索用：軽量）
+        user_context = load_user_context()
+        context_extractor = ContextExtractor(user_context)
+        extracted_context = context_extractor.extract_relevant_context(
+            query,
+            include_schedules=False  # 検索時はスケジュール不要
+        )
+        context_string = context_extractor.build_search_context_string(extracted_context)
+
+        # クエリ拡張を適用（有効な場合）
+        expanded_query = query
+        expansion_info = None
+
+        # ユーザーコンテキストがあればクエリに追加
+        if context_string:
+            expanded_query = f"{query} {context_string}"
+            print(f"[DEBUG] コンテキスト追加: '{query}' → '{expanded_query}'")
+
+        if enable_query_expansion:
+            expansion_result = query_expander.expand_query(expanded_query)
+            if expansion_result.get('expansion_applied'):
+                expanded_query = expansion_result.get('expanded_query', expanded_query)
+                expansion_info = {
+                    'original': query,
+                    'expanded': expanded_query,
+                    'keywords': expansion_result.get('keywords', [])
+                }
+                print(f"[DEBUG] クエリ拡張適用: '{query}' → '{expanded_query}'")
+            else:
+                print(f"[DEBUG] クエリ拡張スキップ: '{expanded_query}'")
+
+        # Embeddingを生成（拡張されたクエリを使用）
+        embedding = llm_client.generate_embedding(expanded_query)
 
         # ベクトル検索を実行（非同期関数を同期的に実行）
+        # 拡張されたクエリをテキスト検索にも使用
         loop = asyncio.new_event_loop()
         asyncio.set_event_loop(loop)
+
+        # ✅ doc_typeのみで絞り込み（階層構造はフロントエンドで維持）
         results = loop.run_until_complete(
-            db_client.search_documents(query, embedding, limit, workspace)
+            db_client.search_documents(
+                expanded_query,
+                embedding,
+                limit,
+                doc_types if doc_types else None
+            )
         )
         loop.close()
 
-        print(f"[DEBUG] 検索結果: {len(results)} 件返却")
+        print(f"[DEBUG] 検索結果: {len(results)} 件（doc_types={doc_types}）")
 
-        return jsonify({
+        print(f"[DEBUG] 最終検索結果: {len(results)} 件返却")
+
+        response_data = {
             'success': True,
             'results': results,
             'count': len(results)
-        })
+        }
+
+        # クエリ拡張情報を含める（デバッグ用）
+        if expansion_info:
+            response_data['query_expansion'] = expansion_info
+
+        return jsonify(response_data)
 
     except Exception as e:
         return jsonify({
@@ -85,6 +177,15 @@ def generate_answer():
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
 
+        # ユーザーコンテキストを読み込み、関連情報を抽出（回答生成用：詳細）
+        user_context = load_user_context()
+        context_extractor = ContextExtractor(user_context)
+        extracted_context = context_extractor.extract_relevant_context(
+            query,
+            include_schedules=True  # 回答生成時はスケジュールも含める
+        )
+        user_context_prompt = context_extractor.build_answer_context_string(extracted_context)
+
         # ドキュメントコンテキストを構築
         context = _build_context(documents)
 
@@ -94,9 +195,16 @@ def generate_answer():
             context = context[:MAX_CONTEXT_LENGTH] + "\n\n[... 以降は省略されました ...]"
             print(f"[WARNING] コンテキストを切り詰めました: {len(context)} → {MAX_CONTEXT_LENGTH} 文字")
 
-        # プロンプトを作成（Phase 2.2.3: 構造的クエリ対応）
-        prompt = f"""以下の文書情報を参考に、ユーザーの質問に日本語で回答してください。
+        # プロンプトを作成（Phase 2.2.3: 構造的クエリ対応 + ユーザーコンテキスト追加）
+        prompt_parts = []
 
+        prompt_parts.append("以下の文書情報を参考に、ユーザーの質問に日本語で回答してください。")
+
+        # ユーザーコンテキストがあれば追加
+        if user_context_prompt:
+            prompt_parts.append(f"\n{user_context_prompt}\n")
+
+        prompt_parts.append(f"""
 【質問】
 {query}
 
@@ -105,6 +213,7 @@ def generate_answer():
 
 【回答の条件】
 - 参考文書の情報を基に、正確に回答してください
+- **ユーザーの前提情報を考慮してください**（上記に記載された子供の情報、学校や塾のスケジュールなど）
 - **重要：ファイル名も重視してください**
   * ユーザーが特定のファイル名を質問している場合（例：「学年通信（29）」）、そのファイル名と完全一致または部分一致する文書を優先的に参照してください
   * ファイル名が一致する文書があれば、必ずその内容を回答に含めてください
@@ -117,7 +226,10 @@ def generate_answer():
 - 回答の最後に、参考にした文書のタイトルを列挙してください
 
 【回答】
-"""
+""")
+
+        # プロンプトを結合
+        prompt = "\n".join(prompt_parts)
 
         # GPT で回答生成（モデル選択対応）
         response = llm_client.call_model(
