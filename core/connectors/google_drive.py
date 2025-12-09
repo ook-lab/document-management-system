@@ -166,7 +166,8 @@ class GoogleDriveConnector:
             logger.error(f"エラー内容: {str(e)}")
             logger.error(f"エラータイプ: {type(e).__name__}")
             logger.debug("エラー詳細", exc_info=True)
-            return None
+            # エラーを再スローして呼び出し側で処理できるようにする
+            raise
 
     def get_inbox_folder_id(self) -> Optional[str]:
         """
