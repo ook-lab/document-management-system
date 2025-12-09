@@ -39,7 +39,7 @@ RETURNS TABLE (
     source_type VARCHAR,
     source_url TEXT,
     full_text TEXT,
-    created_at TIMESTAMP
+    created_at TIMESTAMPTZ
 ) AS $$
 BEGIN
     RETURN QUERY
