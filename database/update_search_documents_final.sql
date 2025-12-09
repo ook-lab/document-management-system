@@ -54,7 +54,7 @@ BEGIN
         d.full_text AS large_chunk_text,  -- 大チャンク（全文）
         d.id AS large_chunk_id,
         ((1 - (d.embedding <=> query_embedding)) * vector_weight +
-         ts_rank(to_tsvector('japanese', COALESCE(d.full_text, '')), plainto_tsquery('japanese', query_text)) * fulltext_weight)::FLOAT AS combined_score,
+         ts_rank(to_tsvector('simple', COALESCE(d.full_text, '')), plainto_tsquery('simple', query_text)) * fulltext_weight)::FLOAT AS combined_score,
         d.id AS small_chunk_id,  -- 簡略化（実際は小チャンクテーブルから取得する場合がある）
         EXTRACT(YEAR FROM d.document_date)::INT AS year,
         EXTRACT(MONTH FROM d.document_date)::INT AS month,
