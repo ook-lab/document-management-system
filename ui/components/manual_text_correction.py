@@ -244,6 +244,9 @@ def execute_stage2_reprocessing(
     """
     補正されたテキストでStage 2を再実行
 
+    このラッパー関数は後方互換性のために残されています。
+    新しいコードでは ui.utils.stage2_reprocessor を使用してください。
+
     Args:
         corrected_text: 人間が補正したテキスト
         file_name: ファイル名
@@ -253,6 +256,13 @@ def execute_stage2_reprocessing(
     Returns:
         新しい構造化データ
     """
+    from ui.utils.stage2_reprocessor import reprocess_with_stage2
+    from core.database.client import DatabaseClient
+
+    logger.warning("[Deprecated] execute_stage2_reprocessing() は非推奨です。ui.utils.stage2_reprocessor.reprocess_with_stage2() を使用してください。")
+
+    # この関数は後方互換性のために残されていますが、新しいユーティリティを内部で使用します
+    # 戻り値の形式を維持するため、ラッパーとして機能します
     from core.ai.stage2_extractor import Stage2Extractor
     from core.ai.llm_client import LLMClient
 

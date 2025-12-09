@@ -761,7 +761,8 @@ def pdf_review_ui():
             logger.info(f"  タブ追加: {field['label']} (キー: {field['key']})")
             tab_names.append(field["label"])
 
-        # 固定タブ：JSONプレビュー
+        # 固定タブ：表を追加、JSONプレビュー
+        tab_names.append("➕ 表を追加")
         tab_names.append("🔍 JSONプレビュー")
 
         logger.info(f"📑 生成されるタブ一覧 ({len(tab_names)} 個): {tab_names}")
@@ -807,6 +808,16 @@ def pdf_review_ui():
 
                 edited_metadata[field["key"]] = edited_value
                 logger.info(f"  ✓ {field['label']} タブのレンダリング完了")
+
+        # 最後から2番目のタブ: 表を追加
+        with tabs[-2]:
+            from ui.components.table_creator import render_table_creator
+
+            updated_metadata = render_table_creator(doc_id, metadata.copy())
+
+            if updated_metadata:
+                edited_metadata = updated_metadata
+                st.info("💡 追加した表を保存するには、下の「💾 保存」ボタンを押してください")
 
         # 最後のタブ: JSONプレビュー
         with tabs[-1]:

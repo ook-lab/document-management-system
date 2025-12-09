@@ -143,15 +143,18 @@ class Stage2Extractor:
         table_extraction_guidelines = self._load_table_extraction_template()
 
         # テキストを適切な長さに切り詰め
-        # メール用（email_stage2_extraction）は表テンプレート（8251文字）があるため短く
+        # Claude 4.5 Haikuは200Kトークン対応のため、大幅に拡張
         if tier == "email_stage2_extraction":
-            max_text_length = 5000  # メール用: 短めに設定
+            max_text_length = 20000  # メール用: 拡張（5000→20000）
         else:
-            max_text_length = 8000  # PDF用: Claudeのコンテキスト制限を考慮
+            max_text_length = 30000  # PDF用: 大幅拡張（8000→30000）
 
+        # 切り捨てが発生する場合は警告ログを出力
         truncated_text = full_text[:max_text_length]
         if len(full_text) > max_text_length:
             truncated_text += "\n\n...(以下省略)..."
+            logger.warning(f"[Stage 2] テキストが長すぎるため切り詰めました: {len(full_text)} → {max_text_length} 文字")
+            logger.warning(f"[Stage 2] 切り捨てられた文字数: {len(full_text) - max_text_length} 文字")
 
         prompt = f"""あなたは文書分析の専門家です。以下の文書から詳細な情報を抽出し、JSON形式で回答してください。
 
