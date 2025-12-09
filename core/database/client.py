@@ -201,6 +201,7 @@ class DatabaseClient:
                     'id': result.get('document_id'),
                     'file_name': result.get('file_name'),
                     'doc_type': result.get('doc_type'),
+                    'workspace': result.get('workspace'),
                     'document_date': result.get('document_date'),
                     'metadata': result.get('metadata'),
                     'summary': result.get('summary'),
