@@ -9,6 +9,7 @@ BEGIN;
 -- 既存の関数を削除（パラメータが変わるため）
 DROP FUNCTION IF EXISTS search_documents_final(TEXT, vector(1536), FLOAT, INT, FLOAT, FLOAT, INT, INT, TEXT);
 DROP FUNCTION IF EXISTS search_documents_final(TEXT, vector(1536), FLOAT, INT, FLOAT, FLOAT, INT, INT, TEXT[], TEXT[]);
+DROP FUNCTION IF EXISTS search_documents_final(text, vector, double precision, integer, double precision, double precision, integer, integer, text[]);
 
 -- 新しい関数を作成（doc_typeのみで絞り込み）
 CREATE OR REPLACE FUNCTION search_documents_final(
