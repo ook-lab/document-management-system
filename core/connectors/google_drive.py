@@ -149,10 +149,6 @@ class GoogleDriveConnector:
                     supportsAllDrives=True
                 )
 
-            logger.info(f"[DEBUG] request オブジェクト: {request}, type: {type(request)}")
-            if request is None:
-                raise ValueError("request が None です。ファイルタイプの処理が正しくありません。")
-
             with open(dest_path, 'wb') as fh:
                 downloader = MediaIoBaseDownload(fh, request)
                 done = False
@@ -162,9 +158,7 @@ class GoogleDriveConnector:
                         logger.debug(f"ダウンロード進捗: {int(status.progress() * 100)}%")
 
             logger.info(f"ファイルダウンロード完了: {dest_path} ({dest_path.stat().st_size} bytes)")
-            result = str(dest_path)
-            logger.info(f"[DEBUG] 返り値: {result}, type: {type(result)}")
-            return result
+            return str(dest_path)
 
         except Exception as e:
             # loguruのフォーマットエラーを回避するため、文字列連結を使用
