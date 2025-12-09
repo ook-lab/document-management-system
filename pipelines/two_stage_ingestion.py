@@ -84,10 +84,6 @@ def flatten_metadata_to_text(metadata: Dict[str, Any]) -> str:
     if 'special_events' in metadata and metadata['special_events']:
         searchable_parts.extend(metadata['special_events'])
 
-    # important_notes の展開
-    if 'important_notes' in metadata and metadata['important_notes']:
-        searchable_parts.extend(metadata['important_notes'])
-
     # basic_info の展開
     if 'basic_info' in metadata and metadata['basic_info']:
         basic_info = metadata['basic_info']

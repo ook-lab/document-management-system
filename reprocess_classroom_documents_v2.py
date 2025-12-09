@@ -5,24 +5,28 @@ Google Classroom ドキュメントの再処理スクリプト v2
 重複処理を防ぎ、処理進捗を追跡し、エラー時のリトライを可能にします。
 
 処理内容:
-1. workspace='ikuya_classroom' のドキュメントをキューに登録
+1. すべてのワークスペース（デフォルト）または指定されたワークスペースのドキュメントをキューに登録
 2. キューから順次タスクを取得して処理
 3. 既存の2段階パイプライン（Gemini分類 + Claude抽出）で処理
 4. full_text、構造化metadata、embedding を生成
 5. 処理状態をデータベースで管理（pending → processing → completed/failed）
 
 使い方:
+    # 全ワークスペースを処理（デフォルト）
+    python reprocess_classroom_documents_v2.py --limit=100
+
     # ドライラン（確認のみ）
     python reprocess_classroom_documents_v2.py --dry-run
+
+    # 特定のワークスペースのみ処理
+    python reprocess_classroom_documents_v2.py --workspace=ema_classroom --limit=20
+    python reprocess_classroom_documents_v2.py --workspace=ikuya_classroom --limit=20
 
     # キューに追加のみ（処理は実行しない）
     python reprocess_classroom_documents_v2.py --populate-only --limit=50
 
     # キューから処理実行
     python reprocess_classroom_documents_v2.py --process-queue --limit=10
-
-    # 一括実行（キュー追加 → 処理）
-    python reprocess_classroom_documents_v2.py --limit=20
 
     # ワークスペースを保持しない（Stage1 AIに判定させる）
     python reprocess_classroom_documents_v2.py --no-preserve-workspace
@@ -49,7 +53,7 @@ class ClassroomReprocessorV2:
 
     def populate_queue_from_workspace(
         self,
-        workspace: str = 'ikuya_classroom',
+        workspace: str = 'all',
         limit: int = 100,
         reason: str = 'classroom_reprocessing',
         preserve_workspace: bool = True
@@ -58,7 +62,7 @@ class ClassroomReprocessorV2:
         指定されたworkspaceのドキュメントをキューに追加
 
         Args:
-            workspace: 対象ワークスペース
+            workspace: 対象ワークスペース ('all' で全ワークスペース)
             limit: 追加する最大件数
             reason: 再処理の理由
             preserve_workspace: workspaceを保持するか
@@ -69,9 +73,14 @@ class ClassroomReprocessorV2:
         logger.info(f"キューへの追加を開始: workspace={workspace}")
 
         # 対象ドキュメントを取得
-        result = self.db.client.table('documents').select('*').eq(
-            'workspace', workspace
-        ).limit(limit).execute()
+        if workspace == 'all':
+            # 全ワークスペースを対象
+            result = self.db.client.table('documents').select('*').limit(limit).execute()
+        else:
+            # 特定のワークスペースのみ
+            result = self.db.client.table('documents').select('*').eq(
+                'workspace', workspace
+            ).limit(limit).execute()
 
         documents = result.data if result.data else []
         logger.info(f"対象ドキュメント: {len(documents)}件")
@@ -585,7 +594,8 @@ class ClassroomReprocessorV2:
         dry_run: bool = False,
         populate_only: bool = False,
         process_queue_only: bool = False,
-        preserve_workspace: bool = True
+        preserve_workspace: bool = True,
+        workspace: str = 'all'
     ):
         """
         再処理を実行
@@ -610,13 +620,13 @@ class ClassroomReprocessorV2:
         # キューへの追加
         if not process_queue_only:
             logger.info(f"\n📥 キューへの追加を開始...")
-            logger.info(f"  対象ワークスペース: ikuya_classroom")
+            logger.info(f"  対象ワークスペース: {workspace}")
             logger.info(f"  最大件数: {limit}")
             logger.info(f"  Workspace保持: {preserve_workspace}")
 
             if not dry_run:
                 added = self.populate_queue_from_workspace(
-                    workspace='ikuya_classroom',
+                    workspace=workspace,
                     limit=limit,
                     preserve_workspace=preserve_workspace
                 )
@@ -663,6 +673,7 @@ async def main():
     process_queue_only = '--process-queue' in sys.argv
     preserve_workspace = '--no-preserve-workspace' not in sys.argv
     limit = 100
+    workspace = 'all'  # デフォルト: 全ワークスペース
 
     # --limit オプションの処理
     for arg in sys.argv:
@@ -671,6 +682,8 @@ async def main():
                 limit = int(arg.split('=')[1])
             except:
                 pass
+        elif arg.startswith('--workspace='):
+            workspace = arg.split('=')[1]
 
     reprocessor = ClassroomReprocessorV2()
     await reprocessor.run(
@@ -678,7 +691,8 @@ async def main():
         dry_run=dry_run,
         populate_only=populate_only,
         process_queue_only=process_queue_only,
-        preserve_workspace=preserve_workspace
+        preserve_workspace=preserve_workspace,
+        workspace=workspace
     )
 
 

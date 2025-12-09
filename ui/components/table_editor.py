@@ -123,7 +123,6 @@ def _format_field_name(field_name: str) -> str:
         "weekly_timetable_matrix": "📅 週間時間割",
         # 汎用フィールド
         "text_blocks": "📝 文章セクション",
-        "important_notes": "📌 連絡事項",
         "special_events": "🎉 特別イベント",
         "requirements": "📦 持ち物・準備",
         "important_points": "⚠️ 重要事項",
