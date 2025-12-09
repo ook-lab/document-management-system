@@ -128,13 +128,22 @@ def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
         ダウンロードされたファイルのパス、失敗時はNone
     """
     try:
+        st.info(f"🔍 デバッグ: GoogleDriveConnector初期化中...")
         drive_connector = GoogleDriveConnector()
+        st.info(f"🔍 デバッグ: 初期化成功、ダウンロード開始...")
         temp_dir = tempfile.gettempdir()
+        st.info(f"🔍 デバッグ: 一時ディレクトリ={temp_dir}")
         file_path = drive_connector.download_file(source_id, file_name, temp_dir)
+        st.success(f"✅ ダウンロード成功: {file_path}")
         return file_path
     except Exception as e:
+        error_type = type(e).__name__
+        error_msg = str(e)
         logger.error(f"ファイルのダウンロードに失敗: source_id={source_id}, file_name={file_name}", exc_info=True)
-        st.error(f"❌ Google Driveからのダウンロードエラー: {type(e).__name__}: {str(e)}")
+        st.error(f"❌ Google Driveエラー")
+        st.error(f"エラータイプ: {error_type}")
+        st.error(f"エラー詳細: {error_msg}")
+        st.code(f"file_id: {source_id}\nfile_name: {file_name}")
         return None
 
 
