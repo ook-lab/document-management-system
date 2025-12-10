@@ -190,6 +190,7 @@ class TwoStageIngestionPipeline:
         file_id = file_meta['id']
         file_name = file_meta['name']
         mime_type = file_meta.get('mimeType', 'application/octet-stream')
+        doc_type = file_meta.get('doc_type', 'other')  # doc_typeを取得（デフォルト: other）
 
         logger.info(f"=== 2段階処理開始: {file_name} ===")
 
@@ -608,7 +609,8 @@ class TwoStageIngestionPipeline:
             }
 
             try:
-                await self.db.insert_document('documents', error_data)
+                # 既存レコードがある場合は上書き（force_reprocessモード対応）
+                await self.db.upsert_document('documents', error_data, conflict_column='source_id', force_update=True)
             except Exception as db_error:
                 db_error_traceback = traceback.format_exc()
                 # KeyError回避: エラーメッセージを安全に文字列化

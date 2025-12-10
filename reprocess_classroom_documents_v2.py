@@ -270,7 +270,8 @@ class ClassroomReprocessorV2:
             file_meta = {
                 'id': file_id,
                 'name': file_name,
-                'mimeType': self._guess_mime_type(file_name)
+                'mimeType': self._guess_mime_type(file_name),
+                'doc_type': doc.get('doc_type', 'other')  # doc_typeを追加（デフォルト: other）
             }
 
             # workspaceを決定
