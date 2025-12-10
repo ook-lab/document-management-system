@@ -172,12 +172,14 @@ class DatabaseClient:
             filter_year = None
             filter_month = None
 
+            # ✅ 日付フィルタを有効化（event_dates配列も検索対象）
+            # document_dateまたはevent_dates配列のいずれかにマッチすればヒット
             if target_date:
                 try:
                     parts = target_date.split('-')
                     filter_year = int(parts[0])
                     filter_month = int(parts[1])
-                    print(f"[DEBUG] 日付フィルタ: {filter_year}年{filter_month}月")
+                    print(f"[DEBUG] 日付フィルタ: {filter_year}年{filter_month}月（event_dates配列も検索）")
                 except:
                     pass
 

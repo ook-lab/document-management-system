@@ -257,7 +257,7 @@
         /* ✅ Classroom投稿専用スタイル */
         .classroom-post {
             background: #f8f9ff;
-            border-left: 4px solid #4285f4;
+            border-left: 4px solid #1565c0;
             margin-top: 10px;
             padding: 12px;
             border-radius: 6px;
@@ -274,7 +274,7 @@
 
         .classroom-sender {
             font-weight: 600;
-            color: #4285f4;
+            color: #1565c0;
         }
 
         .classroom-date {
@@ -301,7 +301,7 @@
             align-items: center;
             gap: 5px;
             padding: 6px 12px;
-            background: #4285f4;
+            background: #1565c0;
             color: white;
             text-decoration: none;
             border-radius: 6px;
@@ -310,7 +310,7 @@
         }
 
         .attachment-link:hover {
-            background: #3367d6;
+            background: #0d47a1;
             transform: translateY(-1px);
             box-shadow: 0 3px 8px rgba(66, 133, 244, 0.3);
         }
@@ -1128,15 +1128,15 @@
         }
 
         function renderClassroomPost(doc) {
-            // タイトル（件名）
-            const title = doc.file_name || doc.title || 'Google Classroom投稿';
+            // ✅ タイトル（件名）- classroom_subjectを優先
+            const title = doc.classroom_subject || doc.file_name || doc.title || 'Google Classroom投稿';
 
-            // 送信者情報（metadataから取得）
+            // ✅ 送信者情報（classroom_senderを優先）
             const metadata = doc.metadata || {};
-            const sender = metadata.author_name || metadata.sender || '不明';
+            const sender = doc.classroom_sender || metadata.author_name || metadata.sender || metadata.sender_name || '不明';
 
-            // 送信日時（created_atまたはmetadataから）
-            const dateStr = doc.created_at || metadata.created_time || '';
+            // ✅ 送信日時（classroom_sent_atを優先）
+            const dateStr = doc.classroom_sent_at || doc.created_at || metadata.created_time || '';
             const formattedDate = dateStr ? formatDate(dateStr) : '日時不明';
 
             // 本文（full_textを優先）
@@ -1184,7 +1184,7 @@
                     <div class="document-title">📘 ${escapeHtml(title)}</div>
                     <div class="document-meta">
                         <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
-                        <span style="color: #4285f4; font-weight: 500;">Google Classroom</span>
+                        <span style="color: #1565c0; font-weight: 500;">Google Classroom</span>
                     </div>
                     <div class="classroom-post">
                         <div class="classroom-header">

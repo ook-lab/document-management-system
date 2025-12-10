@@ -55,7 +55,8 @@ class Stage2Extractor:
         file_name: str,
         stage1_result: Dict,
         workspace: str = "personal",
-        tier: str = "stage2_extraction"
+        tier: str = "stage2_extraction",
+        reference_date: str = None
     ) -> Dict:
         """
         詳細メタデータを抽出
@@ -66,6 +67,7 @@ class Stage2Extractor:
             stage1_result: Stage 1結果
             workspace: ワークスペース
             tier: モデル階層（デフォルト: "stage2_extraction"、メール用: "email_stage2_extraction"）
+            reference_date: 基準日（YYYY-MM-DD形式、Classroom投稿日など）
 
         Returns:
             抽出結果辞書:
@@ -73,6 +75,7 @@ class Stage2Extractor:
                 "doc_type": str,
                 "summary": str,
                 "document_date": str (YYYY-MM-DD) or None,
+                "event_dates": List[str],
                 "tags": List[str],
                 "metadata": Dict,
                 "extraction_confidence": float
@@ -80,7 +83,7 @@ class Stage2Extractor:
         """
         doc_type = stage1_result.get("doc_type", "other")
 
-        logger.info(f"[Stage 2] 詳細抽出開始: doc_type={doc_type}, tier={tier}")
+        logger.info(f"[Stage 2] 詳細抽出開始: doc_type={doc_type}, tier={tier}, reference_date={reference_date}")
 
         prompt = self._build_extraction_prompt(
             full_text=full_text,
@@ -88,7 +91,8 @@ class Stage2Extractor:
             doc_type=doc_type,
             workspace=workspace,
             stage1_confidence=stage1_result.get("confidence", 0.0),
-            tier=tier
+            tier=tier,
+            reference_date=reference_date
         )
 
         try:
@@ -132,9 +136,15 @@ class Stage2Extractor:
         doc_type: str,
         workspace: str,
         stage1_confidence: float,
-        tier: str = "stage2_extraction"
+        tier: str = "stage2_extraction",
+        reference_date: str = None
     ) -> str:
-        """抽出プロンプト生成"""
+        """
+        抽出プロンプト生成
+
+        Args:
+            reference_date: 基準日（YYYY-MM-DD形式、Classroom投稿日など）
+        """
         
         # doc_typeに応じたカスタムフィールド定義
         custom_fields = self._get_custom_fields(doc_type)
@@ -156,6 +166,16 @@ class Stage2Extractor:
             logger.warning(f"[Stage 2] テキストが長すぎるため切り詰めました: {len(full_text)} → {max_text_length} 文字")
             logger.warning(f"[Stage 2] 切り捨てられた文字数: {len(full_text) - max_text_length} 文字")
 
+        # 基準日の情報を追加
+        reference_date_info = ""
+        if reference_date:
+            reference_date_info = f"""
+# 投稿日・基準日
+{reference_date}
+
+**重要**: この日付を基準に、相対的な日付表現（「明日」「明後日」「来週」など）を絶対日付に変換してください。
+"""
+
         prompt = f"""あなたは文書分析の専門家です。以下の文書から詳細な情報を抽出し、JSON形式で回答してください。
 
 # ファイル名
@@ -166,7 +186,7 @@ class Stage2Extractor:
 
 # ワークスペース
 {workspace}
-
+{reference_date_info}
 # 文書内容
 {truncated_text}
 
@@ -175,14 +195,18 @@ class Stage2Extractor:
 
 1. **summary**: 文書の内容を簡潔に要約 (500文字以内、重要な情報は省略しない)
    ※2025年のモデル性能に合わせて制限を緩和。検索精度向上のため詳細な要約を推奨
-2. **document_date**: 文書の日付 (YYYY-MM-DD形式、見つからない場合はnull)
-3. **tags**: 関連するタグのリスト (3-5個、検索に有用なキーワード)
-4. **metadata**: 文書タイプに応じた構造化データ（★生データとして原文を保持）
+2. **document_date**: 文書の主要な日付 (YYYY-MM-DD形式、見つからない場合はnull)
+3. **event_dates**: イベントや予定の日付リスト (YYYY-MM-DD形式の配列)
+   - 「明日」「明後日」などの相対表現は、上記の基準日から計算して絶対日付に変換してください
+   - 例: 基準日が2025-12-05で「明後日日曜日」→ 2025-12-07
+   - 複数の日付がある場合はすべて抽出してください
+4. **tags**: 関連するタグのリスト (3-5個、検索に有用なキーワード)
+5. **metadata**: 文書タイプに応じた構造化データ（★生データとして原文を保持）
 {custom_fields}
-5. **tables**: 文書内の表構造（該当する場合のみ）
+6. **tables**: 文書内の表構造（該当する場合のみ）
    - 文書に表形式のデータがある場合、以下のガイドラインに従って完全に構造化してください
    - 表が存在しない場合は空のリスト [] を設定してください
-6. **extraction_confidence**: 抽出の信頼度 (0.0-1.0)
+7. **extraction_confidence**: 抽出の信頼度 (0.0-1.0)
 
 # 【絶対原則】情報の完全性
 - **情報の欠損ゼロ**: 文書内のすべての記載情報を構造化データに含めてください
@@ -223,6 +247,7 @@ class Stage2Extractor:
   "doc_type": "{doc_type}",
   "summary": "文書の要約",
   "document_date": "YYYY-MM-DD",
+  "event_dates": ["YYYY-MM-DD", "YYYY-MM-DD"],
   "tags": ["tag1", "tag2", "tag3"],
   "metadata": {{
     "basic_info": {{

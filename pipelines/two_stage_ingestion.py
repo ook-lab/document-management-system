@@ -25,6 +25,7 @@ from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
 from core.utils.chunking import chunk_document, chunk_document_parent_child
 from core.utils.synthetic_chunks import create_all_synthetic_chunks
+from core.utils.date_extractor import DateExtractor
 from config.yaml_loader import get_classification_yaml_string
 from config.model_tiers import ModelTier
 
@@ -105,10 +106,11 @@ class TwoStageIngestionPipeline:
     """2段階取り込みパイプライン"""
     
     def __init__(self, temp_dir: str = "./temp"):
-        
+
         self.llm_client = LLMClient()
         self.drive = GoogleDriveConnector()
         self.db = DatabaseClient()
+        self.date_extractor = DateExtractor()  # 日付抽出ユーティリティ
         self.yaml_string = get_classification_yaml_string()
 
         self.pdf_processor = PDFProcessor(llm_client=self.llm_client)
@@ -184,13 +186,18 @@ class TwoStageIngestionPipeline:
         self,
         file_meta: Dict[str, Any],
         workspace: str = "personal",
-        force_reprocess: bool = False
+        force_reprocess: bool = False,
+        source_type: str = "drive"
     ) -> Optional[Dict[str, Any]]:
         """単一ファイルを2段階で処理"""
         file_id = file_meta['id']
         file_name = file_meta['name']
         mime_type = file_meta.get('mimeType', 'application/octet-stream')
         doc_type = file_meta.get('doc_type', 'other')  # doc_typeを取得（デフォルト: other）
+
+        # source_typeはfile_metaから取得する（指定があればそちらを優先）
+        if 'source_type' in file_meta:
+            source_type = file_meta['source_type']
 
         logger.info(f"=== 2段階処理開始: {file_name} ===")
 
@@ -201,6 +208,15 @@ class TwoStageIngestionPipeline:
 
         if existing and force_reprocess:
             logger.info(f"🔄 再処理モード: 既存レコードを上書きします")
+
+        # ✅ Classroom投稿の場合、classroom_sent_atを取得してreference_dateとして使用
+        reference_date = None
+        if existing and existing.get('classroom_sent_at'):
+            reference_date = str(existing['classroom_sent_at']).split('T')[0]  # YYYY-MM-DD形式に変換
+            logger.info(f"[Classroom] reference_date={reference_date} (classroom_sent_at から取得)")
+        elif 'classroom_sent_at' in file_meta:
+            reference_date = str(file_meta['classroom_sent_at']).split('T')[0]
+            logger.info(f"[Classroom] reference_date={reference_date} (file_meta から取得)")
         
         local_path = None
         # extraction_resultを初期化（NameError回避）
@@ -263,12 +279,14 @@ class TwoStageIngestionPipeline:
                         full_text=extracted_text,
                         file_name=file_name,
                         stage1_result=stage1_result,
-                        workspace=workspace  # 引数で渡された元のworkspaceを使用
+                        workspace=workspace,  # 引数で渡された元のworkspaceを使用
+                        reference_date=reference_date  # ✅ Classroom投稿の場合は投稿日を渡す
                     )
 
                     # Stage 2の結果を反映（doc_typeは使わない）
                     summary = stage2_result.get('summary', summary)
                     document_date = stage2_result.get('document_date')
+                    event_dates = stage2_result.get('event_dates', [])  # イベント日付配列を取得
                     tags = stage2_result.get('tags', [])
                     tables = stage2_result.get('tables', [])  # 表データを取得
                     stage2_metadata = stage2_result.get('metadata', {})
@@ -284,6 +302,8 @@ class TwoStageIngestionPipeline:
                         metadata['tags'] = tags
                     if document_date:
                         metadata['document_date'] = document_date
+                    if event_dates:
+                        metadata['event_dates'] = event_dates  # イベント日付配列をmetadataに追加
                     if tables:
                         metadata['tables'] = tables  # 表データをmetadataに追加
 
@@ -414,8 +434,48 @@ class TwoStageIngestionPipeline:
             if 'tables' in metadata and metadata['tables']:
                 extracted_tables = metadata['tables']
 
+            # テキスト抽出とVision処理に使用したモデル情報を取得
+            text_extraction_model = base_metadata.get('extractor', None)  # 'pdfplumber', 'python-docx'等
+            vision_model = base_metadata.get('vision_model', None)  # Gemini Vision等
+
+            # イベント日付配列を取得（Stage 2で抽出されたもの）
+            event_dates_array = event_dates if 'event_dates' in locals() and event_dates else []
+
+            # ============================================
+            # すべての日付を抽出（正規表現ベース + AI結果）
+            # 【重要】日付は最優先検索項目として、漏れなく抽出
+            # ============================================
+            all_mentioned_dates = []
+            try:
+                # 正規表現で本文からすべての日付を抽出
+                regex_extracted_dates = self.date_extractor.extract_all_dates(
+                    text=extracted_text,
+                    reference_date=reference_date  # Classroom投稿日などを基準に相対日付を計算
+                )
+
+                # AIが抽出したevent_datesと統合
+                all_dates_set = set(regex_extracted_dates)
+                if event_dates_array:
+                    all_dates_set.update(event_dates_array)
+
+                # document_dateも追加
+                if document_date:
+                    all_dates_set.add(document_date)
+
+                # classroom_sent_atも追加（投稿日も検索対象）
+                if reference_date:
+                    all_dates_set.add(reference_date)
+
+                # リストに変換してソート
+                all_mentioned_dates = sorted(list(all_dates_set))
+
+                logger.info(f"[日付統合] 合計{len(all_mentioned_dates)}件の日付を抽出: {all_mentioned_dates[:10]}...")
+
+            except Exception as e:
+                logger.error(f"日付抽出エラー: {e}", exc_info=True)
+
             document_data = {
-                "source_type": "drive",
+                "source_type": source_type,  # 引数またはfile_metaから取得した値を使用
                 "source_id": file_id,
                 "source_url": f"https://drive.google.com/file/d/{file_id}/view",
                 "drive_file_id": file_id,
@@ -428,6 +488,8 @@ class TwoStageIngestionPipeline:
                 "embedding": embedding,
                 "metadata": metadata,
                 "extracted_tables": extracted_tables,  # UIでの表表示用
+                "event_dates": event_dates_array,  # AIが抽出したイベント日付配列
+                "all_mentioned_dates": all_mentioned_dates,  # 正規表現+AI統合による全日付配列（検索最優先）
                 "content_hash": content_hash,
                 "confidence": confidence,  # AIモデルの確信度
                 "total_confidence": total_confidence,  # 複合信頼度スコア
@@ -435,13 +497,15 @@ class TwoStageIngestionPipeline:
                 "processing_stage": processing_stage,
                 "stage1_model": ModelTier.STAGE1_CLASSIFIER["model"],  # 設定ファイルから参照
                 "stage2_model": stage2_model,
+                "text_extraction_model": text_extraction_model,  # テキスト抽出に使用したモデル
+                "vision_model": vision_model,  # Vision処理に使用したモデル
                 "relevant_date": relevant_date,
             }
 
             try:
                 # upsertを使用
                 # force_reprocess=True時は全フィールドを更新するが、GAS由来のフィールドは保持
-                preserve_fields = ['doc_type', 'workspace'] if force_reprocess else []
+                preserve_fields = ['doc_type', 'workspace', 'source_type', 'classroom_sender', 'classroom_sender_email', 'classroom_sent_at', 'classroom_subject', 'classroom_course_id', 'classroom_course_name'] if force_reprocess else []
                 result = await self.db.upsert_document(
                     'documents',
                     document_data,
@@ -597,9 +661,9 @@ class TwoStageIngestionPipeline:
             safe_error_msg = error_msg.replace('{', '{{').replace('}', '}}')
             safe_traceback = error_traceback.replace('{', '{{').replace('}', '}}')
             logger.error(f"処理エラー: {file_name} - {safe_error_msg}\n{safe_traceback}")
-            
+
             error_data = {
-                "source_type": "drive",
+                "source_type": source_type,  # 引数またはfile_metaから取得した値を使用
                 "source_id": file_id,
                 "file_name": file_name,
                 "workspace": workspace,
