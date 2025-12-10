@@ -3,6 +3,7 @@ Database Client
 Supabaseデータベースへの接続と操作を管理
 """
 from typing import Dict, Any, List, Optional
+import asyncio
 from supabase import create_client, Client
 from config.settings import settings
 from core.utils.reranker import Reranker, RerankConfig
@@ -286,6 +287,54 @@ class DatabaseClient:
             # フォールバック: 従来のベクトル検索（workspaceフィルタなし）
             print("[WARNING] フォールバックモード: match_documents を使用")
             return await self._fallback_vector_search(embedding, limit, None)
+
+    def search_documents_sync(
+        self,
+        query: str,
+        embedding: List[float],
+        limit: int = 50,
+        doc_types: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
+        """
+        同期版のsearch_documents（Flaskエンドポイント用）
+
+        非同期版のsearch_documentsをasyncio.run()で実行するラッパー。
+        これにより、Flask（同期フレームワーク）から適切に非同期処理を呼び出せる。
+
+        Args:
+            query: 検索クエリ
+            embedding: クエリのembeddingベクトル
+            limit: 取得する最大件数
+            doc_types: ドキュメントタイプフィルタ（配列、複数選択可能）
+
+        Returns:
+            検索結果のリスト
+        """
+        try:
+            # 既存のイベントループがある場合は取得、なければ新規作成
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    # ループが既に動作している場合は新しいループを作成
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    result = loop.run_until_complete(
+                        self.search_documents(query, embedding, limit, doc_types)
+                    )
+                    return result
+            except RuntimeError:
+                # イベントループが存在しない場合
+                pass
+
+            # asyncio.run()を使用（推奨される方法）
+            return asyncio.run(
+                self.search_documents(query, embedding, limit, doc_types)
+            )
+        except Exception as e:
+            print(f"Sync wrapper error: {e}")
+            import traceback
+            traceback.print_exc()
+            return []
 
     async def _fallback_vector_search(
         self,
@@ -892,6 +941,12 @@ class DatabaseClient:
             }
             if new_doc_type and new_doc_type != old_doc_type:
                 update_data['doc_type'] = new_doc_type
+
+            # データ整合性: metadata内のyear/monthをトップレベルカラムにも同期
+            if 'year' in new_metadata:
+                update_data['year'] = new_metadata['year']
+            if 'month' in new_metadata:
+                update_data['month'] = new_metadata['month']
 
             document_response = (
                 self.client.table('documents')

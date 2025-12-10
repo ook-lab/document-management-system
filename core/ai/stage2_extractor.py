@@ -143,11 +143,11 @@ class Stage2Extractor:
         table_extraction_guidelines = self._load_table_extraction_template()
 
         # テキストを適切な長さに切り詰め
-        # Claude 4.5 Haikuは200Kトークン対応のため、大幅に拡張
+        # Claude 4.5 Haikuは200Kトークン対応のため、2025年モデル性能に合わせて大幅拡張
         if tier == "email_stage2_extraction":
-            max_text_length = 20000  # メール用: 拡張（5000→20000）
+            max_text_length = 80000  # メール用: 大幅拡張（20000→80000）原文切断リスク最小化
         else:
-            max_text_length = 30000  # PDF用: 大幅拡張（8000→30000）
+            max_text_length = 100000  # PDF用: 大幅拡張（30000→100000）原文切断リスク最小化
 
         # 切り捨てが発生する場合は警告ログを出力
         truncated_text = full_text[:max_text_length]
@@ -173,8 +173,8 @@ class Stage2Extractor:
 # タスク
 以下の文書を構造化データに変換してください:
 
-1. **summary**: 文書の内容を2-3文で要約 (100文字以内)
-   ※これは検索用インデックスのため、要約してOKです
+1. **summary**: 文書の内容を簡潔に要約 (500文字以内、重要な情報は省略しない)
+   ※2025年のモデル性能に合わせて制限を緩和。検索精度向上のため詳細な要約を推奨
 2. **document_date**: 文書の日付 (YYYY-MM-DD形式、見つからない場合はnull)
 3. **tags**: 関連するタグのリスト (3-5個、検索に有用なキーワード)
 4. **metadata**: 文書タイプに応じた構造化データ（★生データとして原文を保持）
@@ -643,7 +643,22 @@ class Stage2Extractor:
         end_idx = content.rfind('}')
 
         if start_idx == -1 or end_idx == -1:
-            raise ValueError("JSON構造が見つかりません")
+            # JSON構造が見つからない場合もフォールバック
+            logger.error("[JSON Parser] ❌ JSON構造が見つかりません")
+            logger.warning("[JSON Parser] フォールバックモード: 最低限のメタデータで保存")
+            return {
+                "doc_type": "unknown",
+                "summary": "JSON構造が見つかりません - 手動レビューが必要です",
+                "extraction_confidence": 0.0,
+                "needs_review": True,
+                "extraction_error": "No JSON structure found",
+                "raw_content": content[:1000],
+                "tags": ["extraction_failed", "no_json_structure"],
+                "metadata": {
+                    "error_type": "no_json_structure",
+                    "error_message": "JSON structure not found in response"
+                }
+            }
 
         json_str = content[start_idx:end_idx+1]
 
@@ -651,10 +666,31 @@ class Stage2Extractor:
         try:
             result = json_repair.loads(json_str)
             logger.info("[JSON Parser] ✅ json_repair でパース成功")
-        except Exception as e:
+        except Exception as e1:
             # json_repair でも失敗した場合は標準 json.loads を試行
-            logger.warning(f"[JSON Parser] json_repair 失敗、標準 json でリトライ: {e}")
-            result = json.loads(json_str)
+            logger.warning(f"[JSON Parser] json_repair 失敗、標準 json でリトライ: {e1}")
+            try:
+                result = json.loads(json_str)
+            except Exception as e2:
+                # 全てのJSON抽出が失敗した場合、フォールバックデータを返す
+                logger.error(f"[JSON Parser] ❌ JSON抽出完全失敗: {e2}")
+                logger.warning("[JSON Parser] フォールバックモード: 最低限のメタデータで保存し、レビューフラグを立てます")
+
+                # フォールバックデータ: テキスト全文と推測メタデータのみ
+                result = {
+                    "doc_type": "unknown",
+                    "summary": "JSON抽出失敗 - 手動レビューが必要です",
+                    "extraction_confidence": 0.0,
+                    "needs_review": True,  # レビューフラグ
+                    "extraction_error": str(e2),
+                    "raw_content": content[:1000],  # デバッグ用に先頭1000文字を保存
+                    "tags": ["extraction_failed"],
+                    "metadata": {
+                        "error_type": "json_parse_failure",
+                        "error_message": str(e2)
+                    }
+                }
+                return result
 
         # バリデーション
         required_keys = ["doc_type", "summary", "extraction_confidence"]
@@ -787,8 +823,8 @@ class Stage2Extractor:
         """
         import re
 
-        # エラー箇所周辺を含めるため、より長い制限に変更
-        max_content_length = 20000
+        # エラー箇所周辺を含めるため、2025年モデル性能に合わせて制限を大幅拡張
+        max_content_length = 80000  # Claude 4.5 Haikuの性能に合わせて引き上げ
 
         if len(failed_content) > max_content_length:
             # エラーメッセージから行番号を抽出

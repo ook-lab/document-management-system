@@ -67,13 +67,13 @@ class Stage1Classifier:
 
 {{
   "relevant_date": "重要な日付 (YYYY-MM-DD形式、なければnull)",
-  "summary": "文書の要約 (100文字以内)",
+  "summary": "文書の要約 (最大100文字程度)",
   "confidence": 0.0から1.0の信頼度スコア
 }}
 
 **重要な指示:**
 1. relevant_date: 文書内で言及されている重要な日付（提出期限、イベント日など）を抽出してください
-2. summary: 文書の内容を簡潔に要約してください（100文字以内）
+2. summary: 文書の内容を簡潔に要約してください（最大100文字程度で）
 3. confidence: 分析の確信度を0.0〜1.0で示してください
 4. 必ずJSON形式のみで回答してください（説明は不要）
 
@@ -95,8 +95,8 @@ class Stage1Classifier:
 
         # PDF以外の場合（Excel、Word等）はテキストをプロンプトに埋め込む
         if mime_type and mime_type != "application/pdf" and text_content:
-            # テキスト内容をプロンプトに追加
-            prompt += f"\n\n**ファイル内容:**\n{text_content[:5000]}"  # 最大5000文字
+            # テキスト内容をプロンプトに追加（2025年モデル対応: Gemini 2.5 Flashの性能に合わせて引き上げ）
+            prompt += f"\n\n**ファイル内容:**\n{text_content[:20000]}"  # 最大20,000文字（原文切断リスク軽減）
             response = self.client.call_model(
                 tier=self.tier,
                 prompt=prompt,

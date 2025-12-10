@@ -26,15 +26,15 @@ class ModelTier:
         "cost_per_1k_tokens": 0.00015
     }
 
-    # Email Vision処理（超高速・超低コスト）
-    # Gemini 2.5 Flash-LiteでHTMLメールスクリーンショットを解析
+    # Email Vision処理（高精度HTMLスクリーンショット解析）
+    # Gemini 2.5 ProでHTMLメールスクリーンショットを高精度解析
     EMAIL_VISION = {
         "provider": AIProvider.GEMINI,
-        "model": "gemini-2.0-flash-lite",
-        "description": "メールスクリーンショット解析（大量処理向け）",
+        "model": "gemini-2.5-pro",
+        "description": "メールスクリーンショット高精度解析",
         "temperature": 0.0,
-        "max_tokens": 16384,  # 超長文メールに対応（Flash-Liteは最大32K）
-        "cost_per_1k_tokens": 0.00005  # Flash-Liteは超低コスト
+        "max_tokens": 16384,
+        "cost_per_1k_tokens": 0.00125  # Proは高精度だがコストは高め
     }
 
     # Stage 2: 詳細抽出（速度・コスト重視）

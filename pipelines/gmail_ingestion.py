@@ -38,6 +38,7 @@ from core.ai.stage2_extractor import Stage2Extractor
 from core.ai.llm_client import LLMClient
 from core.utils.chunking import chunk_document
 from config.workspaces import get_workspace_from_gmail_label
+from config.model_tiers import ModelTier
 
 
 class GmailIngestionPipeline:
@@ -52,7 +53,7 @@ class GmailIngestionPipeline:
     ):
         """
         Args:
-            gmail_user_email: Gmailのメールアドレス（例: ookubo.y@workspace-o.com）
+            gmail_user_email: Gmailのメールアドレス（例: user@example.com）環境変数またはuser_context.yamlで設定
             email_folder_id: メール本文(HTML)保存先のDriveフォルダID（Noneの場合は環境変数から取得）
             attachment_folder_id: 添付ファイル保存先のDriveフォルダID（Noneの場合は環境変数から取得）
             gmail_label: 読み取り対象のGmailラベル（Noneの場合は環境変数から取得、デフォルト: TEST）
@@ -127,9 +128,10 @@ class GmailIngestionPipeline:
                 )
                 response.raise_for_status()
 
-                # Content-Lengthチェック（1MB制限）
+                # Content-Lengthチェック（10MB制限 - 2025年の環境に合わせて引き上げ）
+                MAX_IMAGE_SIZE = 10 * 1024 * 1024  # 10MB
                 content_length = response.headers.get('Content-Length')
-                if content_length and int(content_length) > 1024 * 1024:
+                if content_length and int(content_length) > MAX_IMAGE_SIZE:
                     logger.warning(f"画像が大きすぎるためスキップ: {src} ({content_length} bytes)")
                     skip_count += 1
                     continue
@@ -139,7 +141,7 @@ class GmailIngestionPipeline:
                 total_size = 0
                 for chunk in response.iter_content(chunk_size=8192):
                     total_size += len(chunk)
-                    if total_size > 1024 * 1024:  # 1MB超えたら中断
+                    if total_size > MAX_IMAGE_SIZE:  # 10MB超えたら中断
                         logger.warning(f"画像が大きすぎるためスキップ: {src}")
                         skip_count += 1
                         break
@@ -680,8 +682,8 @@ class GmailIngestionPipeline:
                     'total_confidence': 1.0,
                     'processing_status': 'completed',
                     'processing_stage': 'email_stage2',
-                    'stage1_model': 'gemini-2.0-flash-lite',
-                    'stage2_model': 'gemini-2.5-flash',
+                    'stage1_model': ModelTier.EMAIL_VISION["model"],  # 設定ファイルから参照
+                    'stage2_model': ModelTier.EMAIL_STAGE2_EXTRACTOR["model"],  # 設定ファイルから参照
                     'chunking_strategy': 'small_large_2tier'
                 }
 
@@ -829,8 +831,11 @@ class GmailIngestionPipeline:
 
 async def main():
     """メインエントリーポイント"""
-    # 環境変数から設定を取得
-    gmail_user = os.getenv("GMAIL_USER_EMAIL", "ookubo.y@workspace-o.com")
+    # 環境変数から設定を取得（なければuser_context.yamlから取得）
+    from config.yaml_loader import get_auth_info
+    auth_info = get_auth_info()
+    default_email = auth_info.get("default_email", "user@example.com")
+    gmail_user = os.getenv("GMAIL_USER_EMAIL", default_email)
 
     # パイプラインの初期化
     pipeline = GmailIngestionPipeline(gmail_user_email=gmail_user)

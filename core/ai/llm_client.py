@@ -16,17 +16,18 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 from loguru import logger
 
 from config.model_tiers import AIProvider, ModelTier, get_model_config
+from config.settings import settings
 
 class LLMClient:
     """統合LLMクライアント"""
     
     def __init__(self):
-        """環境変数からAPIキーを取得し、各プロバイダーを初期化"""
+        """設定からAPIキーを取得し、各プロバイダーを初期化"""
 
-        # Gemini APIキーは GOOGLE_AI_API_KEY または GOOGLE_API_KEY から取得
-        self.gemini_api_key = os.getenv("GOOGLE_AI_API_KEY") or os.getenv("GOOGLE_API_KEY")
-        self.anthropic_api_key = os.getenv("ANTHROPIC_API_KEY")
-        self.openai_api_key = os.getenv("OPENAI_API_KEY")
+        # Settings経由でAPIキーを取得（環境変数管理の統一）
+        self.gemini_api_key = settings.GOOGLE_AI_API_KEY or os.getenv("GOOGLE_API_KEY")  # 後方互換性のためGOOGLE_API_KEYもサポート
+        self.anthropic_api_key = settings.ANTHROPIC_API_KEY
+        self.openai_api_key = settings.OPENAI_API_KEY
 
         # Gemini設定 (トップレベル関数のみ使用)
         if self.gemini_api_key:

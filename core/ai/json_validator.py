@@ -22,24 +22,24 @@ from jsonschema import validate, ValidationError, Draft7Validator
 
 
 # doc_typeとスキーマファイル名のマッピング
-# ✅ 全ての学校文書はikuya_school.json スキーマに統一
+# ✅ 全ての学校文書は school_common.json スキーマに統一（汎用化済み）
 DOC_TYPE_SCHEMA_MAPPING = {
-    # 育哉-学校関連: ikuya_school.json スキーマを使用
-    'ikuya_school': 'ikuya_school.json',
-    # 後方互換性のため旧タイプも ikuya_school.json にマッピング
-    'timetable': 'ikuya_school.json',
-    'school_notice': 'ikuya_school.json',
-    'class_newsletter': 'ikuya_school.json',
-    'homework': 'ikuya_school.json',
-    'test_exam': 'ikuya_school.json',
-    'report_card': 'ikuya_school.json',
-    'school_event': 'ikuya_school.json',
-    'parent_teacher_meeting': 'ikuya_school.json',
-    'notice': 'ikuya_school.json',
-    # Phase 3 doc types (すべて ikuya_school.json に統一)
-    'gakunen_dayori_monthly': 'ikuya_school.json',
-    'gakunen_tsushin_weekly': 'ikuya_school.json',
-    'masumi': 'ikuya_school.json',
+    # 学校関連文書: school_common.json スキーマを使用
+    'ikuya_school': 'school_common.json',  # 後方互換性
+    # 後方互換性のため旧タイプも school_common.json にマッピング
+    'timetable': 'school_common.json',
+    'school_notice': 'school_common.json',
+    'class_newsletter': 'school_common.json',
+    'homework': 'school_common.json',
+    'test_exam': 'school_common.json',
+    'report_card': 'school_common.json',
+    'school_event': 'school_common.json',
+    'parent_teacher_meeting': 'school_common.json',
+    'notice': 'school_common.json',
+    # Phase 3 doc types (すべて school_common.json に統一)
+    'gakunen_dayori_monthly': 'school_common.json',
+    'gakunen_tsushin_weekly': 'school_common.json',
+    'masumi': 'school_common.json',  # 後方互換性
 }
 
 

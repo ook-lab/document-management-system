@@ -8,6 +8,98 @@
 
 ---
 
+# 家族構成（コード内のハードコード回避用）
+family:
+  father:
+    name: "yoshinori"  # 父親の名前（英字ID）
+    display_name: "宜紀"  # 表示名
+    aliases: ["芳紀", "ヨシノリ"]  # 別名・呼び方のバリエーション
+
+  mother:
+    name: "masumi"  # 母親の名前（英字ID）
+    display_name: "真澄"  # 表示名
+    aliases: ["マスミ"]  # 別名・呼び方のバリエーション
+
+  children_list:
+    - name: "ikuya"  # 長男の名前（英字ID）
+      display_name: "育哉"  # 表示名
+      aliases: ["イクヤ", "いくちゃん"]
+    - name: "ema"  # 長女の名前（英字ID）
+      display_name: "恵麻"  # 表示名
+      aliases: ["エマ", "えまちゃん"]
+
+# 組織情報（学校名、クラス名など）
+organizations:
+  school:
+    name: "洗足学園小学校"  # 学校名
+    current_class: "2025_5B"  # 現在のクラス（例: 2025年度5年B組）
+
+# 認証情報（デフォルト値、環境変数で上書き推奨）
+auth:
+  default_email: "ookubo.y@workspace-o.com"  # デフォルトのGmailアドレス
+
+# ワークスペース定義（動的生成用）
+workspaces:
+  # 子供関連のワークスペース（family.children_listから自動生成）
+  children:
+    - person: "ikuya"  # family.children_list[0].name と対応
+      categories:
+        - id: "SCHOOL"
+          display_name: "学校関連"
+          labels: ["学校", "SCHOOL"]
+        - id: "JUKU"
+          display_name: "塾関連"
+          labels: ["塾", "JUKU"]
+        - id: "EXAM"
+          display_name: "受験関連"
+          labels: ["受験", "EXAM"]
+        - id: "MAIL"
+          display_name: "メール"
+          labels: ["MAIL"]
+
+    - person: "ema"  # family.children_list[1].name と対応
+      categories:
+        - id: "SCHOOL"
+          display_name: "学校関連"
+          labels: ["学校", "SCHOOL"]
+        - id: "MAIL"
+          display_name: "メール"
+          labels: ["MAIL"]
+
+  # 家族共通のワークスペース
+  family_shared:
+    - id: "HOME_LIVING"
+      display_name: "家庭・生活関連"
+      labels: ["HOME", "家庭"]
+    - id: "HOME_COOKING"
+      display_name: "料理・レシピ関連"
+      labels: ["COOKING", "料理"]
+
+  # 個人ワークスペース
+  personal:
+    - person: "yoshinori"  # family.father.name と対応
+      id: "PRIVATE_FOLDER"
+      display_name: "個人フォルダ"
+      labels: ["PRIVATE"]
+
+  # 仕事・その他
+  general:
+    - id: "BUSINESS_WORK"
+      display_name: "仕事全般"
+      labels: ["WORK", "仕事"]
+    - id: "WORK_MAIL"
+      display_name: "仕事メール"
+      labels: ["WORK_MAIL"]
+    - id: "DM_MAIL"
+      display_name: "DM・広告メール"
+      labels: ["DM", "広告", "TEST"]  # TESTラベルもここに
+    - id: "JOB_MAIL"
+      display_name: "求人・転職メール"
+      labels: ["JOB", "求人"]
+    - id: "MONEY_MAIL"
+      display_name: "金融・決済メール"
+      labels: ["MONEY", "金融"]
+
 # 子供の情報リスト（複数の子供を登録可能）
 children:
   - name: "太郎"  # 子供の名前

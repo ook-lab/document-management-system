@@ -71,3 +71,39 @@ def get_user_context_string() -> str:
 
     with open(yaml_path, "r", encoding="utf-8") as f:
         return f.read()
+
+
+def get_family_info() -> dict:
+    """
+    user_context.yaml から家族構成情報を取得
+
+    Returns:
+        家族構成情報（辞書）
+        例: {'father': {'name': 'yoshinori', 'display_name': '宜紀'}, ...}
+    """
+    context = load_user_context()
+    return context.get("family", {})
+
+
+def get_organization_info() -> dict:
+    """
+    user_context.yaml から組織情報（学校名、クラス名など）を取得
+
+    Returns:
+        組織情報（辞書）
+        例: {'school': {'name': '洗足学園小学校', 'current_class': '2025_5B'}}
+    """
+    context = load_user_context()
+    return context.get("organizations", {})
+
+
+def get_auth_info() -> dict:
+    """
+    user_context.yaml から認証情報を取得
+
+    Returns:
+        認証情報（辞書）
+        例: {'default_email': 'ookubo.y@workspace-o.com'}
+    """
+    context = load_user_context()
+    return context.get("auth", {})

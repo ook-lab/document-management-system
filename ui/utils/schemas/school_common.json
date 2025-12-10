@@ -1,7 +1,7 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
   "type": "object",
-  "title": "育哉-学校 共通フォーム",
+  "title": "学校関連文書 共通フォーム",
   "description": "学年通信、時間割、テスト通知など、全ての学校関連文書の共通構造。表データとテキストブロックを論理的に分離し、GPT/Claudeの構造化精度を高める。",
   "properties": {
     "issue_date": {

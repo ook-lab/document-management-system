@@ -12,10 +12,13 @@ load_dotenv(override=True)
 
 class Settings:
     """アプリケーション設定"""
-    
+
+    # OpenAI API Key
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+
     # Google AI API Key
     GOOGLE_AI_API_KEY: str = os.getenv("GOOGLE_AI_API_KEY", "")
-    
+
     # Anthropic API Key
     ANTHROPIC_API_KEY: str = os.getenv("ANTHROPIC_API_KEY", "")
     

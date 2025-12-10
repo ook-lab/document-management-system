@@ -26,6 +26,7 @@ from core.ai.llm_client import LLMClient
 from core.utils.chunking import chunk_document, chunk_document_parent_child
 from core.utils.synthetic_chunks import create_all_synthetic_chunks
 from config.yaml_loader import get_classification_yaml_string
+from config.model_tiers import ModelTier
 
 
 def flatten_metadata_to_text(metadata: Dict[str, Any]) -> str:
@@ -288,7 +289,7 @@ class TwoStageIngestionPipeline:
                     # 最終的な信頼度（Stage 1とStage 2の加重平均）
                     confidence = (stage1_confidence * 0.3 + stage2_confidence * 0.7)
                     processing_stage = 'stage1_and_stage2'
-                    stage2_model = 'claude-haiku-4-5-20251001'  # 最新のHaiku 4.5モデル
+                    stage2_model = ModelTier.STAGE2_EXTRACTOR["model"]  # 設定ファイルから参照
 
                     logger.info(f"[Stage 2] 完了: confidence={stage2_confidence:.2f}, metadata_fields={len(stage2_metadata)}")
 
@@ -431,7 +432,7 @@ class TwoStageIngestionPipeline:
                 "total_confidence": total_confidence,  # 複合信頼度スコア
                 "processing_status": PROCESSING_STATUS["COMPLETED"],
                 "processing_stage": processing_stage,
-                "stage1_model": "gemini-2.5-flash",
+                "stage1_model": ModelTier.STAGE1_CLASSIFIER["model"],  # 設定ファイルから参照
                 "stage2_model": stage2_model,
                 "relevant_date": relevant_date,
             }

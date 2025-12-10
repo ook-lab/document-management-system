@@ -3,7 +3,6 @@ Flask Web Application
 質問・回答システムのWebインターフェース
 """
 import os
-import asyncio
 from typing import Dict, List, Any
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
@@ -70,9 +69,9 @@ def search_documents():
     try:
         data = request.get_json()
         query = data.get('query', '')
+        # リランク機能のため、フロントエンドの指定を尊重（最大50件まで）
         requested_limit = data.get('limit', 3)
-        # 最大5件に強制制限（フロントエンドの指定を無視）
-        limit = min(requested_limit, 5)
+        limit = min(requested_limit, 50)  # 50件取得→高精度な5件にリランク可能
 
         # ✅ 配列で受け取る（後方互換性のため単一値もサポート）
         workspaces = data.get('workspaces', [])
@@ -123,21 +122,14 @@ def search_documents():
         # Embeddingを生成（拡張されたクエリを使用）
         embedding = llm_client.generate_embedding(expanded_query)
 
-        # ベクトル検索を実行（非同期関数を同期的に実行）
+        # ベクトル検索を実行（同期ラッパーを使用）
         # 拡張されたクエリをテキスト検索にも使用
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # ✅ doc_typeのみで絞り込み（階層構造はフロントエンドで維持）
-        results = loop.run_until_complete(
-            db_client.search_documents(
-                expanded_query,
-                embedding,
-                limit,
-                doc_types if doc_types else None
-            )
+        results = db_client.search_documents_sync(
+            expanded_query,
+            embedding,
+            limit,
+            doc_types if doc_types else None
         )
-        loop.close()
 
         print(f"[DEBUG] 検索結果: {len(results)} 件（doc_types={doc_types}）")
 
@@ -189,8 +181,8 @@ def generate_answer():
         # ドキュメントコンテキストを構築
         context = _build_context(documents)
 
-        # ✅ コンテキストの文字数制限（トークンリミット回避）
-        MAX_CONTEXT_LENGTH = 15000  # 約15,000文字まで（安全マージン込み）
+        # ✅ コンテキストの文字数制限（2025年モデル対応: Gemini 2.5 Flashは100万トークン対応）
+        MAX_CONTEXT_LENGTH = 100000  # 約10万文字まで（Gemini 2.5の性能に合わせて大幅引き上げ）
         if len(context) > MAX_CONTEXT_LENGTH:
             context = context[:MAX_CONTEXT_LENGTH] + "\n\n[... 以降は省略されました ...]"
             print(f"[WARNING] コンテキストを切り詰めました: {len(context)} → {MAX_CONTEXT_LENGTH} 文字")

@@ -46,21 +46,25 @@ class CodebaseCollector:
     
     def should_include_file(self, file_path: Path) -> bool:
         """ファイルを収集対象にするか判定"""
+        # .envファイルを確実に除外（.env, .env.local, .env.production など）
+        if file_path.name.startswith('.env'):
+            return False
+
         # 拡張子チェック
         if file_path.suffix not in INCLUDE_EXTENSIONS:
             return False
-        
+
         # 除外ファイル名チェック
         if file_path.name in EXCLUDE_FILES:
             return False
-        
+
         # ファイルサイズチェック（1MB以上は除外）
         try:
             if file_path.stat().st_size > 1_000_000:
                 return False
         except:
             return False
-            
+
         return True
     
     def collect_files(self):
