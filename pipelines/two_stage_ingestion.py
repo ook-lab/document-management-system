@@ -464,9 +464,22 @@ class TwoStageIngestionPipeline:
                 if extracted_text and document_id:
                     logger.info(f"  ドキュメントの2階層チャンク化開始（小・大・合成）")
                     try:
+                        # Classroom投稿本文を取得
+                        classroom_subject = None
+                        if existing and existing.get('classroom_subject'):
+                            classroom_subject = existing.get('classroom_subject')
+                        elif 'classroom_subject' in file_meta:
+                            classroom_subject = file_meta.get('classroom_subject')
+
+                        # チャンク化対象テキスト：Classroom投稿本文 + 添付ファイル内容
+                        chunk_target_text = extracted_text
+                        if classroom_subject:
+                            chunk_target_text = f"【投稿本文】\n{classroom_subject}\n\n【添付ファイル】\n{extracted_text}"
+                            logger.info(f"  Classroom投稿本文を追加: {len(classroom_subject)}文字")
+
                         # 小チャンク化（検索用）
                         small_chunks = chunk_document(
-                            text=extracted_text,
+                            text=chunk_target_text,  # Classroom投稿本文 + 添付ファイル
                             chunk_size=150,  # 最大150文字（より精密な検索）
                             chunk_overlap=30  # オーバーラップも調整
                         )
@@ -503,12 +516,12 @@ class TwoStageIngestionPipeline:
                         large_chunk_success_count = 0
                         current_chunk_index = len(small_chunks)
                         try:
-                            # 全文を1つの大チャンクとして保存
+                            # 全文を1つの大チャンクとして保存（Classroom投稿本文を含む）
                             large_doc = {
                                 'document_id': document_id,
                                 'chunk_index': current_chunk_index,
-                                'chunk_text': extracted_text,  # 全文テキスト
-                                'chunk_size': len(extracted_text),
+                                'chunk_text': chunk_target_text,  # Classroom投稿本文 + 添付ファイル
+                                'chunk_size': len(chunk_target_text),
                                 'embedding': embedding  # 全文のembedding を使用
                             }
 

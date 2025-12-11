@@ -1128,8 +1128,8 @@
         }
 
         function renderClassroomPost(doc) {
-            // ✅ タイトル（件名）- classroom_subjectを優先
-            const title = doc.classroom_subject || doc.file_name || doc.title || 'Google Classroom投稿';
+            // ✅ タイトル（添付ファイル名）- file_nameを優先
+            const title = doc.file_name || doc.title || 'Google Classroom投稿';
 
             // ✅ 送信者情報（classroom_senderを優先）
             const metadata = doc.metadata || {};
@@ -1139,8 +1139,8 @@
             const dateStr = doc.classroom_sent_at || doc.created_at || metadata.created_time || '';
             const formattedDate = dateStr ? formatDate(dateStr) : '日時不明';
 
-            // 本文（full_textを優先）
-            const bodyText = doc.full_text || doc.content || doc.summary || '';
+            // ✅ 本文（Classroom投稿本文のみ）- classroom_subjectを表示
+            const bodyText = doc.classroom_subject || '';
 
             // 添付ファイル（source_urlまたはmetadataのmaterialsから）
             const attachments = [];
