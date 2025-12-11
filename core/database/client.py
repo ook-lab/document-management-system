@@ -218,8 +218,14 @@ class DatabaseClient:
                     doc_result['classroom_subject'] = result.get('classroom_subject')
                 if 'classroom_sender' in result:
                     doc_result['classroom_sender'] = result.get('classroom_sender')
+                if 'classroom_sender_email' in result:
+                    doc_result['classroom_sender_email'] = result.get('classroom_sender_email')
                 if 'classroom_sent_at' in result:
                     doc_result['classroom_sent_at'] = result.get('classroom_sent_at')
+                if 'classroom_course_id' in result:
+                    doc_result['classroom_course_id'] = result.get('classroom_course_id')
+                if 'classroom_course_name' in result:
+                    doc_result['classroom_course_name'] = result.get('classroom_course_name')
 
                 final_results.append(doc_result)
 
