@@ -1128,8 +1128,28 @@
         }
 
         function renderClassroomPost(doc) {
-            // ✅ タイトル（Classroom投稿名）- classroom_subjectを優先
-            const title = doc.classroom_subject || doc.title || 'Google Classroom投稿';
+            // ✅ classroom_subjectからタイトルと本文を分離
+            const classroomText = doc.classroom_subject || '';
+            let title = 'Google Classroom投稿';
+            let bodyText = '';
+
+            if (classroomText) {
+                // 最初の空行で分割（タイトルと本文を分離）
+                const lines = classroomText.split('\n');
+                const firstEmptyLineIndex = lines.findIndex(line => line.trim() === '');
+
+                if (firstEmptyLineIndex > 0) {
+                    // 最初の空行より前がタイトル
+                    title = lines.slice(0, firstEmptyLineIndex).join('\n').trim();
+                    // 最初の空行より後が本文
+                    bodyText = lines.slice(firstEmptyLineIndex + 1).join('\n').trim();
+                } else if (lines.length > 0) {
+                    // 空行がない場合は最初の行がタイトル
+                    title = lines[0].trim();
+                    // 残りが本文
+                    bodyText = lines.slice(1).join('\n').trim();
+                }
+            }
 
             // ✅ 送信者情報（classroom_senderを優先）
             const metadata = doc.metadata || {};
@@ -1138,9 +1158,6 @@
             // ✅ 送信日時（classroom_sent_atを優先）
             const dateStr = doc.classroom_sent_at || doc.created_at || metadata.created_time || '';
             const formattedDate = dateStr ? formatDate(dateStr) : '日時不明';
-
-            // ✅ 本文（Classroom投稿本文のみ）- classroom_subjectを表示
-            const bodyText = doc.classroom_subject || '';
 
             // 添付ファイル（source_urlまたはmetadataのmaterialsから）
             const attachments = [];
