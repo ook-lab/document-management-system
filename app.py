@@ -7,19 +7,32 @@ from typing import Dict, List, Any
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 
-from core.database.client import DatabaseClient
-from core.ai.llm_client import LLMClient
-from core.utils.query_expansion import QueryExpander
-from core.utils.context_extractor import ContextExtractor
-from config.yaml_loader import load_user_context
-
 app = Flask(__name__)
 CORS(app)
 
-# クライアントの初期化
-db_client = DatabaseClient()
-llm_client = LLMClient()
-query_expander = QueryExpander(llm_client=llm_client)
+# クライアントの遅延初期化（Cloud Run起動高速化）
+db_client = None
+llm_client = None
+query_expander = None
+
+
+def get_clients():
+    """クライアントを初回アクセス時に初期化（遅延読み込み）"""
+    global db_client, llm_client, query_expander
+
+    if db_client is None:
+        print("[INFO] クライアントを初期化中...")
+        # 遅延import（起動高速化）
+        from core.database.client import DatabaseClient
+        from core.ai.llm_client import LLMClient
+        from core.utils.query_expansion import QueryExpander
+
+        db_client = DatabaseClient()
+        llm_client = LLMClient()
+        query_expander = QueryExpander(llm_client=llm_client)
+        print("[INFO] クライアント初期化完了")
+
+    return db_client, llm_client, query_expander
 
 
 @app.route('/')
@@ -35,6 +48,9 @@ def get_filters():
     workspace（親）→ doc_type（子）の階層データを返す
     """
     try:
+        # クライアント取得（遅延初期化）
+        db_client, _, _ = get_clients()
+
         # workspace別のdoc_type階層構造を取得
         hierarchy = db_client.get_workspace_hierarchy()
 
@@ -67,6 +83,9 @@ def search_documents():
     ユーザーの質問から関連文書を検索
     """
     try:
+        # クライアント取得（遅延初期化）
+        db_client, llm_client, query_expander = get_clients()
+
         data = request.get_json()
         query = data.get('query', '')
         # リランク機能のため、フロントエンドの指定を尊重（最大50件まで）
@@ -89,6 +108,9 @@ def search_documents():
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
 
         # ユーザーコンテキストを読み込み、関連情報を抽出（検索用：軽量）
+        from core.utils.context_extractor import ContextExtractor
+        from config.yaml_loader import load_user_context
+
         user_context = load_user_context()
         context_extractor = ContextExtractor(user_context)
         extracted_context = context_extractor.extract_relevant_context(
@@ -161,6 +183,9 @@ def generate_answer():
     検索結果を元にGPT-4で自然な回答を生成
     """
     try:
+        # クライアント取得（遅延初期化）
+        _, llm_client, _ = get_clients()
+
         data = request.get_json()
         query = data.get('query', '')
         documents = data.get('documents', [])
@@ -170,6 +195,9 @@ def generate_answer():
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
 
         # ユーザーコンテキストを読み込み、関連情報を抽出（回答生成用：詳細）
+        from core.utils.context_extractor import ContextExtractor
+        from config.yaml_loader import load_user_context
+
         user_context = load_user_context()
         context_extractor = ContextExtractor(user_context)
         extracted_context = context_extractor.extract_relevant_context(

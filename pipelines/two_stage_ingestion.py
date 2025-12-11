@@ -467,8 +467,8 @@ class TwoStageIngestionPipeline:
                         # 小チャンク化（検索用）
                         small_chunks = chunk_document(
                             text=extracted_text,
-                            chunk_size=300,
-                            chunk_overlap=50
+                            chunk_size=150,  # 最大150文字（より精密な検索）
+                            chunk_overlap=30  # オーバーラップも調整
                         )
 
                         logger.info(f"  小チャンク作成完了: {len(small_chunks)}個")

@@ -6,7 +6,6 @@ from typing import Dict, Any, List, Optional
 import asyncio
 from supabase import create_client, Client
 from config.settings import settings
-from core.utils.reranker import Reranker, RerankConfig
 
 
 class DatabaseClient:
@@ -21,16 +20,6 @@ class DatabaseClient:
             settings.SUPABASE_URL,
             settings.SUPABASE_KEY
         )
-
-        # Rerankerの初期化（Cohere優先、フォールバックでHugging Face）
-        self.reranker = None
-        if RerankConfig.ENABLED:
-            try:
-                self.reranker = Reranker(provider=RerankConfig.PROVIDER)
-                print(f"[Reranker] 初期化成功: {RerankConfig.PROVIDER}")
-            except Exception as e:
-                print(f"[Reranker] 初期化失敗: {e}")
-                self.reranker = None
     
     def get_document_by_source_id(self, source_id: str) -> Optional[Dict[str, Any]]:
         """
@@ -183,13 +172,13 @@ class DatabaseClient:
                 "filter_doc_types": doc_types  # doc_typeのみで絞り込み
             }
 
-            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}', doc_types={doc_types}")
-            response = self.client.rpc("search_documents_final", rpc_params).execute()
+            print(f"[DEBUG] search_documents_with_chunks 呼び出し: query='{query}', doc_types={doc_types}")
+            response = self.client.rpc("search_documents_with_chunks", rpc_params).execute()
             results = response.data if response.data else []
 
-            print(f"[DEBUG] search_documents_final 結果: {len(results)} 件")
+            print(f"[DEBUG] search_documents_with_chunks 結果: {len(results)} 件")
 
-            # 結果を整形（既に重複排除済みだが、確認用）
+            # 結果を整形（小チャンク検索 + 大チャンク回答）
             final_results = []
             for result in results:
                 doc_result = {
@@ -202,13 +191,18 @@ class DatabaseClient:
                     'summary': result.get('summary'),
 
                     # 回答用：大チャンク（全文）
-                    'content': result.get('large_chunk_text'),
-                    'large_chunk_id': result.get('large_chunk_id'),
+                    'content': result.get('full_text'),  # 大チャンク = ドキュメント全文
+                    'large_chunk_id': result.get('document_id'),  # ドキュメントID
+
+                    # 小チャンク情報（ヒットした箇所）
+                    'chunk_content': result.get('chunk_content'),  # ヒットした小チャンクの内容
+                    'chunk_id': result.get('chunk_id'),  # 小チャンクID
+                    'chunk_index': result.get('chunk_index'),  # チャンクインデックス
 
                     # 検索スコア：小チャンクの検索スコア
                     'similarity': result.get('combined_score', 0),
-                    'small_chunk_id': result.get('small_chunk_id')
-                    # year, month は削除（metadata 内で管理）
+                    'chunk_score': result.get('chunk_score', 0),  # 小チャンクスコア
+                    'small_chunk_id': result.get('chunk_id')  # 後方互換性
                 }
 
                 # ✅ Classroom表示用の追加フィールド（存在する場合のみ追加）
@@ -223,46 +217,8 @@ class DatabaseClient:
 
                 final_results.append(doc_result)
 
-            print(f"[DEBUG] 初期検索結果: {len(final_results)} 件（2階層検索）")
+            print(f"[DEBUG] 最終検索結果: {len(final_results)} 件（2階層検索）")
             print(f"[DEBUG] 検索戦略: 小チャンク検索 + 重複排除 + 大チャンク回答")
-
-            # ============================================
-            # Reranking（再ランク付け）
-            # ============================================
-            if self.reranker and RerankConfig.should_rerank(len(final_results)):
-                print(f"[DEBUG] Reranking開始: {len(final_results)} 件 → {RerankConfig.FINAL_RESULT_COUNT} 件")
-                try:
-                    # Rerankingを実行
-                    # text_key は 'content' を使用（大チャンクのテキスト）
-                    reranked_results = self.reranker.rerank(
-                        query=query,
-                        documents=final_results,
-                        top_k=RerankConfig.FINAL_RESULT_COUNT,
-                        text_key='content'  # 大チャンクのテキストで再評価
-                    )
-
-                    print(f"[DEBUG] Reranking完了: {len(reranked_results)} 件")
-
-                    # Rerankスコアをログ出力（デバッグ用）
-                    for idx, doc in enumerate(reranked_results[:3], 1):  # 上位3件のみ
-                        rerank_score = doc.get('rerank_score', 0)
-                        original_score = doc.get('similarity', 0)
-                        file_name = doc.get('file_name', 'Unknown')
-                        print(f"  [{idx}] {file_name}: original={original_score:.3f}, rerank={rerank_score:.3f}")
-
-                    final_results = reranked_results
-
-                except Exception as rerank_error:
-                    print(f"[WARNING] Reranking失敗: {rerank_error}")
-                    # エラー時は元の結果をそのまま使用
-                    print(f"[DEBUG] 元の検索結果を使用: {len(final_results)} 件")
-            else:
-                if not self.reranker:
-                    print("[DEBUG] Reranking無効: Rerankerが初期化されていません")
-                else:
-                    print(f"[DEBUG] Reranking不要: 検索結果が少ない（{len(final_results)} 件）")
-
-            print(f"[DEBUG] 最終結果: {len(final_results)} 件")
 
             return final_results
 

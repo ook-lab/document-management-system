@@ -165,7 +165,7 @@ class RerankConfig:
     """リランク設定"""
 
     # リランク機能を使用するかどうか
-    ENABLED = os.getenv("RERANK_ENABLED", "true").lower() == "true"
+    ENABLED = os.getenv("RERANK_ENABLED", "false").lower() == "true"
 
     # リランクプロバイダー ("cohere" or "huggingface")
     PROVIDER = os.getenv("RERANK_PROVIDER", "cohere")
