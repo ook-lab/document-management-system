@@ -172,14 +172,14 @@ class TwoStageIngestionPipeline:
         信頼度に関係なく、判定なしの完全リレー方式で動作する。
         """
 
-        # 抽出テキストが空の場合、または極端に短い場合のみスキップ
-        if not extracted_text or len(extracted_text.strip()) < 50:
-            logger.info("[Stage 2] テキストが短すぎるためスキップ")
+        # 抽出テキストが空の場合のみスキップ
+        if not extracted_text or not extracted_text.strip():
+            logger.info("[Stage 2] テキストが空のためスキップ")
             return False
 
-        # テキストがある限り、無条件でStage 2（構造化プロセス）へ
+        # テキストがある限り、文字数に関係なく無条件でStage 2（構造化プロセス）へ
         doc_type = stage1_result.get('doc_type', 'other')
-        logger.info(f"[Stage 2] 構造化プロセスへ移行 ({doc_type})")
+        logger.info(f"[Stage 2] 構造化プロセスへ移行 ({doc_type}, テキスト長={len(extracted_text.strip())}文字)")
         return True
 
     async def process_file(
