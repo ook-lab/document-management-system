@@ -214,6 +214,12 @@ class DatabaseClient:
                     doc_result['full_text'] = result.get('full_text')
                 if 'created_at' in result:
                     doc_result['created_at'] = result.get('created_at')
+                if 'classroom_subject' in result:
+                    doc_result['classroom_subject'] = result.get('classroom_subject')
+                if 'classroom_sender' in result:
+                    doc_result['classroom_sender'] = result.get('classroom_sender')
+                if 'classroom_sent_at' in result:
+                    doc_result['classroom_sent_at'] = result.get('classroom_sent_at')
 
                 final_results.append(doc_result)
 
