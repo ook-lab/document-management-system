@@ -39,3 +39,7 @@ gunicorn==23.0.0
 Flask==3.1.0
 Flask-CORS==5.0.0
 json_repair
+
+# Reranker dependencies
+cohere>=5.0.0
+sentence-transformers>=2.2.0
