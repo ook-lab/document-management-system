@@ -1128,8 +1128,8 @@
         }
 
         function renderClassroomPost(doc) {
-            // ✅ タイトル（添付ファイル名）- file_nameを優先
-            const title = doc.file_name || doc.title || 'Google Classroom投稿';
+            // ✅ タイトル（Classroom投稿名）- classroom_subjectを優先
+            const title = doc.classroom_subject || doc.title || 'Google Classroom投稿';
 
             // ✅ 送信者情報（classroom_senderを優先）
             const metadata = doc.metadata || {};
