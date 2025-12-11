@@ -1,6 +1,10 @@
 -- search_documents_with_chunks関数を更新
 -- Classroom投稿の表示に必要なフィールドを追加
 
+-- 既存の関数を削除
+DROP FUNCTION IF EXISTS public.search_documents_with_chunks(text, vector, double precision, integer, double precision, double precision, text[]);
+
+-- 新しい定義で関数を作成
 CREATE OR REPLACE FUNCTION public.search_documents_with_chunks(
     query_text text,
     query_embedding vector,
