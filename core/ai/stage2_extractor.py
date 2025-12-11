@@ -77,8 +77,7 @@ class Stage2Extractor:
                 "document_date": str (YYYY-MM-DD) or None,
                 "event_dates": List[str],
                 "tags": List[str],
-                "metadata": Dict,
-                "extraction_confidence": float
+                "metadata": Dict
             }
         """
         doc_type = stage1_result.get("doc_type", "other")
@@ -90,7 +89,6 @@ class Stage2Extractor:
             file_name=file_name,
             doc_type=doc_type,
             workspace=workspace,
-            stage1_confidence=stage1_result.get("confidence", 0.0),
             tier=tier,
             reference_date=reference_date
         )
@@ -116,12 +114,8 @@ class Stage2Extractor:
             # doc_typeの上書き(Stage 2の方が精度高い可能性)
             result["doc_type"] = result.get("doc_type", doc_type)
             
-            # Stage 1情報も保持
-            result["stage1_doc_type"] = stage1_result.get("doc_type")
-            result["stage1_confidence"] = stage1_result.get("confidence")
-            
             metadata_count = len(result.get("metadata", {}))
-            logger.info(f"[Stage 2] 抽出完了: {metadata_count}個のメタデータ, confidence={result.get('extraction_confidence')}")
+            logger.info(f"[Stage 2] 抽出完了: {metadata_count}個のメタデータ")
             
             return result
             
@@ -135,7 +129,6 @@ class Stage2Extractor:
         file_name: str,
         doc_type: str,
         workspace: str,
-        stage1_confidence: float,
         tier: str = "stage2_extraction",
         reference_date: str = None
     ) -> str:
@@ -182,7 +175,7 @@ class Stage2Extractor:
 {file_name}
 
 # 文書タイプ (Stage 1判定)
-{doc_type} (信頼度: {stage1_confidence:.2f})
+{doc_type}
 
 # ワークスペース
 {workspace}
@@ -206,7 +199,6 @@ class Stage2Extractor:
 6. **tables**: 文書内の表構造（該当する場合のみ）
    - 文書に表形式のデータがある場合、以下のガイドラインに従って完全に構造化してください
    - 表が存在しない場合は空のリスト [] を設定してください
-7. **extraction_confidence**: 抽出の信頼度 (0.0-1.0)
 
 # 【絶対原則】情報の完全性
 - **情報の欠損ゼロ**: 文書内のすべての記載情報を構造化データに含めてください
@@ -268,8 +260,7 @@ class Stage2Extractor:
       {{"title": "朝会の話", "content": "今週は...（全文）"}}
     ]
   }},
-  "tables": [],
-  "extraction_confidence": 0.95
+  "tables": []
 }}
 ```
 
@@ -674,7 +665,6 @@ class Stage2Extractor:
             return {
                 "doc_type": "unknown",
                 "summary": "JSON構造が見つかりません - 手動レビューが必要です",
-                "extraction_confidence": 0.0,
                 "needs_review": True,
                 "extraction_error": "No JSON structure found",
                 "raw_content": content[:1000],
@@ -705,7 +695,6 @@ class Stage2Extractor:
                 result = {
                     "doc_type": "unknown",
                     "summary": "JSON抽出失敗 - 手動レビューが必要です",
-                    "extraction_confidence": 0.0,
                     "needs_review": True,  # レビューフラグ
                     "extraction_error": str(e2),
                     "raw_content": content[:1000],  # デバッグ用に先頭1000文字を保存
@@ -718,16 +707,12 @@ class Stage2Extractor:
                 return result
 
         # バリデーション
-        required_keys = ["doc_type", "summary", "extraction_confidence"]
+        required_keys = ["doc_type", "summary"]
         for key in required_keys:
             if key not in result:
                 logger.warning(f"必須キー欠損: {key}")
 
         # データ型の正規化
-        if "extraction_confidence" in result:
-            result["extraction_confidence"] = float(result["extraction_confidence"])
-            result["extraction_confidence"] = max(0.0, min(1.0, result["extraction_confidence"]))
-
         if "tags" not in result:
             result["tags"] = []
 
@@ -930,8 +915,5 @@ class Stage2Extractor:
             "tags": [],
             "metadata": {},
             "tables": [],  # Phase 2.2.2
-            "extraction_confidence": 0.2,
-            "stage1_doc_type": stage1_result.get("doc_type"),
-            "stage1_confidence": stage1_result.get("confidence"),
             "error": "Stage 2抽出に失敗しました"
         }

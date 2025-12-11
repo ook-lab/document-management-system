@@ -595,8 +595,7 @@ class GmailIngestionPipeline:
                 # Stage 1結果を構築（Visionの結果を疑似的にStage 1として扱う）
                 stage1_result = {
                     "doc_type": "email",  # メールとして分類
-                    "workspace": workspace,
-                    "confidence": 1.0
+                    "workspace": workspace
                 }
 
                 # メール全文を構築（Stage 2に渡す）
@@ -637,9 +636,6 @@ class GmailIngestionPipeline:
 {chr(10).join('- ' + info for info in vision_result.get('key_information', []))}
 """
 
-                # Embeddingを生成
-                embedding = self.llm_client.generate_embedding(email_text_content)
-
                 # Supabaseに保存（workspaceベースのスキーマ + Stage 2結果）
                 import hashlib
                 content_hash = hashlib.sha256(email_text_content.encode('utf-8')).hexdigest()
@@ -664,7 +660,6 @@ class GmailIngestionPipeline:
                     'source_type': 'gmail',
                     'source_id': email_file_id,
                     'source_url': f"https://drive.google.com/file/d/{email_file_id}/view",
-                    'drive_file_id': email_file_id,
                     'file_name': f"{subject}_{message_id[:8]}.html",
                     'file_type': 'email',
                     'doc_type': stage2_result.get('doc_type', 'email'),  # Stage 2の分類を使用
@@ -673,13 +668,9 @@ class GmailIngestionPipeline:
                     'summary': stage2_result.get('summary', vision_result.get('summary', '')),
                     'tags': stage2_result.get('tags', []),  # Stage 2のタグを追加
                     'document_date': stage2_result.get('document_date'),  # Stage 2の日付を追加
-                    'embedding': embedding,
                     'metadata': merged_metadata,
                     'extracted_tables': stage2_result.get('tables', []),  # Stage 2のテーブルを追加
                     'content_hash': content_hash,
-                    'confidence': 1.0,
-                    'extraction_confidence': stage2_result.get('extraction_confidence', 1.0),
-                    'total_confidence': 1.0,
                     'processing_status': 'completed',
                     'processing_stage': 'email_stage2',
                     'stage1_model': ModelTier.EMAIL_VISION["model"],  # 設定ファイルから参照

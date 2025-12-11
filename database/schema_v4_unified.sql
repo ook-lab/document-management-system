@@ -23,9 +23,6 @@ CREATE TABLE IF NOT EXISTS documents (
     file_size_bytes BIGINT,
     
     -- Stage 1結果(Gemini)
-    stage1_doc_type VARCHAR(100),
-    stage1_workspace VARCHAR(50),  -- 'business', 'personal'
-    stage1_confidence FLOAT,
     stage1_needs_processing BOOLEAN DEFAULT true,
     
     -- Stage 2結果(Claude) / 最終確定
@@ -35,10 +32,7 @@ CREATE TABLE IF NOT EXISTS documents (
     -- コンテンツ
     full_text TEXT,
     summary TEXT,
-    
-    -- ベクトル検索 (1536次元: OpenAI Embeddingの標準)
-    embedding vector(1536),
-    
+
     -- メタデータ
     metadata JSONB,
     tags TEXT[],
@@ -52,10 +46,10 @@ CREATE TABLE IF NOT EXISTS documents (
     error_message TEXT,
     
     -- 品質管理・追跡 (v4.0拡張)
-    extraction_confidence FLOAT,
-    llm_provider TEXT,
-    stage1_model TEXT,
-    stage2_model TEXT,
+    stage1_model TEXT,              -- Stage 1分類AIモデル (例: gemini-2.5-flash)
+    stage2_model TEXT,              -- Stage 2詳細抽出AIモデル (例: claude-haiku-4-5-20251001)
+    text_extraction_model TEXT,    -- テキスト抽出ツール (例: pdfplumber, python-docx, python-pptx)
+    vision_model TEXT,             -- Vision処理AIモデル (例: gemini-2.5-flash, gemini-2.5-pro)
     prompt_version TEXT DEFAULT 'v1.0',
     content_hash TEXT, -- 重複検知用
     
@@ -79,7 +73,6 @@ CREATE TABLE IF NOT EXISTS emails (
     -- Stage 1結果
     stage1_importance VARCHAR(50),
     stage1_category VARCHAR(100),
-    stage1_confidence FLOAT,
     
     -- メール情報
     subject TEXT,
@@ -159,7 +152,6 @@ CREATE INDEX IF NOT EXISTS idx_documents_date ON documents(document_date);
 CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(processing_status);
 CREATE INDEX IF NOT EXISTS idx_documents_tags ON documents USING GIN(tags);
 CREATE INDEX IF NOT EXISTS idx_documents_metadata ON documents USING GIN(metadata);
-CREATE INDEX IF NOT EXISTS idx_documents_embedding ON documents USING ivfflat (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_documents_content_hash ON documents (content_hash);
 
 CREATE INDEX IF NOT EXISTS idx_emails_gmail_id ON emails(gmail_id);

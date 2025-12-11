@@ -18,7 +18,6 @@ from core.processors.pdf import PDFProcessor
 from core.processors.office import OfficeProcessor
 from core.ai.stage1_classifier import Stage1Classifier
 from core.ai.stage2_extractor import Stage2Extractor
-from core.ai.confidence_calculator import calculate_total_confidence
 from core.ai.json_validator import validate_metadata
 # from core.ai.embeddings import EmbeddingClient  # 768次元 - 使用しない
 from core.database.client import DatabaseClient
@@ -258,9 +257,8 @@ class TwoStageIngestionPipeline:
             # workspaceは引数で渡された値をそのまま使用
             summary = stage1_result.get('summary', '')
             relevant_date = stage1_result.get('relevant_date')
-            stage1_confidence = stage1_result.get('confidence', 0.0)
 
-            logger.info(f"[Stage 1] 完了: summary={summary[:50] if summary else ''}..., confidence={stage1_confidence:.2f}")
+            logger.info(f"[Stage 1] 完了: summary={summary[:50] if summary else ''}...")
 
             # ============================================
             # テキスト抽出が失敗した場合でもsummaryを使用
@@ -290,7 +288,6 @@ class TwoStageIngestionPipeline:
                     tags = stage2_result.get('tags', [])
                     tables = stage2_result.get('tables', [])  # 表データを取得
                     stage2_metadata = stage2_result.get('metadata', {})
-                    stage2_confidence = stage2_result.get('extraction_confidence', 0.0)
 
                     # metadataをマージ（Stage 2優先）
                     metadata = {
@@ -307,12 +304,10 @@ class TwoStageIngestionPipeline:
                     if tables:
                         metadata['tables'] = tables  # 表データをmetadataに追加
 
-                    # 最終的な信頼度（Stage 1とStage 2の加重平均）
-                    confidence = (stage1_confidence * 0.3 + stage2_confidence * 0.7)
                     processing_stage = 'stage1_and_stage2'
                     stage2_model = ModelTier.STAGE2_EXTRACTOR["model"]  # 設定ファイルから参照
 
-                    logger.info(f"[Stage 2] 完了: confidence={stage2_confidence:.2f}, metadata_fields={len(stage2_metadata)}")
+                    logger.info(f"[Stage 2] 完了: metadata_fields={len(stage2_metadata)}")
 
                     # ============================================
                     # JSON Schema検証（Phase 2 - Track 1）
@@ -335,10 +330,6 @@ class TwoStageIngestionPipeline:
                             'error_message': validation_error,
                             'validated_at': datetime.now().isoformat()
                         }
-
-                        # 信頼度を減点（検証失敗は重大な品質問題）
-                        confidence = confidence * 0.8  # 20%減点
-                        logger.warning(f"[JSON検証] 信頼度を減点: {confidence:.2f} (検証失敗のため)")
                     else:
                         logger.info("[JSON検証] [OK] 検証成功")
                         metadata['schema_validation'] = {
@@ -363,58 +354,14 @@ class TwoStageIngestionPipeline:
                         'stage2_error_timestamp': datetime.now().isoformat()
                     }
 
-                    confidence = stage1_confidence
                     processing_stage = 'stage2_failed'
                     stage2_model = None
             else:
                 # Stage 1のみで完結
-                confidence = stage1_confidence
                 processing_stage = 'stage1_only'
                 metadata = {**base_metadata, 'stage2_attempted': False}
                 stage2_model = None
 
-            # ============================================
-            # 複合信頼度計算（Phase 2 - Track 1）
-            # ============================================
-            logger.info("[複合信頼度] 総合スコア計算開始...")
-            confidence_scores = calculate_total_confidence(
-                model_confidence=confidence,
-                text=extracted_text,
-                metadata=metadata,
-                doc_type=doc_type
-            )
-
-            total_confidence = confidence_scores['total_confidence']
-            keyword_match_score = confidence_scores['keyword_match_score']
-            metadata_completeness = confidence_scores['metadata_completeness']
-            data_consistency = confidence_scores['data_consistency']
-
-            # メタデータに各スコアを追加（分析用）
-            metadata['quality_scores'] = {
-                'keyword_match': keyword_match_score,
-                'metadata_completeness': metadata_completeness,
-                'data_consistency': data_consistency
-            }
-
-            logger.info(f"[複合信頼度] 完了: total_confidence={total_confidence:.3f}")
-
-            # ============================================
-            # Embedding生成（OpenAI text-embedding-3-small、1536次元）
-            # ============================================
-            if extracted_text:
-                # メタデータを検索可能なテキストに変換
-                metadata_text = flatten_metadata_to_text(metadata) if metadata else ""
-
-                # 本文とメタデータを結合してembedding生成
-                combined_text = extracted_text[:7000]  # 本文を7000文字に制限
-                if metadata_text:
-                    combined_text += "\n\n[メタデータ]\n" + metadata_text[:1000]  # メタデータを1000文字追加
-
-                embedding = self.llm_client.generate_embedding(combined_text)
-                logger.info(f"[Embedding] 生成完了: 本文{len(extracted_text[:7000])}文字 + メタデータ{len(metadata_text[:1000])}文字")
-            else:
-                embedding = None
-            
             # ============================================
             # コンテンツハッシュ生成
             # ============================================
@@ -478,21 +425,17 @@ class TwoStageIngestionPipeline:
                 "source_type": source_type,  # 引数またはfile_metaから取得した値を使用
                 "source_id": file_id,
                 "source_url": f"https://drive.google.com/file/d/{file_id}/view",
-                "drive_file_id": file_id,
                 "file_name": file_name,
                 "file_type": self._get_file_type(mime_type),
                 "doc_type": workspace,  # doc_typeは入力元で決定（workspaceと同じ値を使用）
                 "workspace": workspace,  # 引数で渡された値を使用（入力元で決定）
                 "full_text": extracted_text,
                 "summary": summary,
-                "embedding": embedding,
                 "metadata": metadata,
                 "extracted_tables": extracted_tables,  # UIでの表表示用
                 "event_dates": event_dates_array,  # AIが抽出したイベント日付配列
                 "all_mentioned_dates": all_mentioned_dates,  # 正規表現+AI統合による全日付配列（検索最優先）
                 "content_hash": content_hash,
-                "confidence": confidence,  # AIモデルの確信度
-                "total_confidence": total_confidence,  # 複合信頼度スコア
                 "processing_status": PROCESSING_STATUS["COMPLETED"],
                 "processing_stage": processing_stage,
                 "stage1_model": ModelTier.STAGE1_CLASSIFIER["model"],  # 設定ファイルから参照

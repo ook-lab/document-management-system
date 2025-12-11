@@ -8,7 +8,7 @@ Google Classroom ドキュメントの再処理スクリプト v2
 1. すべてのワークスペース（デフォルト）または指定されたワークスペースのドキュメントをキューに登録
 2. キューから順次タスクを取得して処理
 3. 既存の2段階パイプライン（Gemini分類 + Claude抽出）で処理
-4. full_text、構造化metadata、embedding を生成
+4. full_text、構造化metadataを生成
 5. 処理状態をデータベースで管理（pending → processing → completed/failed）
 
 使い方:
@@ -259,7 +259,6 @@ class ClassroomReprocessorV2:
             if not file_id:
                 error_msg = "ファイルIDが見つかりません"
                 logger.error(f"{error_msg}: {file_name}")
-                logger.error(f"  drive_file_id: {doc.get('drive_file_id')}")
                 logger.error(f"  source_id: {doc.get('source_id')}")
                 self._mark_task_failed(queue_id, error_msg)
                 return False
@@ -416,12 +415,10 @@ class ClassroomReprocessorV2:
 
             # Stage1はdoc_typeとworkspaceを返さない（入力元で決定されるため）
             stage1_doc_type = doc.get('doc_type', 'unknown')  # 元のdoc_typeを保持
-            stage1_workspace = doc.get('workspace', 'unknown')  # 元のworkspaceを保持
-            stage1_confidence = stage1_result.get('confidence', 0.0)
             summary = stage1_result.get('summary', '')
             relevant_date = stage1_result.get('relevant_date')
 
-            logger.info(f"[Stage 1] 完了: summary={summary[:50]}..., confidence={stage1_confidence:.2f}")
+            logger.info(f"[Stage 1] 完了: summary={summary[:50]}...")
 
             # ============================================
             # Stage 2: Claude詳細抽出
@@ -440,43 +437,18 @@ class ClassroomReprocessorV2:
             document_date = stage2_result.get('document_date')
             tags = stage2_result.get('tags', [])
             metadata = stage2_result.get('metadata', {})
-            stage2_confidence = stage2_result.get('extraction_confidence', 0.0)
 
-            # 最終的な信頼度（Stage 1とStage 2の加重平均）
-            final_confidence = (stage1_confidence * 0.3 + stage2_confidence * 0.7)
-
-            logger.info(f"[Stage 2] 完了: doc_type={doc_type}, confidence={stage2_confidence:.2f}")
-
-            # ============================================
-            # Embedding生成
-            # ============================================
-            logger.info("[Embedding] 生成開始...")
-            # メタデータを検索可能なテキストに変換
-            from pipelines.two_stage_ingestion import flatten_metadata_to_text
-            metadata_text = flatten_metadata_to_text(metadata) if metadata else ""
-
-            # 本文とメタデータを結合
-            combined_text = full_text[:7000]
-            if metadata_text:
-                combined_text += "\n\n[メタデータ]\n" + metadata_text[:1000]
-
-            embedding = self.pipeline.llm_client.generate_embedding(combined_text)
-            logger.info(f"[Embedding] 生成完了")
+            logger.info(f"[Stage 2] 完了: doc_type={doc_type}")
 
             # ============================================
             # データベース更新
             # ============================================
             update_data = {
-                'stage1_doc_type': stage1_doc_type,
-                'stage1_workspace': stage1_workspace,
-                'stage1_confidence': stage1_confidence,
                 # doc_type と workspace は入力元の反映なので更新しない（破壊行為になる）
                 # 'doc_type': doc_type,
                 # 'workspace': workspace_to_use,
                 'summary': summary,
                 'metadata': metadata,
-                'embedding': embedding,
-                'confidence': final_confidence,
                 'processing_status': 'completed',
                 'processing_stage': 'stage1_and_stage2',
                 'stage1_model': 'gemini-2.5-flash',
@@ -484,17 +456,12 @@ class ClassroomReprocessorV2:
                 'relevant_date': relevant_date
             }
 
-            # embeddingをPostgreSQLのvector型形式に変換
-            if embedding:
-                update_data['embedding'] = '[' + ','.join(str(x) for x in embedding) + ']'
-
             response = self.db.client.table('documents').update(update_data).eq('id', document_id).execute()
 
             if response.data:
                 logger.success(f"✅ テキストのみドキュメント再処理成功: {file_name}")
-                logger.info(f"  Stage1: {stage1_doc_type} (confidence={stage1_confidence:.2f})")
-                logger.info(f"  Stage2: {doc_type} (confidence={stage2_confidence:.2f})")
-                logger.info(f"  最終信頼度: {final_confidence:.2f}")
+                logger.info(f"  Stage1: {stage1_doc_type}")
+                logger.info(f"  Stage2: {doc_type}")
                 self._mark_task_completed(queue_id, success=True)
                 return True
             else:
@@ -512,11 +479,7 @@ class ClassroomReprocessorV2:
 
     def _extract_file_id(self, doc: Dict[str, Any]) -> str:
         """ドキュメントからGoogle Drive ファイルIDを抽出"""
-        # 1. drive_file_id を優先
-        if doc.get('drive_file_id'):
-            return doc['drive_file_id']
-
-        # 2. metadata->original_file_id を確認
+        # 1. metadata->original_file_id を確認
         metadata = doc.get('metadata')
         if metadata is None:
             metadata = {}
