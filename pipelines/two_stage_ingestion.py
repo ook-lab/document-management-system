@@ -432,8 +432,7 @@ class TwoStageIngestionPipeline:
                 "full_text": extracted_text,
                 "summary": summary,
                 "metadata": metadata,
-                "extracted_tables": extracted_tables,  # UIでの表表示用
-                "event_dates": event_dates_array,  # AIが抽出したイベント日付配列
+                # extracted_tables と event_dates は metadata 内に含まれているため、トップレベルカラムから削除
                 "all_mentioned_dates": all_mentioned_dates,  # 正規表現+AI統合による全日付配列（検索最優先）
                 "content_hash": content_hash,
                 "processing_status": PROCESSING_STATUS["COMPLETED"],

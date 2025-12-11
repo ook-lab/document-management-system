@@ -167,21 +167,9 @@ class DatabaseClient:
             検索結果のリスト（小チャンク検索スコア順、回答は大チャンク）
         """
         try:
-            # クエリから日付を抽出
-            target_date = self._extract_date(query)
-            filter_year = None
-            filter_month = None
-
-            # ✅ 日付フィルタを有効化（event_dates配列も検索対象）
-            # document_dateまたはevent_dates配列のいずれかにマッチすればヒット
-            if target_date:
-                try:
-                    parts = target_date.split('-')
-                    filter_year = int(parts[0])
-                    filter_month = int(parts[1])
-                    print(f"[DEBUG] 日付フィルタ: {filter_year}年{filter_month}月（event_dates配列も検索）")
-                except:
-                    pass
+            # 日付フィルタは all_mentioned_dates 配列で検索するため、
+            # filter_year, filter_month の抽出は不要
+            # 代わりに、クエリに含まれる日付は全文検索でマッチ
 
             # DB関数を呼び出し（小チャンク検索＋重複排除＋大チャンク取得）
             rpc_params = {
@@ -191,8 +179,7 @@ class DatabaseClient:
                 "match_count": limit,  # 指定された件数を取得
                 "vector_weight": 0.7,  # ベクトル検索70%
                 "fulltext_weight": 0.3,  # キーワード検索30%
-                "filter_year": filter_year,
-                "filter_month": filter_month,
+                # filter_year, filter_month は削除（all_mentioned_dates で検索）
                 "filter_doc_types": doc_types  # doc_typeのみで絞り込み
             }
 
@@ -220,10 +207,8 @@ class DatabaseClient:
 
                     # 検索スコア：小チャンクの検索スコア
                     'similarity': result.get('combined_score', 0),
-                    'small_chunk_id': result.get('small_chunk_id'),
-
-                    'year': result.get('year'),
-                    'month': result.get('month')
+                    'small_chunk_id': result.get('small_chunk_id')
+                    # year, month は削除（metadata 内で管理）
                 }
 
                 # ✅ Classroom表示用の追加フィールド（存在する場合のみ追加）
@@ -619,10 +604,9 @@ class DatabaseClient:
                 )
                 return response.data if response.data else []
             else:
-                # 通常モード: 未レビューのドキュメントのみ取得
+                # 通常モード: 全ドキュメントを取得（is_reviewed カラムは削除）
                 response = (
                     query
-                    .eq('is_reviewed', False)
                     .order('updated_at', desc=True)
                     .limit(limit)
                     .execute()
@@ -640,6 +624,7 @@ class DatabaseClient:
     ) -> bool:
         """
         ドキュメントをレビュー済みとしてマークする
+        （is_reviewed カラムは削除されたため、review_status で管理）
 
         Args:
             doc_id: ドキュメントID
@@ -652,8 +637,7 @@ class DatabaseClient:
             from datetime import datetime
 
             update_data = {
-                'is_reviewed': True,
-                'reviewed_at': datetime.utcnow().isoformat()
+                'review_status': 'reviewed'  # review_status カラムを使用
             }
             if reviewed_by:
                 update_data['reviewed_by'] = reviewed_by
@@ -675,6 +659,7 @@ class DatabaseClient:
     ) -> bool:
         """
         ドキュメントを未レビュー状態に戻す
+        （is_reviewed カラムは削除されたため、review_status で管理）
 
         Args:
             doc_id: ドキュメントID
@@ -684,8 +669,7 @@ class DatabaseClient:
         """
         try:
             update_data = {
-                'is_reviewed': False,
-                'reviewed_at': None,
+                'review_status': 'pending',  # review_status カラムを使用
                 'reviewed_by': None
             }
 
@@ -703,25 +687,26 @@ class DatabaseClient:
     def get_review_progress(self) -> Dict[str, Any]:
         """
         レビュー進捗状況を取得
+        （is_reviewed カラムは削除されたため、review_status で管理）
 
         Returns:
             進捗情報の辞書
         """
         try:
-            # 未レビューの件数
+            # 未レビューの件数（review_status = 'pending' または NULL）
             unreviewed_response = (
                 self.client.table('documents')
                 .select('*', count='exact')
-                .eq('is_reviewed', False)
+                .in_('review_status', ['pending', None])
                 .execute()
             )
             unreviewed_count = unreviewed_response.count if unreviewed_response else 0
 
-            # レビュー済みの件数
+            # レビュー済みの件数（review_status = 'reviewed'）
             reviewed_response = (
                 self.client.table('documents')
                 .select('*', count='exact')
-                .eq('is_reviewed', True)
+                .eq('review_status', 'reviewed')
                 .execute()
             )
             reviewed_count = reviewed_response.count if reviewed_response else 0
@@ -944,11 +929,7 @@ class DatabaseClient:
             if new_doc_type and new_doc_type != old_doc_type:
                 update_data['doc_type'] = new_doc_type
 
-            # データ整合性: metadata内のyear/monthをトップレベルカラムにも同期
-            if 'year' in new_metadata:
-                update_data['year'] = new_metadata['year']
-            if 'month' in new_metadata:
-                update_data['month'] = new_metadata['month']
+            # year, month のトップレベルカラムへの同期は削除（metadata 内で管理）
 
             document_response = (
                 self.client.table('documents')
