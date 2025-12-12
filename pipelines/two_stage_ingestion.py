@@ -432,6 +432,18 @@ class TwoStageIngestionPipeline:
                 logger.info(f"Document保存完了（upsert, force_update={force_reprocess}）: {document_id}")
 
                 # ============================================
+                # 再処理時の既存チャンク削除
+                # ============================================
+                if force_reprocess and document_id:
+                    logger.info(f"  🔄 再処理モード: 既存チャンクを削除します")
+                    try:
+                        delete_result = self.db.client.table('document_chunks').delete().eq('document_id', document_id).execute()
+                        deleted_count = len(delete_result.data) if delete_result.data else 0
+                        logger.info(f"  既存チャンク削除完了: {deleted_count}個")
+                    except Exception as e:
+                        logger.warning(f"  既存チャンク削除エラー（継続）: {e}")
+
+                # ============================================
                 # チャンク化処理（B2: メタデータ別ベクトル化戦略対応）
                 # - メタデータチャンク（タイトル、サマリー、日付、タグ）
                 # - 小チャンク検索用
