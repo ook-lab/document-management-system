@@ -1219,16 +1219,24 @@
         }
 
         function renderRegularDocument(doc) {
-            // ✅ タイトルはfile_nameを優先的に使用
-            const title = doc.file_name || doc.title || '無題';
+            // ✅ タイトル：summaryの最初の100文字を使用（ファイル名は使わない）
+            let title = 'ドキュメント';
+            if (doc.summary && doc.summary.trim() !== '') {
+                // summaryの最初の100文字をタイトルに使用
+                title = doc.summary.substring(0, 100);
+                if (doc.summary.length > 100) {
+                    title += '...';
+                }
+            }
 
             // ✅ 要約があればそれを優先、なければ本文をトリミング
             const displayText = doc.summary || truncateText(doc.content || '', 200);
 
             // ✅ source_urlがあればリンクボタンを表示（ファイル名をリンクテキストに使用）
             const sourceUrl = doc.source_url || '';
+            const fileName = doc.file_name || 'ファイルを開く';
             const linkButton = sourceUrl ?
-                `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 ${escapeHtml(title)}</a>` :
+                `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 ${escapeHtml(fileName)}</a>` :
                 '';
 
             return `
