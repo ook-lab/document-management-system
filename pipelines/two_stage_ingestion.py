@@ -477,6 +477,13 @@ class TwoStageIngestionPipeline:
                             chunk_target_text = f"【投稿本文】\n{classroom_subject}\n\n【添付ファイル】\n{extracted_text}"
                             logger.info(f"  Classroom投稿本文を追加: {len(classroom_subject)}文字")
 
+                        # ============================================
+                        # 【修正】全文のembeddingを生成（大チャンク用）
+                        # ============================================
+                        logger.info("  全文embedding生成開始")
+                        full_text_embedding = self.llm_client.generate_embedding(chunk_target_text)
+                        logger.info("  全文embedding生成完了")
+
                         # 小チャンク化（検索用）
                         small_chunks = chunk_document(
                             text=chunk_target_text,  # Classroom投稿本文 + 添付ファイル
@@ -522,7 +529,7 @@ class TwoStageIngestionPipeline:
                                 'chunk_index': current_chunk_index,
                                 'chunk_text': chunk_target_text,  # Classroom投稿本文 + 添付ファイル
                                 'chunk_size': len(chunk_target_text),
-                                'embedding': embedding  # 全文のembedding を使用
+                                'embedding': full_text_embedding  # ✅ 修正（未定義変数エラー解消）
                             }
 
                             chunk_result = await self.db.insert_document('document_chunks', large_doc)

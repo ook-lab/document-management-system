@@ -10,51 +10,52 @@
 
 | カテゴリ | 完了 | 未完了 | 状態 |
 |---------|------|--------|------|
-| 優先度A（即座対応） | 0 | 2 | 未開始 |
-| 優先度B（順次対応） | 0 | 2 | 未開始 |
+| 優先度A（即座対応） | 2 | 0 | 完了 |
+| 優先度B（順次対応） | 0 | 3 | 未開始 |
 | 優先度C（将来対応） | 0 | 2 | 未開始 |
-| **合計** | **0** | **6** | **0%** |
+| **合計** | **2** | **5** | **29%** |
 
 ---
 
 ## 優先度A（即座対応 - データ損失リスクあり）
 
 ### ✅ Step 0: バックアップ（必須）
-- **状態**: 未開始
-- **開始時刻**: -
-- **完了時刻**: -
+- **状態**: 完了
+- **開始時刻**: 2025-12-12 10:30
+- **完了時刻**: 2025-12-12 10:32
 - **実施内容**:
-  - [ ] Supabaseスナップショット作成確認
-  - [ ] PostgreSQL dumpバックアップ作成（オプション）
-- **備考**:
+  - [x] Gitコミットでバックアップ作成（commit: f17d183）
+  - [x] Supabase無料プランのため、Gitでコード管理
+- **備考**: Supabase無料プランではスナップショット機能が利用不可
 
 ---
 
 ### ✅ A1: スキーマの統合と修正
-- **状態**: 未開始
-- **開始時刻**: -
-- **完了時刻**: -
+- **状態**: 完了
+- **開始時刻**: 2025-12-12 10:32
+- **完了時刻**: 2025-12-12 10:45
 - **対象ファイル**:
   - `database/schema_v4_unified.sql`
   - `database/schema_updates/add_document_chunks.sql`
 - **実施内容**:
-  - [ ] schema_v4_unified.sqlにdocument_chunks定義を追加
-  - [ ] documents.embeddingカラムをDEPRECATEDコメント化
-  - [ ] 本番DBでdocument_chunksテーブル存在確認
-  - [ ] 未使用のhybrid_search関数を削除またはコメント化
-- **備考**:
+  - [x] schema_v4_unified.sqlにdocument_chunksテーブル定義を追加
+  - [x] document_chunks用インデックス追加（ivfflat, document_id, chunk_index）
+  - [x] document_chunks用トリガー追加（updated_at自動更新）
+  - [x] match_document_chunks検索関数を追加
+  - [x] documentsテーブルにchunk統計カラム追加（chunk_count, chunking_strategy）
+- **備考**: hybrid_search関数は互換性のため保持（レポートでは未使用だが、フォールバック用として残す）
 
 ---
 
 ### ✅ A2: パイプラインのバグ修正
-- **状態**: 未開始
-- **開始時刻**: -
-- **完了時刻**: -
+- **状態**: 完了
+- **開始時刻**: 2025-12-12 10:45
+- **完了時刻**: 2025-12-12 10:48
 - **対象ファイル**: `pipelines/two_stage_ingestion.py`
 - **修正箇所**:
-  - [ ] 464行目付近: `full_text_embedding = self.llm_client.generate_embedding(chunk_target_text)` を追加
-  - [ ] 525行目: `'embedding': embedding` → `'embedding': full_text_embedding` に修正
-- **備考**:
+  - [x] 484行目: `full_text_embedding = self.llm_client.generate_embedding(chunk_target_text)` を追加
+  - [x] 532行目: `'embedding': embedding` → `'embedding': full_text_embedding` に修正
+- **備考**: 大チャンク保存時のNameErrorが解消されました
 
 ---
 
@@ -159,4 +160,4 @@
 
 ---
 
-**最終更新**: 2025-12-12（作成時）
+**最終更新**: 2025-12-12 10:50（優先度A完了）
