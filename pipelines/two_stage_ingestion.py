@@ -258,6 +258,7 @@ class TwoStageIngestionPipeline:
             # workspaceは引数で渡された値をそのまま使用
             summary = stageA_result.get('summary', '')
             relevant_date = stageA_result.get('relevant_date')
+            document_date = None  # Stage 2で設定される可能性あり（初期化必須）
 
             logger.info(f"[Stage 1] 完了: summary={summary[:50] if summary else ''}...")
 
@@ -277,7 +278,7 @@ class TwoStageIngestionPipeline:
                     stageC_result = self.stageC_extractor.extract_metadata(
                         full_text=extracted_text,
                         file_name=file_name,
-                        stageA_result=stageA_result,
+                        stage1_result=stageA_result,  # StageCExtractorは stage1_result を期待
                         workspace=workspace,  # 引数で渡された元のworkspaceを使用
                         reference_date=reference_date  # ✅ Classroom投稿の場合は投稿日を渡す
                     )
@@ -438,10 +439,10 @@ class TwoStageIngestionPipeline:
                 "content_hash": content_hash,
                 "processing_status": PROCESSING_STATUS["COMPLETED"],
                 "processing_stage": processing_stage,
-                "stage1_model": ModelTier.STAGE1_CLASSIFIER["model"],  # 設定ファイルから参照
-                "stage2_model": stage2_model,
+                "stageA_classifier_model": ModelTier.STAGE1_CLASSIFIER["model"],  # B1更新: stage1_model → stageA_classifier_model
+                "stageC_extractor_model": stage2_model,  # B1更新: stage2_model → stageC_extractor_model
                 "text_extraction_model": text_extraction_model,  # テキスト抽出に使用したモデル
-                "vision_model": vision_model,  # Vision処理に使用したモデル
+                "stageB_vision_model": vision_model,  # B1更新: vision_model → stageB_vision_model
                 "relevant_date": relevant_date,
             }
 
