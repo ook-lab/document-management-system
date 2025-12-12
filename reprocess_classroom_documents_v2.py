@@ -451,8 +451,8 @@ class ClassroomReprocessorV2:
                 'metadata': metadata,
                 'processing_status': 'completed',
                 'processing_stage': 'stage1_and_stage2',
-                'stageA_classifier_model': 'gemini-2.5-flash',  # B1更新
-                'stageC_extractor_model': 'claude-haiku-4-5-20251001',  # B1更新
+                'stagea_classifier_model': 'gemini-2.5-flash',  # B1更新（小文字）
+                'stagec_extractor_model': 'claude-haiku-4-5-20251001',  # B1更新（小文字）
                 'relevant_date': relevant_date
             }
 

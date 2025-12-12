@@ -439,10 +439,10 @@ class TwoStageIngestionPipeline:
                 "content_hash": content_hash,
                 "processing_status": PROCESSING_STATUS["COMPLETED"],
                 "processing_stage": processing_stage,
-                "stageA_classifier_model": ModelTier.STAGE1_CLASSIFIER["model"],  # B1更新: stage1_model → stageA_classifier_model
-                "stageC_extractor_model": stage2_model,  # B1更新: stage2_model → stageC_extractor_model
+                "stagea_classifier_model": ModelTier.STAGE1_CLASSIFIER["model"],  # B1更新（小文字）
+                "stagec_extractor_model": stage2_model,  # B1更新（小文字）
                 "text_extraction_model": text_extraction_model,  # テキスト抽出に使用したモデル
-                "stageB_vision_model": vision_model,  # B1更新: vision_model → stageB_vision_model
+                "stageb_vision_model": vision_model,  # B1更新（小文字）
                 "relevant_date": relevant_date,
             }
 

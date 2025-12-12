@@ -673,8 +673,8 @@ class GmailIngestionPipeline:
                     'content_hash': content_hash,
                     'processing_status': 'completed',
                     'processing_stage': 'email_stage2',
-                    'stageA_classifier_model': ModelTier.EMAIL_VISION["model"],  # B1更新
-                    'stageC_extractor_model': ModelTier.EMAIL_STAGE2_EXTRACTOR["model"],  # B1更新
+                    'stagea_classifier_model': ModelTier.EMAIL_VISION["model"],  # B1更新（小文字）
+                    'stagec_extractor_model': ModelTier.EMAIL_STAGE2_EXTRACTOR["model"],  # B1更新（小文字）
                     'chunking_strategy': 'small_large_2tier'
                 }
 
