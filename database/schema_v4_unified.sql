@@ -145,6 +145,24 @@ CREATE TABLE IF NOT EXISTS corrections (
   created_at TIMESTAMP WITH TIME ZONE DEFAULT now()
 );
 
+-- ============================================================
+-- C2: correction_history テーブル作成 (2025-12-12統合)
+-- 目的: ユーザーによるメタデータ修正履歴を記録、ロールバック機能提供
+-- ============================================================
+CREATE TABLE IF NOT EXISTS correction_history (
+    id BIGSERIAL PRIMARY KEY,
+    document_id UUID NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    old_metadata JSONB NOT NULL,  -- 修正前のメタデータ
+    new_metadata JSONB NOT NULL,  -- 修正後のメタデータ
+    corrector_email TEXT,         -- 修正者のメールアドレス
+    corrected_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    correction_type TEXT DEFAULT 'manual',  -- 'manual' or 'automatic'
+    notes TEXT  -- 修正に関するメモ
+);
+
+COMMENT ON TABLE correction_history IS
+'ユーザーがReview UIで行ったメタデータ修正の履歴を記録';
+
 -- document_chunks テーブル作成（チャンク分割対応）
 -- 目的: 1文書複数embeddingによる検索精度向上
 CREATE TABLE IF NOT EXISTS document_chunks (
@@ -199,6 +217,14 @@ CREATE INDEX IF NOT EXISTS idx_emails_sender ON emails(sender_email);
 CREATE INDEX IF NOT EXISTS idx_corrections_document_id ON corrections (document_id);
 CREATE INDEX IF NOT EXISTS idx_corrections_status ON corrections (status);
 
+-- C2: correction_history用インデックス
+CREATE INDEX IF NOT EXISTS idx_correction_history_document_id
+ON correction_history(document_id, corrected_at DESC);
+CREATE INDEX IF NOT EXISTS idx_correction_history_corrector
+ON correction_history(corrector_email) WHERE corrector_email IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_correction_history_corrected_at
+ON correction_history(corrected_at DESC);
+
 -- document_chunks用インデックス
 CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding ON document_chunks USING ivfflat (embedding vector_cosine_ops);
@@ -228,47 +254,121 @@ CREATE TRIGGER trigger_set_updated_at_chunks
   FOR EACH ROW
   EXECUTE PROCEDURE refresh_updated_at_column();
 
--- ハイブリッド検索関数 (COMPLETE_IMPLEMENTATION_GUIDE_v3.mdより)
-CREATE OR REPLACE FUNCTION hybrid_search(
+-- ============================================================
+-- C1: 統一検索関数 (2025-12-12)
+-- 旧hybrid_searchを廃止し、B2のメタデータ重み付けに対応
+-- ============================================================
+CREATE OR REPLACE FUNCTION unified_search(
     query_text TEXT,
     query_embedding vector(1536),
-    target_workspace TEXT DEFAULT NULL,
-    target_type TEXT DEFAULT NULL,
-    limit_results INT DEFAULT 10
+    match_threshold FLOAT DEFAULT 0.0,
+    match_count INT DEFAULT 10,
+    vector_weight FLOAT DEFAULT 0.7,
+    fulltext_weight FLOAT DEFAULT 0.3,
+    filter_doc_types TEXT[] DEFAULT NULL,
+    filter_chunk_types TEXT[] DEFAULT NULL,
+    filter_workspace TEXT DEFAULT NULL
 )
 RETURNS TABLE (
-    id UUID,
-    source_type VARCHAR,
+    document_id UUID,
     file_name VARCHAR,
     doc_type VARCHAR,
-    summary TEXT,
+    workspace VARCHAR,
     document_date DATE,
-    similarity_score FLOAT,
-    text_rank FLOAT,
-    combined_score FLOAT
+    metadata JSONB,
+    summary TEXT,
+    full_text TEXT,
+    best_chunk_text TEXT,
+    best_chunk_type VARCHAR,
+    best_chunk_id UUID,
+    best_chunk_index INTEGER,
+    raw_similarity FLOAT,
+    weighted_similarity FLOAT,
+    fulltext_score FLOAT,
+    combined_score FLOAT,
+    title_matched BOOLEAN,
+    source_type VARCHAR,
+    source_url TEXT,
+    created_at TIMESTAMPTZ
 ) AS $$
 BEGIN
     RETURN QUERY
-    SELECT 
-        d.id,
-        d.source_type,
+    WITH chunk_scores AS (
+        SELECT
+            dc.id AS chunk_id,
+            dc.document_id AS doc_id,
+            dc.chunk_index,
+            dc.chunk_text,
+            dc.chunk_type,
+            COALESCE(dc.search_weight, 1.0) AS search_weight,
+            (1 - (dc.embedding <=> query_embedding)) AS raw_sim,
+            (1 - (dc.embedding <=> query_embedding)) * COALESCE(dc.search_weight, 1.0) AS weighted_sim,
+            ts_rank_cd(
+                to_tsvector('simple', dc.chunk_text),
+                websearch_to_tsquery('simple', query_text)
+            ) AS ft_score
+        FROM document_chunks dc
+        JOIN documents d ON dc.document_id = d.id
+        WHERE
+            dc.embedding IS NOT NULL
+            AND (dc.chunk_type IS NULL OR dc.chunk_type != 'content_large')
+            AND (1 - (dc.embedding <=> query_embedding)) >= match_threshold
+            AND (filter_chunk_types IS NULL OR dc.chunk_type = ANY(filter_chunk_types))
+            AND (filter_doc_types IS NULL OR d.doc_type = ANY(filter_doc_types))
+            AND (filter_workspace IS NULL OR d.workspace = filter_workspace)
+            AND d.processing_status = 'completed'
+    ),
+    ranked_chunks AS (
+        SELECT
+            cs.*,
+            (cs.weighted_sim * vector_weight + cs.ft_score * fulltext_weight) AS combined,
+            (cs.chunk_type = 'title') AS is_title_match
+        FROM chunk_scores cs
+    ),
+    document_best_chunks AS (
+        SELECT DISTINCT ON (rc.doc_id)
+            rc.chunk_id,
+            rc.doc_id,
+            rc.chunk_index,
+            rc.chunk_text,
+            rc.chunk_type,
+            rc.raw_sim,
+            rc.weighted_sim,
+            rc.ft_score,
+            rc.combined,
+            rc.is_title_match
+        FROM ranked_chunks rc
+        ORDER BY rc.doc_id, rc.is_title_match DESC, rc.combined DESC
+    )
+    SELECT
+        d.id AS document_id,
         d.file_name,
         d.doc_type,
-        d.summary,
+        d.workspace,
         d.document_date,
-        1 - (d.embedding <=> query_embedding) AS similarity_score,
-        ts_rank(to_tsvector('japanese', d.full_text), plainto_tsquery('japanese', query_text)) AS text_rank,
-        (1 - (d.embedding <=> query_embedding)) * 0.7 + 
-        ts_rank(to_tsvector('japanese', d.full_text), plainto_tsquery('japanese', query_text)) * 0.3 AS combined_score
-    FROM documents d
-    WHERE 
-        (target_workspace IS NULL OR d.workspace = target_workspace)
-        AND (target_type IS NULL OR d.doc_type = target_type)
-        AND d.processing_status = 'completed'
-    ORDER BY combined_score DESC
-    LIMIT limit_results;
+        d.metadata,
+        d.summary,
+        d.full_text,
+        dbc.chunk_text AS best_chunk_text,
+        dbc.chunk_type::VARCHAR AS best_chunk_type,
+        dbc.chunk_id AS best_chunk_id,
+        dbc.chunk_index AS best_chunk_index,
+        dbc.raw_sim::FLOAT AS raw_similarity,
+        dbc.weighted_sim::FLOAT AS weighted_similarity,
+        dbc.ft_score::FLOAT AS fulltext_score,
+        dbc.combined::FLOAT AS combined_score,
+        dbc.is_title_match AS title_matched,
+        d.source_type,
+        d.source_url,
+        d.created_at
+    FROM document_best_chunks dbc
+    INNER JOIN documents d ON d.id = dbc.doc_id
+    ORDER BY dbc.is_title_match DESC, dbc.combined DESC
+    LIMIT match_count;
 END;
 $$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION unified_search IS 'C1統一検索: B2メタデータ重み付け対応、タイトルマッチ優先';
 
 -- チャンク検索関数（ベクトル検索）
 CREATE OR REPLACE FUNCTION match_document_chunks(
@@ -358,6 +458,43 @@ BEGIN
     ) THEN
         ALTER TABLE documents ADD COLUMN chunking_strategy VARCHAR(50) DEFAULT 'none';
     END IF;
+
+    -- C2: latest_correction_id カラムを追加
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+        WHERE table_name = 'documents' AND column_name = 'latest_correction_id'
+    ) THEN
+        ALTER TABLE documents ADD COLUMN latest_correction_id BIGINT REFERENCES correction_history(id);
+    END IF;
 END $$;
+
+-- C2: correction_history用ロールバック関数
+CREATE OR REPLACE FUNCTION rollback_document_metadata(p_document_id UUID)
+RETURNS JSONB AS $$
+DECLARE
+    v_latest_correction_id BIGINT;
+    v_old_metadata JSONB;
+BEGIN
+    SELECT latest_correction_id INTO v_latest_correction_id
+    FROM documents WHERE id = p_document_id;
+
+    IF v_latest_correction_id IS NULL THEN
+        RAISE EXCEPTION '修正履歴が存在しません: document_id=%', p_document_id;
+    END IF;
+
+    SELECT old_metadata INTO v_old_metadata
+    FROM correction_history WHERE id = v_latest_correction_id;
+
+    UPDATE documents
+    SET metadata = v_old_metadata,
+        latest_correction_id = NULL
+    WHERE id = p_document_id;
+
+    RETURN v_old_metadata;
+END;
+$$ LANGUAGE plpgsql;
+
+COMMENT ON FUNCTION rollback_document_metadata IS
+'C2: 指定ドキュメントのメタデータを最新修正前の状態にロールバック';
 
 COMMIT;
