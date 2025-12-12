@@ -1136,31 +1136,11 @@
                 file_name: doc.file_name
             });
 
-            // ✅ classroom_subjectからタイトルと本文を分離
-            const classroomText = doc.classroom_subject || '';
-            let title = 'Google Classroom投稿';
-            let bodyText = '';
-
-            if (classroomText) {
-                // 最初の空行で分割（タイトルと本文を分離）
-                const lines = classroomText.split('\n');
-                const firstEmptyLineIndex = lines.findIndex(line => line.trim() === '');
-
-                if (firstEmptyLineIndex > 0) {
-                    // 最初の空行より前がタイトル
-                    title = lines.slice(0, firstEmptyLineIndex).join('\n').trim();
-                    // 最初の空行より後が本文
-                    bodyText = lines.slice(firstEmptyLineIndex + 1).join('\n').trim();
-                } else if (lines.length > 0) {
-                    // 空行がない場合は最初の行がタイトル
-                    title = lines[0].trim();
-                    // 残りが本文
-                    bodyText = lines.slice(1).join('\n').trim();
-                }
-            } else {
-                // classroom_subjectが空の場合の警告
-                console.warn('[WARNING] classroom_subjectが空です。full_textを表示してはいけません。');
-            }
+            // ✅ タイトルと本文を正しく取得
+            // classroom_subject: タイトル（課題/資料名、またはお知らせの最初の100文字）
+            // full_text: 投稿の本文全体
+            const title = doc.classroom_subject || 'Google Classroom投稿';
+            const bodyText = doc.full_text || '';
 
             // ✅ 送信者情報（classroom_senderを優先）
             const metadata = doc.metadata || {};
