@@ -25,6 +25,7 @@ from core.ai.llm_client import LLMClient
 from core.utils.chunking import chunk_document, chunk_document_parent_child
 from core.utils.synthetic_chunks import create_all_synthetic_chunks
 from core.utils.date_extractor import DateExtractor
+from core.processing.metadata_chunker import MetadataChunker
 from config.yaml_loader import get_classification_yaml_string
 from config.model_tiers import ModelTier
 
@@ -459,10 +460,14 @@ class TwoStageIngestionPipeline:
                 logger.info(f"Document保存完了（upsert, force_update={force_reprocess}）: {document_id}")
 
                 # ============================================
-                # チャンク化処理（2階層：小チャンク検索用 + 大チャンク回答用 + 合成チャンク）
+                # チャンク化処理（B2: メタデータ別ベクトル化戦略対応）
+                # - メタデータチャンク（タイトル、サマリー、日付、タグ）
+                # - 小チャンク検索用
+                # - 大チャンク回答用
+                # - 合成チャンク
                 # ============================================
                 if extracted_text and document_id:
-                    logger.info(f"  ドキュメントの2階層チャンク化開始（小・大・合成）")
+                    logger.info(f"  ドキュメントのチャンク化開始（メタデータ + 小 + 大 + 合成）")
                     try:
                         # Classroom投稿本文を取得
                         classroom_subject = None
@@ -484,6 +489,55 @@ class TwoStageIngestionPipeline:
                         full_text_embedding = self.llm_client.generate_embedding(chunk_target_text)
                         logger.info("  全文embedding生成完了")
 
+                        # チャンクインデックスカウンター
+                        current_chunk_index = 0
+                        metadata_chunk_success_count = 0
+
+                        # ============================================
+                        # ステップ0: メタデータチャンク（B2: 重み付きチャンク）
+                        # ============================================
+                        logger.info(f"  メタデータチャンクの生成開始")
+                        metadata_chunker = MetadataChunker()
+                        document_data = {
+                            'file_name': file_name,
+                            'summary': summary,
+                            'document_date': document_date,
+                            'tags': tags,
+                            'event_dates': event_dates if 'event_dates' in dir() else []
+                        }
+                        metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
+
+                        for meta_chunk in metadata_chunks:
+                            try:
+                                meta_text = meta_chunk.get('chunk_text', '')
+                                meta_type = meta_chunk.get('chunk_type', 'metadata')
+                                meta_weight = meta_chunk.get('search_weight', 1.0)
+
+                                if not meta_text:
+                                    continue
+
+                                meta_embedding = self.llm_client.generate_embedding(meta_text)
+
+                                meta_doc = {
+                                    'document_id': document_id,
+                                    'chunk_index': current_chunk_index,
+                                    'chunk_text': meta_text,
+                                    'chunk_size': len(meta_text),
+                                    'chunk_type': meta_type,
+                                    'search_weight': meta_weight,
+                                    'embedding': meta_embedding
+                                }
+
+                                chunk_result = await self.db.insert_document('document_chunks', meta_doc)
+                                if chunk_result:
+                                    metadata_chunk_success_count += 1
+                                    current_chunk_index += 1
+                                    logger.debug(f"    ✅ メタデータチャンク保存: {meta_type} (weight={meta_weight})")
+                            except Exception as meta_chunk_error:
+                                logger.error(f"  メタデータチャンク保存エラー: {meta_chunk_error}")
+
+                        logger.info(f"  メタデータチャンク保存完了: {metadata_chunk_success_count}個")
+
                         # 小チャンク化（検索用）
                         small_chunks = chunk_document(
                             text=chunk_target_text,  # Classroom投稿本文 + 添付ファイル
@@ -503,15 +557,18 @@ class TwoStageIngestionPipeline:
 
                                 small_doc = {
                                     'document_id': document_id,
-                                    'chunk_index': small_chunk.get('chunk_index', 0),
+                                    'chunk_index': current_chunk_index,  # メタデータチャンクの後から
                                     'chunk_text': small_text,
                                     'chunk_size': small_chunk.get('chunk_size', len(small_text)),
+                                    'chunk_type': 'content_small',  # B2: チャンク種別
+                                    'search_weight': 1.0,  # B2: 検索重み
                                     'embedding': small_embedding
                                 }
 
                                 chunk_result = await self.db.insert_document('document_chunks', small_doc)
                                 if chunk_result:
                                     small_chunk_success_count += 1
+                                    current_chunk_index += 1
                             except Exception as chunk_insert_error:
                                 logger.error(f"  小チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
                                 logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
@@ -521,7 +578,6 @@ class TwoStageIngestionPipeline:
                         # ステップ2: 大チャンク（全文・回答生成用）を保存
                         logger.info(f"  大チャンク（全文）の保存開始")
                         large_chunk_success_count = 0
-                        current_chunk_index = len(small_chunks)
                         try:
                             # 全文を1つの大チャンクとして保存（Classroom投稿本文を含む）
                             large_doc = {
@@ -529,6 +585,8 @@ class TwoStageIngestionPipeline:
                                 'chunk_index': current_chunk_index,
                                 'chunk_text': chunk_target_text,  # Classroom投稿本文 + 添付ファイル
                                 'chunk_size': len(chunk_target_text),
+                                'chunk_type': 'content_large',  # B2: チャンク種別
+                                'search_weight': 1.0,  # B2: 検索重み
                                 'embedding': full_text_embedding  # ✅ 修正（未定義変数エラー解消）
                             }
 
@@ -565,6 +623,8 @@ class TwoStageIngestionPipeline:
                                         'chunk_index': current_chunk_index,
                                         'chunk_text': synthetic_text,
                                         'chunk_size': len(synthetic_text),
+                                        'chunk_type': 'synthetic',  # B2: チャンク種別
+                                        'search_weight': 1.0,  # B2: 検索重み
                                         'embedding': synthetic_embedding,
                                         'section_title': f'[合成チャンク: {synthetic_type}]'  # 識別用
                                     }
@@ -580,14 +640,15 @@ class TwoStageIngestionPipeline:
                         else:
                             logger.info(f"  合成チャンク生成: 対象データなし（スキップ）")
 
-                        total_chunks = small_chunk_success_count + large_chunk_success_count + synthetic_chunk_success_count
-                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（小{small_chunk_success_count}個 + 大{large_chunk_success_count}個 + 合成{synthetic_chunk_success_count}個）")
+                        # B2: メタデータチャンクを含めた合計
+                        total_chunks = metadata_chunk_success_count + small_chunk_success_count + large_chunk_success_count + synthetic_chunk_success_count
+                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（メタ{metadata_chunk_success_count}個 + 小{small_chunk_success_count}個 + 大{large_chunk_success_count}個 + 合成{synthetic_chunk_success_count}個）")
 
                         # ステップ4: document の chunk_count を更新
                         try:
                             update_data = {
                                 'chunk_count': total_chunks,
-                                'chunking_strategy': 'small_large_synthetic'  # 小チャンク + 大チャンク + 合成チャンク
+                                'chunking_strategy': 'metadata_small_large_synthetic'  # B2: メタデータ + 小 + 大 + 合成
                             }
                             response = (
                                 self.db.client.table('documents')

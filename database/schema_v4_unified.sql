@@ -156,6 +156,17 @@ CREATE TABLE IF NOT EXISTS document_chunks (
     chunk_text TEXT NOT NULL,      -- チャンクのテキスト
     chunk_size INTEGER NOT NULL,   -- 文字数
 
+    -- B2: メタデータ別ベクトル化戦略 (2025-12-12追加)
+    chunk_type VARCHAR(50) DEFAULT 'content_small',  -- チャンク種別
+        -- 'title': タイトル専用 (weight=2.0)
+        -- 'summary': サマリー専用 (weight=1.5)
+        -- 'date': 日付情報 (weight=1.3)
+        -- 'tags': タグ情報 (weight=1.2)
+        -- 'content_small': 本文小チャンク (weight=1.0)
+        -- 'content_large': 本文大チャンク (weight=1.0)
+        -- 'synthetic': 合成チャンク (weight=1.0)
+    search_weight FLOAT DEFAULT 1.0,  -- 検索時の重み付け係数
+
     -- ベクトル検索 (1536次元: OpenAI Embedding)
     embedding vector(1536) NOT NULL,
 
@@ -192,6 +203,9 @@ CREATE INDEX IF NOT EXISTS idx_corrections_status ON corrections (status);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_document_id ON document_chunks(document_id);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_embedding ON document_chunks USING ivfflat (embedding vector_cosine_ops);
 CREATE INDEX IF NOT EXISTS idx_document_chunks_chunk_index ON document_chunks(chunk_index);
+-- B2: メタデータ別ベクトル化戦略用インデックス
+CREATE INDEX IF NOT EXISTS idx_document_chunks_chunk_type ON document_chunks(chunk_type);
+CREATE INDEX IF NOT EXISTS idx_document_chunks_doc_type ON document_chunks(document_id, chunk_type);
 
 -- updated_at 自動更新トリガー (FINAL_UNIFIED_COMPLETE_v4.mdより)
 CREATE OR REPLACE FUNCTION refresh_updated_at_column()
