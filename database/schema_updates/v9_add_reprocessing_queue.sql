@@ -171,12 +171,16 @@ AS $$
 DECLARE
     v_queue_id UUID;
 BEGIN
-    -- 最も優先度が高く、古い pending タスクを取得してロック
+    -- 最も優先度が高く、古い pending/failed タスクを取得してロック
+    -- failedは自動リトライ対象（最大3回まで）
     SELECT id INTO v_queue_id
     FROM document_reprocessing_queue
-    WHERE status = 'pending'
+    WHERE (status = 'pending' OR status = 'failed')
         AND attempt_count < max_attempts
-    ORDER BY priority DESC, created_at ASC
+    ORDER BY
+        CASE WHEN status = 'pending' THEN 0 ELSE 1 END,  -- pendingを優先
+        priority DESC,
+        created_at ASC
     LIMIT 1
     FOR UPDATE SKIP LOCKED;  -- 他のワーカーがロックしているタスクはスキップ
 
