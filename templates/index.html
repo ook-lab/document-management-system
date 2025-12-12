@@ -1108,9 +1108,10 @@
             } else {
                 documentList.innerHTML = documents.map(doc => {
                     try {
-                        // ✅ Classroom投稿かどうかを判定
+                        // ✅ Classroom投稿かどうかを判定（classroom_subjectがあればClassroom投稿）
                         const sourceType = doc.source_type || '';
-                        const isClassroom = sourceType === 'classroom' || sourceType === 'classroom_text';
+                        const hasClassroomSubject = doc.classroom_subject && doc.classroom_subject.trim() !== '';
+                        const isClassroom = sourceType === 'classroom' || sourceType === 'classroom_text' || hasClassroomSubject;
 
                         if (isClassroom) {
                             return renderClassroomPost(doc);
