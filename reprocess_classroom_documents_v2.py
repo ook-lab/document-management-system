@@ -375,8 +375,8 @@ class ClassroomReprocessorV2:
         Returns:
             成功したかどうか
         """
-        from core.ai.stage1_classifier import Stage1Classifier
-        from core.ai.stage2_extractor import Stage2Extractor
+        from core.ai.stageA_classifier import StageAClassifier
+        from core.ai.stageC_extractor import StageCExtractor
         from config.yaml_loader import get_classification_yaml_string
 
         file_name = doc.get('file_name', 'text_only')
@@ -392,8 +392,8 @@ class ClassroomReprocessorV2:
 
         try:
             # Stage 1とStage 2のクライアントを初期化
-            stage1_classifier = Stage1Classifier(llm_client=self.pipeline.llm_client)
-            stage2_extractor = Stage2Extractor(llm_client=self.pipeline.llm_client)
+            stage1_classifier = StageAClassifier(llm_client=self.pipeline.llm_client)
+            stage2_extractor = StageCExtractor(llm_client=self.pipeline.llm_client)
             yaml_string = get_classification_yaml_string()
 
             # workspaceを決定

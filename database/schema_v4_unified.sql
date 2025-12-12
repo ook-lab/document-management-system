@@ -45,13 +45,14 @@ CREATE TABLE IF NOT EXISTS documents (
     processing_duration_ms INTEGER,
     error_message TEXT,
     
-    -- 品質管理・追跡 (v4.0拡張)
-    stage1_model TEXT,              -- Stage 1分類AIモデル (例: gemini-2.5-flash)
-    stage2_model TEXT,              -- Stage 2詳細抽出AIモデル (例: claude-haiku-4-5-20251001)
-    text_extraction_model TEXT,    -- テキスト抽出ツール (例: pdfplumber, python-docx, python-pptx)
-    vision_model TEXT,             -- Vision処理AIモデル (例: gemini-2.5-flash, gemini-2.5-pro)
+    -- 品質管理・追跡 (v4.0拡張 → v4.1 Stage ABC命名)
+    stageA_classifier_model TEXT,   -- Stage A分類AIモデル (旧: stage1_model) 例: gemini-2.5-flash
+    stageB_vision_model TEXT,       -- Stage B Vision処理AIモデル (旧: vision_model) 例: gemini-2.5-pro
+    stageC_extractor_model TEXT,    -- Stage C詳細抽出AIモデル (旧: stage2_model) 例: claude-haiku-4-5
+    text_extraction_model TEXT,     -- テキスト抽出ツール (例: pdfplumber, python-docx, python-pptx)
     prompt_version TEXT DEFAULT 'v1.0',
     content_hash TEXT, -- 重複検知用
+    ingestion_route VARCHAR(50),    -- 取り込みルート: 'classroom', 'drive', 'gmail'
     
     -- 監査・バージョン管理 (QUALITY_CHECK_GUIDE_v2.mdより)
     version INTEGER DEFAULT 1,
@@ -179,6 +180,7 @@ CREATE INDEX IF NOT EXISTS idx_documents_status ON documents(processing_status);
 CREATE INDEX IF NOT EXISTS idx_documents_tags ON documents USING GIN(tags);
 CREATE INDEX IF NOT EXISTS idx_documents_metadata ON documents USING GIN(metadata);
 CREATE INDEX IF NOT EXISTS idx_documents_content_hash ON documents (content_hash);
+CREATE INDEX IF NOT EXISTS idx_documents_ingestion_route ON documents(ingestion_route);
 
 CREATE INDEX IF NOT EXISTS idx_emails_gmail_id ON emails(gmail_id);
 CREATE INDEX IF NOT EXISTS idx_emails_sender ON emails(sender_email);

@@ -10,8 +10,8 @@ import json
 
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
-from core.ai.stage1_classifier import Stage1Classifier
-from core.ai.stage2_extractor import Stage2Extractor
+from core.ai.stageA_classifier import StageAClassifier
+from core.ai.stageC_extractor import StageCExtractor
 from core.utils.chunking import chunk_document_parent_child
 from core.utils.hypothetical_questions import HypotheticalQuestionGenerator
 from config.yaml_loader import get_classification_yaml_string
@@ -34,8 +34,8 @@ class ReactiveDocumentUpdater:
         self.llm = llm or LLMClient()
 
         self.yaml_string = get_classification_yaml_string()
-        self.stage1_classifier = Stage1Classifier(llm_client=self.llm)
-        self.stage2_extractor = Stage2Extractor(llm_client=self.llm)
+        self.stage1_classifier = StageAClassifier(llm_client=self.llm)
+        self.stage2_extractor = StageCExtractor(llm_client=self.llm)
         self.question_generator = HypotheticalQuestionGenerator(self.llm)
 
         logger.info("ReactiveDocumentUpdater初期化完了")

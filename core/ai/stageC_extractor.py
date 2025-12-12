@@ -1,7 +1,8 @@
 """
-Stage 2: 詳細メタデータ抽出 (Claude 4.5 Sonnet)
+Stage C: 詳細メタデータ抽出 (Claude 4.5 Haiku)
 
-Stage 1で分類された文書から、詳細な構造化データを抽出します。
+Stage Aで分類された文書から、詳細な構造化データを抽出します。
+旧名: Stage 2 Extractor
 """
 import json
 import json_repair
@@ -14,8 +15,8 @@ from config.model_tiers import ModelTier
 from core.ai.llm_client import LLMClient
 
 
-class Stage2Extractor:
-    """Stage 2抽出器 (Claude 4.5 Sonnet)"""
+class StageCExtractor:
+    """Stage C抽出器 (Claude 4.5 Haiku)"""
     
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self.llm = llm_client if llm_client else LLMClient()
@@ -42,7 +43,7 @@ class Stage2Extractor:
             with open(template_path, 'r', encoding='utf-8') as f:
                 self._table_extraction_template = f.read()
 
-            logger.info(f"[Stage 2] 表抽出テンプレートをロード: {len(self._table_extraction_template)} 文字")
+            logger.info(f"[Stage C] 表抽出テンプレートをロード: {len(self._table_extraction_template)} 文字")
             return self._table_extraction_template
 
         except Exception as e:
@@ -64,9 +65,9 @@ class Stage2Extractor:
         Args:
             full_text: 抽出済みテキスト
             file_name: ファイル名
-            stage1_result: Stage 1結果
+            stage1_result: Stage A結果
             workspace: ワークスペース
-            tier: モデル階層（デフォルト: "stage2_extraction"、メール用: "email_stage2_extraction"）
+            tier: モデル階層（デフォルト: "stageC_extraction"、メール用: "email_stageC_extraction"）
             reference_date: 基準日（YYYY-MM-DD形式、Classroom投稿日など）
 
         Returns:

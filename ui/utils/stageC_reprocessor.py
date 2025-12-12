@@ -1,15 +1,16 @@
 """
-統合Stage 2再実行ユーティリティ
+統合Stage C再実行ユーティリティ
 
 全ての編集箇所（全文編集、行単位編集、フォーム編集、表形式編集）から
-Stage 2（構造化）を再実行できる共通機能を提供します。
+Stage C（構造化）を再実行できる共通機能を提供します。
+旧名: Stage 2 Reprocessor
 """
 import streamlit as st
 from typing import Dict, Any, Optional
 from loguru import logger
 
 
-def reprocess_with_stage2(
+def reprocess_with_stageC(
     doc_id: str,
     full_text: str,
     file_name: str,
@@ -19,7 +20,7 @@ def reprocess_with_stage2(
     trigger_source: str = "manual_edit"
 ) -> bool:
     """
-    Stage 2（構造化）を再実行し、データベースに保存
+    Stage C（構造化）を再実行し、データベースに保存
 
     Args:
         doc_id: ドキュメントID
@@ -33,10 +34,10 @@ def reprocess_with_stage2(
     Returns:
         成功した場合True、失敗した場合False
     """
-    from core.ai.stage2_extractor import Stage2Extractor
+    from core.ai.stageC_extractor import StageCExtractor
     from core.ai.llm_client import LLMClient
 
-    logger.info(f"[Stage 2 再実行] 開始 - トリガー: {trigger_source}")
+    logger.info(f"[Stage C 再実行] 開始 - トリガー: {trigger_source}")
     logger.info(f"  ドキュメントID: {doc_id}")
     logger.info(f"  テキスト長: {len(full_text)} 文字")
     logger.info(f"  Workspace: {workspace}")
@@ -52,7 +53,7 @@ def reprocess_with_stage2(
 
         # Stage 2 Extractorを初期化
         llm_client = LLMClient()
-        extractor = Stage2Extractor(llm_client=llm_client)
+        extractor = StageCExtractor(llm_client=llm_client)
 
         # Stage 2再実行
         with st.spinner(f"🔄 Stage 2（構造化）を再実行中... ({trigger_source})"):
@@ -166,7 +167,7 @@ def show_reprocess_button(
             use_container_width=True,
             key=f"reprocess_{trigger_source}_{doc_id}"
         ):
-            success = reprocess_with_stage2(
+            success = reprocess_with_stageC(
                 doc_id=doc_id,
                 full_text=full_text,
                 file_name=file_name,

@@ -16,8 +16,8 @@ import traceback
 from core.connectors.google_drive import GoogleDriveConnector
 from core.processors.pdf import PDFProcessor
 from core.processors.office import OfficeProcessor
-from core.ai.stage1_classifier import Stage1Classifier
-from core.ai.stage2_extractor import Stage2Extractor
+from core.ai.stageA_classifier import StageAClassifier
+from core.ai.stageC_extractor import StageCExtractor
 from core.ai.json_validator import validate_metadata
 # from core.ai.embeddings import EmbeddingClient  # 768次元 - 使用しない
 from core.database.client import DatabaseClient
@@ -115,8 +115,8 @@ class TwoStageIngestionPipeline:
         self.pdf_processor = PDFProcessor(llm_client=self.llm_client)
         self.office_processor = OfficeProcessor()
 
-        self.stage1_classifier = Stage1Classifier(llm_client=self.llm_client)
-        self.stage2_extractor = Stage2Extractor(llm_client=self.llm_client)
+        self.stageA_classifier = StageAClassifier(llm_client=self.llm_client)
+        self.stageC_extractor = StageCExtractor(llm_client=self.llm_client)
         # EmbeddingはLLMClient経由で生成（1536次元）
         # self.embeddings = EmbeddingClient()  # 削除
         
@@ -159,7 +159,7 @@ class TwoStageIngestionPipeline:
         }
         return mapping.get(mime_type, "other")
     
-    def _should_run_stage2(self, stage1_result: Dict[str, Any], extracted_text: str) -> bool:
+    def _should_run_stageC(self, stageA_result: Dict[str, Any], extracted_text: str) -> bool:
         """
         Stage 2を実行すべきかどうか判定（完全リレー方式）
 
@@ -177,7 +177,7 @@ class TwoStageIngestionPipeline:
             return False
 
         # テキストがある限り、文字数に関係なく無条件でStage 2（構造化プロセス）へ
-        doc_type = stage1_result.get('doc_type', 'other')
+        doc_type = stageA_result.get('doc_type', 'other')
         logger.info(f"[Stage 2] 構造化プロセスへ移行 ({doc_type}, テキスト長={len(extracted_text.strip())}文字)")
         return True
 
@@ -246,7 +246,7 @@ class TwoStageIngestionPipeline:
             # Stage 1: Gemini分類（テキストを渡す）
             # ============================================
             logger.info("[Stage 1] Gemini分類開始...")
-            stage1_result = await self.stage1_classifier.classify(
+            stageA_result = await self.stageA_classifier.classify(
                 file_path=Path(local_path),
                 doc_types_yaml=self.yaml_string,
                 mime_type=mime_type,
@@ -255,8 +255,8 @@ class TwoStageIngestionPipeline:
 
             # Stage1はdoc_typeとworkspaceを返さない（入力元で決定されるため）
             # workspaceは引数で渡された値をそのまま使用
-            summary = stage1_result.get('summary', '')
-            relevant_date = stage1_result.get('relevant_date')
+            summary = stageA_result.get('summary', '')
+            relevant_date = stageA_result.get('relevant_date')
 
             logger.info(f"[Stage 1] 完了: summary={summary[:50] if summary else ''}...")
 
@@ -270,29 +270,29 @@ class TwoStageIngestionPipeline:
             # ============================================
             # Stage 2判定・実行（テキスト抽出失敗でも実行）
             # ============================================
-            if self._should_run_stage2(stage1_result, extracted_text):
+            if self._should_run_stageC(stageA_result, extracted_text):
                 logger.info("[Stage 2] Claude詳細抽出開始...")
                 try:
-                    stage2_result = self.stage2_extractor.extract_metadata(
+                    stageC_result = self.stageC_extractor.extract_metadata(
                         full_text=extracted_text,
                         file_name=file_name,
-                        stage1_result=stage1_result,
+                        stageA_result=stageA_result,
                         workspace=workspace,  # 引数で渡された元のworkspaceを使用
                         reference_date=reference_date  # ✅ Classroom投稿の場合は投稿日を渡す
                     )
 
                     # Stage 2の結果を反映（doc_typeは使わない）
-                    summary = stage2_result.get('summary', summary)
-                    document_date = stage2_result.get('document_date')
-                    event_dates = stage2_result.get('event_dates', [])  # イベント日付配列を取得
-                    tags = stage2_result.get('tags', [])
-                    tables = stage2_result.get('tables', [])  # 表データを取得
-                    stage2_metadata = stage2_result.get('metadata', {})
+                    summary = stageC_result.get('summary', summary)
+                    document_date = stageC_result.get('document_date')
+                    event_dates = stageC_result.get('event_dates', [])  # イベント日付配列を取得
+                    tags = stageC_result.get('tags', [])
+                    tables = stageC_result.get('tables', [])  # 表データを取得
+                    stageC_metadata = stageC_result.get('metadata', {})
 
                     # metadataをマージ（Stage 2優先）
                     metadata = {
                         **base_metadata,
-                        **stage2_metadata,
+                        **stageC_metadata,
                         'stage2_attempted': True
                     }
                     if tags:
@@ -307,14 +307,14 @@ class TwoStageIngestionPipeline:
                     processing_stage = 'stage1_and_stage2'
                     stage2_model = ModelTier.STAGE2_EXTRACTOR["model"]  # 設定ファイルから参照
 
-                    logger.info(f"[Stage 2] 完了: metadata_fields={len(stage2_metadata)}")
+                    logger.info(f"[Stage 2] 完了: metadata_fields={len(stageC_metadata)}")
 
                     # ============================================
                     # JSON Schema検証（Phase 2 - Track 1）
                     # ============================================
                     logger.info("[JSON検証] メタデータ検証開始...")
                     is_valid, validation_error = validate_metadata(
-                        metadata=stage2_metadata,
+                        metadata=stageC_metadata,
                         doc_type=doc_type
                     )
 

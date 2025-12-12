@@ -256,14 +256,14 @@ def execute_stage2_reprocessing(
     Returns:
         新しい構造化データ
     """
-    from ui.utils.stage2_reprocessor import reprocess_with_stage2
+    from ui.utils.stage2_reprocessor import reprocess_with_stageC
     from core.database.client import DatabaseClient
 
-    logger.warning("[Deprecated] execute_stage2_reprocessing() は非推奨です。ui.utils.stage2_reprocessor.reprocess_with_stage2() を使用してください。")
+    logger.warning("[Deprecated] execute_stage2_reprocessing() は非推奨です。ui.utils.stage2_reprocessor.reprocess_with_stageC() を使用してください。")
 
     # この関数は後方互換性のために残されていますが、新しいユーティリティを内部で使用します
     # 戻り値の形式を維持するため、ラッパーとして機能します
-    from core.ai.stage2_extractor import Stage2Extractor
+    from core.ai.stageC_extractor import StageCExtractor
     from core.ai.llm_client import LLMClient
 
     logger.info("[Stage 2 再実行] 開始...")
@@ -280,7 +280,7 @@ def execute_stage2_reprocessing(
 
     # Stage 2 Extractorを初期化
     llm_client = LLMClient()
-    extractor = Stage2Extractor(llm_client=llm_client)
+    extractor = StageCExtractor(llm_client=llm_client)
 
     # Stage 2再実行
     stage2_result = extractor.extract_metadata(

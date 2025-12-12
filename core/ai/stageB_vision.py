@@ -1,8 +1,10 @@
 """
-Email Vision Processor
+Stage B: Vision処理プロセッサ (Gemini 2.5 Flash/Pro)
 
-HTMLメールをスクリーンショット化してGemini 2.0 Flash-LiteでVision解析
-+ HTMLからのテキスト抽出とインテリジェントマージ
+HTMLメールやPDFをVision APIで解析
+- メールルート: Gemini 2.5 Flash-Lite
+- Classroom/ファイルルート: Gemini 2.5 Pro
+旧名: Email Vision Processor
 """
 import base64
 from typing import Dict, Any, Optional, List
@@ -15,8 +17,8 @@ from core.ai.llm_client import LLMClient
 from config.model_tiers import ModelTier
 
 
-class EmailVisionProcessor:
-    """HTMLメールをVision APIで解析するプロセッサ"""
+class StageBVisionProcessor:
+    """Stage B: Vision APIで視覚的コンテンツを解析するプロセッサ"""
 
     def __init__(self):
         """初期化"""
@@ -27,7 +29,7 @@ class EmailVisionProcessor:
         self.llm_client = LLMClient()
         self.model_config = ModelTier.EMAIL_VISION
 
-        logger.info(f"EmailVisionProcessor初期化: {self.model_config['model']}")
+        logger.info(f"StageBVisionProcessor初期化: {self.model_config['model']}")
 
     def _extract_html_text(self, html_content: str) -> Dict[str, Any]:
         """

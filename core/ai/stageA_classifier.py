@@ -1,7 +1,8 @@
 """
-Stage 1 分類器 (Gemini 2.5 Flash)
+Stage A 分類器 (Gemini 2.5 Flash)
 
 Phase 2: 50種類の書類タイプ分類体系に対応
+旧名: Stage 1 Classifier
 """
 from typing import Dict, Any, Optional
 from pathlib import Path
@@ -15,12 +16,12 @@ from config.DOC_TYPE_CONSTANTS import (
 )
 
 
-class Stage1Classifier:
-    """Stage 1: Gemini 2.5 Flashによる初期分類 (50種類対応)"""
+class StageAClassifier:
+    """Stage A: Gemini 2.5 Flashによる初期分類 (50種類対応)"""
 
     def __init__(self, llm_client: LLMClient):
         self.client = llm_client
-        self.tier = "stage1_classification"
+        self.tier = "stageA_classification"
 
     def _generate_doc_types_list(self) -> str:
         """
@@ -111,7 +112,7 @@ class Stage1Classifier:
             )
 
         if not response.get("success"):
-            raise ValueError(f"Stage1分類に失敗: {response.get('error')}")
+            raise ValueError(f"StageA分類に失敗: {response.get('error')}")
 
         # JSON応答をパース
         try:
@@ -125,4 +126,4 @@ class Stage1Classifier:
             result = json.loads(content)
             return result
         except json.JSONDecodeError as e:
-            raise ValueError(f"Stage1分類結果のJSON解析に失敗: {e}\n応答: {response['content']}")
+            raise ValueError(f"StageA分類結果のJSON解析に失敗: {e}\n応答: {response['content']}")

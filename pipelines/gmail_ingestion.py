@@ -33,8 +33,8 @@ from core.connectors.gmail_connector import GmailConnector
 from core.connectors.google_drive import GoogleDriveConnector
 from core.database.client import DatabaseClient
 from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
-from core.processors.email_vision import EmailVisionProcessor
-from core.ai.stage2_extractor import Stage2Extractor
+from core.ai.stageB_vision import StageBVisionProcessor
+from core.ai.stageC_extractor import StageCExtractor
 from core.ai.llm_client import LLMClient
 from core.utils.chunking import chunk_document
 from config.workspaces import get_workspace_from_gmail_label
@@ -69,8 +69,8 @@ class GmailIngestionPipeline:
         self.db = DatabaseClient()
         self.llm_client = LLMClient()
         self.ingestion_pipeline = TwoStageIngestionPipeline()
-        self.email_vision_processor = EmailVisionProcessor()
-        self.stage2_extractor = Stage2Extractor(llm_client=self.llm_client)
+        self.stageB_vision_processor = StageBVisionProcessor()
+        self.stageC_extractor = StageCExtractor(llm_client=self.llm_client)
 
         logger.info(f"GmailIngestionPipeline初期化完了")
         logger.info(f"  - Gmail: {gmail_user_email}")
@@ -579,7 +579,7 @@ class GmailIngestionPipeline:
                 }
 
                 # HTMLメールをVision処理
-                vision_result = await self.email_vision_processor.extract_email_content(
+                vision_result = await self.stageB_vision_processor.extract_email_content(
                     html_content=html_content,
                     email_metadata=email_metadata
                 )
@@ -608,7 +608,7 @@ class GmailIngestionPipeline:
 """
 
                 # Stage 2でメタデータ抽出、タグ付け、構造化
-                stage2_result = self.stage2_extractor.extract_metadata(
+                stage2_result = self.stageC_extractor.extract_metadata(
                     full_text=full_text_for_stage2,
                     file_name=f"{subject}_{message_id[:8]}.html",
                     stage1_result=stage1_result,
