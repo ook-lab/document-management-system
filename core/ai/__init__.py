@@ -1,14 +1,17 @@
 """
 Core AI モジュール
+B1更新: Stage1/Stage2 → StageA/B/C 命名変更
 """
 from .llm_client import LLMClient
-from .stage1_classifier import Stage1Classifier
-from .stage2_extractor import Stage2Extractor
+from .stageA_classifier import StageAClassifier
+from .stageB_vision import StageBVisionProcessor
+from .stageC_extractor import StageCExtractor
 from .embeddings import EmbeddingClient
 
 __all__ = [
     'LLMClient',
-    'Stage1Classifier',
-    'Stage2Extractor',
+    'StageAClassifier',
+    'StageBVisionProcessor',
+    'StageCExtractor',
     'EmbeddingClient',
 ]
