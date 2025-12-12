@@ -18,7 +18,6 @@ from core.processors.pdf import PDFProcessor
 from core.processors.office import OfficeProcessor
 from core.ai.stageA_classifier import StageAClassifier
 from core.ai.stageC_extractor import StageCExtractor
-from core.ai.json_validator import validate_metadata
 # from core.ai.embeddings import EmbeddingClient  # 768次元 - 使用しない
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
@@ -310,34 +309,6 @@ class TwoStageIngestionPipeline:
                     stage2_model = ModelTier.STAGE2_EXTRACTOR["model"]  # 設定ファイルから参照
 
                     logger.info(f"[Stage 2] 完了: metadata_fields={len(stageC_metadata)}")
-
-                    # ============================================
-                    # JSON Schema検証（Phase 2 - Track 1）
-                    # ============================================
-                    logger.info("[JSON検証] メタデータ検証開始...")
-                    is_valid, validation_error = validate_metadata(
-                        metadata=stageC_metadata,
-                        doc_type=doc_type
-                    )
-
-                    if not is_valid:
-                        # 検証失敗時の処理
-                        # KeyError回避: エラーメッセージを安全に文字列化
-                        safe_validation_error = str(validation_error).replace('{', '{{').replace('}', '}}')
-                        logger.error(f"[JSON検証] 検証失敗: {safe_validation_error}")
-
-                        # metadataに検証失敗情報を記録
-                        metadata['schema_validation'] = {
-                            'is_valid': False,
-                            'error_message': validation_error,
-                            'validated_at': datetime.now().isoformat()
-                        }
-                    else:
-                        logger.info("[JSON検証] [OK] 検証成功")
-                        metadata['schema_validation'] = {
-                            'is_valid': True,
-                            'validated_at': datetime.now().isoformat()
-                        }
 
                 except Exception as e:
                     error_msg = str(e)
