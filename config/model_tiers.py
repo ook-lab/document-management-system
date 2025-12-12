@@ -105,9 +105,11 @@ class ModelTier:
     def get_model_for_task(cls, task: str) -> Dict[str, Any]:
         """タスクに応じた最適なモデルを返す"""
         task_mapping = {
-            "stage1_classification": cls.STAGE1_CLASSIFIER,
+            "stageA_classification": cls.STAGE1_CLASSIFIER,  # B1更新: stage1 → stageA
+            "stage1_classification": cls.STAGE1_CLASSIFIER,  # 後方互換性
             "email_vision": cls.EMAIL_VISION,
-            "stage2_extraction": cls.STAGE2_EXTRACTOR,
+            "stageC_extraction": cls.STAGE2_EXTRACTOR,  # B1更新: stage2 → stageC
+            "stage2_extraction": cls.STAGE2_EXTRACTOR,  # 後方互換性
             "email_stage2_extraction": cls.EMAIL_STAGE2_EXTRACTOR,
             "ui_response": cls.UI_RESPONSE_GENERATOR,  # デフォルト: Gemini 2.5 Flash
             "ui_response_lite": cls.UI_RESPONSE_GENERATOR_LITE,  # 高速モード: Gemini 2.5 Flash-Lite
