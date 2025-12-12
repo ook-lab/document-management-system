@@ -1232,10 +1232,10 @@
             // ✅ 要約があればそれを優先、なければ本文をトリミング
             const displayText = doc.summary || truncateText(doc.content || '', 200);
 
-            // ✅ source_urlがあればリンクボタンを表示
+            // ✅ source_urlがあればリンクボタンを表示（ファイル名をリンクテキストに使用）
             const sourceUrl = doc.source_url || '';
             const linkButton = sourceUrl ?
-                `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 元ファイルを開く</a>` :
+                `<a href="${escapeHtml(sourceUrl)}" target="_blank" class="btn-link">📄 ${escapeHtml(title)}</a>` :
                 '';
 
             return `
