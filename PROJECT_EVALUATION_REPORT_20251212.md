@@ -685,30 +685,87 @@ Classroom (GAS) → Supabase → Python再処理 → document_chunks
 
 ---
 
-### 🔜 次のステップ（優先度B）
+### ✅ 優先度B: 順次対応（完了）
 
-以下の項目は今後実施予定：
+**実施日時**: 2025-12-12
 
-#### B1: Stage命名の再構成
-- stage1/stage2 → stageA/B/C への変更
-- 3ルート（Classroom/ファイル/メール）の明確な分離
-- データベーススキーマ更新（列名変更）
+#### B1: Stage命名の再構成 ✅
 
-#### B2: メタデータ別ベクトル化戦略
-- タイトル専用チャンク（重み2.0）
-- サマリー専用チャンク（重み1.5）
-- 日付専用チャンク（重み1.3）
-- document_chunksテーブルにchunk_type, search_weightカラム追加
+**Gitコミット**: `de17cb0`
 
-#### 未使用ファイルのアーカイブ
-- scripts/one_time/ 配下の40個以上のスクリプトを整理
-- scripts/archive/one_time/ に移動
+**実施内容**:
+1. ファイル名変更（git mv）
+   - `core/ai/stage1_classifier.py` → `stageA_classifier.py`
+   - `core/ai/stage2_extractor.py` → `stageC_extractor.py`
+   - `core/processors/email_vision.py` → `core/ai/stageB_vision.py`
+   - `ui/utils/stage2_reprocessor.py` → `stageC_reprocessor.py`
+
+2. クラス名変更
+   - `Stage1Classifier` → `StageAClassifier`
+   - `Stage2Extractor` → `StageCExtractor`
+   - `EmailVisionProcessor` → `StageBVisionProcessor`
+
+3. データベーススキーマ更新
+   - `stage1_model` → `stageA_classifier_model`
+   - `vision_model` → `stageB_vision_model`
+   - `stage2_model` → `stageC_extractor_model`
+   - `ingestion_route` カラム追加
 
 ---
 
-### 📝 検証テスト（未実施）
+#### B2: メタデータ別ベクトル化戦略 ✅
 
-以下のテストが推奨されます：
+**Gitコミット**: `d44dcb9`
+
+**実施内容**:
+1. `MetadataChunker`クラス新規作成 (`core/processing/metadata_chunker.py`)
+   - タイトルチャンク（重み2.0）
+   - サマリーチャンク（重み1.5）
+   - 日付チャンク（重み1.3）
+   - タグチャンク（重み1.2）
+
+2. document_chunksスキーマ更新
+   - `chunk_type` カラム追加（title, summary, date, tags, content_small等）
+   - `search_weight` カラム追加（検索重み係数）
+   - インデックス追加（chunk_type用）
+
+3. 重み付き検索SQL関数追加
+   - `search_chunks_weighted`: 基本の重み付き検索
+   - `search_with_title_boost`: タイトル優先検索
+
+4. パイプライン更新 (`pipelines/two_stage_ingestion.py`)
+   - メタデータチャンク生成をコンテンツチャンク前に実行
+   - 全チャンクにchunk_type, search_weight設定
+   - chunking_strategyを`metadata_small_large_synthetic`に更新
+
+---
+
+#### 未使用ファイルのアーカイブ ✅
+
+**Gitコミット**: `974db6e`
+
+**実施内容**:
+31個のスクリプトを`scripts/archive/`に移動
+
+**アクティブなスクリプト（保持）**:
+- `scripts/daily_sync.py` - 定期実行用
+- `scripts/inbox_monitor.py` - メール監視用
+- `scripts/one_time/diagnose_search.py` - 検索診断
+- `scripts/one_time/reingest_all_data.py` - 再取り込み
+- `scripts/one_time/reprocess_single_file.py` - 個別再処理
+
+**アーカイブ済み**:
+- `check_*.py` (デバッグ用) - 19個
+- `test_*.py` (テスト用) - 12個
+- `debug_*.py` (デバッグ用)
+- `migrate_*.py` (ワンタイム移行)
+- `delete_price_list.py` (完了済みタスク)
+
+---
+
+### 📝 検証テスト（推奨）
+
+以下のテストを実施してください：
 
 ```bash
 # A. 検索機能テスト
@@ -722,15 +779,32 @@ results = db.search_documents_sync('テスト検索', embedding, limit=5)
 print(f'検索結果: {len(results)}件')
 "
 
-# B. チャンク生成テスト
-python scripts/test_single_file.py --file-id <test_id> --force-reprocess
+# B. メタデータチャンク生成テスト
+python scripts/one_time/reprocess_single_file.py --file-id <test_id> --force-reprocess
 
-# C. 既存データの整合性確認
-python scripts/check_table_structure.py
+# C. 重み付き検索テスト（Supabase SQL Editor）
+SELECT * FROM search_chunks_weighted(
+    '[...]'::vector(1536),  -- クエリembedding
+    0.3,  -- threshold
+    10    -- limit
+);
 ```
 
 ---
 
-**実施完了日時**: 2025-12-12 10:50
-**担当**: Claude Code (Sonnet 4.5)
-**進捗状況**: 優先度A完了（2/2項目）、優先度B未着手（0/3項目）
+### 🔜 次のステップ（優先度C）
+
+以下の項目は将来対応予定：
+
+#### C1: 検索関数の完全統一
+- 3つの検索関数を1つに統合
+- `unified_search`関数の実装
+
+#### C2: correction_history テーブルの統合
+- schema_v4_unified.sqlに定義を追加
+
+---
+
+**最終更新日時**: 2025-12-12 12:30
+**担当**: Claude Code (Opus 4.5)
+**進捗状況**: 優先度A完了（2/2項目）、優先度B完了（3/3項目）
