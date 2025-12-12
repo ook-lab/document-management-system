@@ -1139,7 +1139,17 @@
             // ✅ タイトルと本文を正しく取得
             // classroom_subject: タイトル（課題/資料名、またはお知らせの最初の100文字）
             // full_text: 投稿の本文全体
-            const title = doc.classroom_subject || 'Google Classroom投稿';
+
+            // ファイル名を絶対にタイトルに使わない
+            let title = 'Google Classroom投稿';
+            const classroomSubject = doc.classroom_subject || '';
+            const fileName = doc.file_name || '';
+
+            // classroom_subjectがfile_nameと一致しない場合のみタイトルとして使用
+            if (classroomSubject && classroomSubject !== fileName) {
+                title = classroomSubject;
+            }
+
             const bodyText = doc.full_text || '';
 
             // ✅ 送信者情報（classroom_senderを優先）
