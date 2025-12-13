@@ -33,7 +33,7 @@ class DatabaseClient:
         """
         try:
             response = self.client.table('documents').select('*').eq('source_id', source_id).execute()
-            if response.data and len(response.data) > 0:
+            if response.data:
                 return response.data[0]
             return None
         except Exception as e:
@@ -93,7 +93,7 @@ class DatabaseClient:
         # 既存レコードを取得
         existing = self.client.table(table).select('*').eq(conflict_column, data[conflict_column]).execute()
 
-        if existing.data and len(existing.data) > 0:
+        if existing.data:
             # 既存レコードがある場合
             existing_record = existing.data[0]
             update_data = {}
@@ -790,7 +790,7 @@ class DatabaseClient:
         """
         try:
             response = self.client.table('documents').select('*').eq('id', doc_id).execute()
-            if response.data and len(response.data) > 0:
+            if response.data:
                 return response.data[0]
             return None
         except Exception as e:
@@ -1063,7 +1063,7 @@ class DatabaseClient:
                 .execute()
             )
 
-            if response.data and len(response.data) > 0:
+            if response.data:
                 # 重複が見つかった
                 existing_doc = response.data[0]
                 print(f"⚠️  重複検知: content_hash={content_hash[:16]}... は既に存在します")

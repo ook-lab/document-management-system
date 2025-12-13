@@ -116,7 +116,7 @@ class MetadataChunker:
 
         # 4. タグチャンク
         tags = document_data.get('tags', [])
-        if tags and len(tags) > 0:
+        if tags:
             tag_text = self._format_tags_chunk(tags)
             if tag_text:
                 chunks.append(self._create_chunk(
@@ -127,7 +127,7 @@ class MetadataChunker:
 
         # 5. doc_type（授業名・ドキュメント種別）チャンク（高優先度）
         doc_type = document_data.get('doc_type')
-        if doc_type and len(doc_type.strip()) > 0:
+        if doc_type and doc_type.strip():
             chunks.append(self._create_chunk(
                 chunk_type='doc_type',
                 text=f"授業名: {doc_type.strip()}"
@@ -136,7 +136,7 @@ class MetadataChunker:
 
         # 6. Classroom専用チャンク（Google Classroom投稿情報）
         classroom_subject = document_data.get('classroom_subject')
-        if classroom_subject and len(classroom_subject.strip()) > 0:
+        if classroom_subject and classroom_subject.strip():
             chunks.append(self._create_chunk(
                 chunk_type='classroom_subject',
                 text=f"件名: {classroom_subject.strip()}"
@@ -144,7 +144,7 @@ class MetadataChunker:
             logger.debug(f"[MetadataChunker] Classroom件名チャンク作成: {len(classroom_subject)}文字")
 
         classroom_post_text = document_data.get('classroom_post_text')
-        if classroom_post_text and len(classroom_post_text.strip()) > 0:
+        if classroom_post_text and classroom_post_text.strip():
             chunks.append(self._create_chunk(
                 chunk_type='classroom_post_text',
                 text=f"投稿本文: {classroom_post_text.strip()}"
@@ -185,7 +185,7 @@ class MetadataChunker:
 
         # 7. persons（担当者・関係者）チャンク（高重要）
         persons = document_data.get('persons', [])
-        if persons and len(persons) > 0:
+        if persons:
             persons_text = self._format_persons_chunk(persons)
             if persons_text:
                 chunks.append(self._create_chunk(
@@ -196,7 +196,7 @@ class MetadataChunker:
 
         # 8. organizations（組織名）チャンク（高重要）
         organizations = document_data.get('organizations', [])
-        if organizations and len(organizations) > 0:
+        if organizations:
             orgs_text = self._format_organizations_chunk(organizations)
             if orgs_text:
                 chunks.append(self._create_chunk(
@@ -207,7 +207,7 @@ class MetadataChunker:
 
         # 9. people（AI抽出人物）チャンク
         people = document_data.get('people', [])
-        if people and len(people) > 0:
+        if people:
             people_text = self._format_people_chunk(people)
             if people_text:
                 chunks.append(self._create_chunk(

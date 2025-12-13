@@ -69,7 +69,7 @@ class ChunkProcessor:
             # 既存のチャンクを確認
             if not force_reprocess:
                 existing_chunks = self.db.client.table('small_chunks').select('id').eq('document_id', document_id).execute()
-                if existing_chunks.data and len(existing_chunks.data) > 0:
+                if existing_chunks.data:
                     logger.info(f"[ChunkProcessor] Document {document_id} already has {len(existing_chunks.data)} chunks. Skipping.")
                     return {
                         "success": True,
