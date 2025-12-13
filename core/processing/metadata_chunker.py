@@ -29,6 +29,7 @@ class MetadataChunker:
     CHUNK_WEIGHTS = {
         'title': 2.0,                    # タイトルマッチは最優先
         'classroom_subject': 2.0,        # Classroom件名（最重要）
+        'doc_type': 1.8,                 # 授業名・ドキュメント種別（重要）
         'classroom_post_text': 1.8,      # Classroom投稿本文（重要）
         'summary': 1.5,                  # サマリーは高優先
         'classroom_type': 1.5,           # Classroom種別（お知らせ/課題/資料）
@@ -118,7 +119,16 @@ class MetadataChunker:
                 ))
                 logger.debug(f"[MetadataChunker] タグチャンク作成: {len(tags)}個のタグ")
 
-        # 5. Classroom専用チャンク（Google Classroom投稿情報）
+        # 5. doc_type（授業名・ドキュメント種別）チャンク（高優先度）
+        doc_type = document_data.get('doc_type')
+        if doc_type and len(doc_type.strip()) > 0:
+            chunks.append(self._create_chunk(
+                chunk_type='doc_type',
+                text=f"授業名: {doc_type.strip()}"
+            ))
+            logger.debug(f"[MetadataChunker] doc_typeチャンク作成: {doc_type}")
+
+        # 6. Classroom専用チャンク（Google Classroom投稿情報）
         classroom_subject = document_data.get('classroom_subject')
         if classroom_subject and len(classroom_subject.strip()) > 0:
             chunks.append(self._create_chunk(
