@@ -21,8 +21,11 @@ COPY . .
 # 5. Pythonライブラリをインストール
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 6. ポート環境変数を設定（念のため）
+# 6. Playwrightブラウザをインストール
+RUN playwright install --with-deps chromium
+
+# 7. ポート環境変数を設定（念のため）
 ENV PORT=8080
 
-# 7. サーバーを起動
+# 8. サーバーを起動
 CMD ["python", "app.py"]
