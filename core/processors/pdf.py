@@ -204,7 +204,7 @@ class PDFProcessor:
 
                     # 戦略2: テキストベース（罫線がない表用）
                     # tables が空リストまたはNoneの場合に実行
-                    if not tables or len(tables) == 0:
+                    if not tables:
                         logger.info(f"ページ {i+1}: 罫線なし - テキストベース戦略を試行")
 
                         # 戦略2-1: 基本的なテキストベース
@@ -221,7 +221,7 @@ class PDFProcessor:
                                     tables_md.append(table_md)
 
                         # 戦略2-2: より細かい設定でテキストベース抽出を試行
-                        if not text_tables or len(text_tables) == 0:
+                        if not text_tables:
                             logger.info(f"ページ {i+1}: 拡張テキストベース戦略を試行")
                             extended_tables = page.extract_tables({
                                 "vertical_strategy": "text",
@@ -282,7 +282,7 @@ class PDFProcessor:
         Returns:
             Markdown形式の表文字列
         """
-        if not table or len(table) == 0:
+        if not table:
             return ""
 
         # None を空文字列に変換
