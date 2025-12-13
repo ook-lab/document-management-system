@@ -186,12 +186,10 @@ class ChunkProcessor:
         results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # 例外が発生したタスクをフィルタリング
-        chunks_with_embeddings = []
-        for result in results:
-            if isinstance(result, Exception):
-                logger.error(f"[ChunkProcessor] Exception during embedding generation: {result}")
-            else:
-                chunks_with_embeddings.append(result)
+        chunks_with_embeddings = [
+            result for result in results
+            if not isinstance(result, Exception) or logger.error(f"[ChunkProcessor] Exception during embedding generation: {result}")
+        ]
 
         return chunks_with_embeddings
 

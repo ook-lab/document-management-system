@@ -46,15 +46,10 @@ class MetadataExtractor:
 
         # 年・月の抽出（document_dateから優先）
         if document_date:
-            year, month = MetadataExtractor._parse_date(document_date)
-            result["year"] = year
-            result["month"] = month
+            result["year"], result["month"] = MetadataExtractor._parse_date(document_date)
         elif metadata.get("basic_info", {}).get("issue_date"):
             # basic_info.issue_date から抽出
-            issue_date = metadata["basic_info"]["issue_date"]
-            year, month = MetadataExtractor._parse_date(issue_date)
-            result["year"] = year
-            result["month"] = month
+            result["year"], result["month"] = MetadataExtractor._parse_date(metadata["basic_info"]["issue_date"])
 
         # 金額の抽出（請求書、契約書など）
         if "amount" in metadata:

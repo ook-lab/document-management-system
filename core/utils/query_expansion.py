@@ -4,6 +4,7 @@
 ユーザーの検索クエリをLLMで拡張し、同義語や関連語を含めることで
 検索精度を向上させます。
 """
+import re
 from typing import Dict, Any, Optional
 from loguru import logger
 from core.ai.llm_client import LLMClient
@@ -125,7 +126,6 @@ class QueryExpander:
             return False
 
         # 日付のみのクエリは拡張しない（例: 「12月4日」）
-        import re
         date_pattern = r'^\d{1,2}月\d{1,2}日$|^\d{1,2}/\d{1,2}$'
         if re.match(date_pattern, query):
             return False
