@@ -39,4 +39,6 @@ gunicorn==23.0.0
 Flask==3.1.0
 Flask-CORS==5.0.0
 json_repair
+beautifulsoup4==4.12.3
+lxml==5.1.0
 
