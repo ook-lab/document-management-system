@@ -1144,7 +1144,8 @@
             // デバッグ: どのデータが来ているか確認
             console.log('[DEBUG] Classroom投稿データ:', {
                 classroom_subject: doc.classroom_subject,
-                full_text: doc.full_text ? doc.full_text.substring(0, 100) + '...' : null,
+                classroom_post_text: doc.classroom_post_text,
+                chunk_content: doc.chunk_content,
                 file_name: doc.file_name
             });
 
