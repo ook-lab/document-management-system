@@ -1149,10 +1149,20 @@
             });
 
             // ✅ タイトルと本文を正しく取得
-            // classroom_subject: タイトル（課題/資料名、またはお知らせの最初の100文字）
-            // full_text: 投稿の本文全体
-            const title = doc.classroom_subject || 'Google Classroom投稿';
-            const bodyText = doc.full_text || '';
+            // classroom_subject: タイトル（課題/資料名、またはお知らせの件名）
+            // classroom_post_text: 投稿本文（classroom_textの場合のみ）
+            // full_text: ドキュメント本体（PDFの内容など）
+
+            // タイトルは最初の50文字に制限（長すぎる場合）
+            let title = doc.classroom_subject || '';
+            if (title && title.length > 50) {
+                title = title.substring(0, 50) + '...';
+            }
+
+            // 投稿本文はclassroom_post_textから取得、なければ検索でヒットしたチャンクを表示
+            const bodyText = (doc.classroom_post_text && doc.classroom_post_text.trim())
+                ? doc.classroom_post_text
+                : (doc.chunk_content || '');
 
             // ✅ 送信者情報（classroom_senderを優先）
             const metadata = doc.metadata || {};
@@ -1161,6 +1171,9 @@
             // ✅ 送信日時（classroom_sent_atを優先）
             const dateStr = doc.classroom_sent_at || doc.created_at || metadata.created_time || '';
             const formattedDate = dateStr ? formatDate(dateStr) : '日時不明';
+
+            // ✅ 投稿種別（classroom_type）
+            const postType = doc.classroom_type || metadata.post_type || 'Classroom';
 
             // 添付ファイル（source_urlまたはmetadataのmaterialsから）
             const attachments = [];
@@ -1201,17 +1214,18 @@
 
             return `
                 <div class="document-card">
-                    <div class="document-title">📘 ${escapeHtml(title)}</div>
+                    ${title ? `<div class="document-title">📘 ${escapeHtml(title)}</div>` : ''}
                     <div class="document-meta">
                         <span class="similarity-badge">類似度: ${(doc.similarity || 0).toFixed(2)}</span>
-                        <span style="color: #1565c0; font-weight: 500;">Google Classroom</span>
+                        <span style="color: #1565c0; font-weight: 500;">📚 ${escapeHtml(postType)}</span>
                     </div>
                     <div class="classroom-post">
+                        ${(sender && sender !== '不明') || formattedDate ? `
                         <div class="classroom-header">
-                            <span class="classroom-sender">👤 ${escapeHtml(sender)}</span>
-                            <span class="classroom-date">🕒 ${escapeHtml(formattedDate)}</span>
-                        </div>
-                        <div class="classroom-body">${escapeHtml(bodyText)}</div>
+                            ${(sender && sender !== '不明') ? `<span class="classroom-sender">👤 ${escapeHtml(sender)}</span>` : ''}
+                            ${formattedDate ? `<span class="classroom-date">🕒 ${escapeHtml(formattedDate)}</span>` : ''}
+                        </div>` : ''}
+                        ${bodyText ? `<div class="classroom-body">${escapeHtml(bodyText)}</div>` : ''}
                         ${attachmentsHtml}
                     </div>
                 </div>

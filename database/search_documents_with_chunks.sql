@@ -20,9 +20,9 @@ CREATE OR REPLACE FUNCTION search_documents_with_chunks(
 )
 RETURNS TABLE (
     document_id UUID,
-    file_name VARCHAR,
-    doc_type VARCHAR,
-    workspace VARCHAR,
+    file_name VARCHAR(500),
+    doc_type VARCHAR(100),
+    workspace VARCHAR(50),
     document_date DATE,
     metadata JSONB,
     summary TEXT,
@@ -32,15 +32,15 @@ RETURNS TABLE (
     chunk_index INTEGER,
     chunk_score FLOAT,
     combined_score FLOAT,
-    source_type VARCHAR,
-    source_url VARCHAR,
+    source_type VARCHAR(50),
+    source_url TEXT,
     created_at TIMESTAMPTZ,
-    classroom_subject VARCHAR,
-    classroom_sender VARCHAR,
-    classroom_sender_email VARCHAR,
+    classroom_subject TEXT,
+    classroom_sender VARCHAR(500),
+    classroom_sender_email VARCHAR(500),
     classroom_sent_at TIMESTAMPTZ,
     classroom_post_text TEXT,
-    classroom_type VARCHAR
+    classroom_type VARCHAR(50)
 ) AS $$
 BEGIN
     RETURN QUERY
