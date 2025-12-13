@@ -4,6 +4,7 @@ Gemini / Claude / OpenAI を統一インターフェースで利用
 """
 
 import os
+import base64
 from typing import Dict, List, Any, Optional, Union
 from pathlib import Path
 import json
@@ -68,8 +69,6 @@ class LLMClient:
         Returns:
             生成されたテキスト
         """
-        import base64
-
         if not self.gemini_api_key:
             raise ValueError("Gemini API key is missing")
 

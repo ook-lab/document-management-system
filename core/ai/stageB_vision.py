@@ -281,7 +281,6 @@ class StageBVisionProcessor:
 
             # JSONレスポンスをパース
             import json
-            import re
 
             # JSONブロックを抽出（非貪欲マッチから貪欲マッチに変更）
             json_match = re.search(r'```json\s*(\{.*\})\s*```', response, re.DOTALL)
@@ -324,7 +323,6 @@ class StageBVisionProcessor:
                         fixed_str = fixed_str.replace('\\\\"', '\\"')
                         fixed_str = fixed_str.replace('\\\\/', '\\/')
                         # Unicode エスケープ: \\uXXXX -> \uXXXX
-                        import re
                         fixed_str = re.sub(r'\\\\u([0-9a-fA-F]{4})', r'\\u\1', fixed_str)
                         # 二重バックスラッシュ: \\\\\\\\ -> \\\\
                         fixed_str = fixed_str.replace('\\\\\\\\', '\\\\')

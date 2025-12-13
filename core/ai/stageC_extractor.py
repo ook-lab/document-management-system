@@ -4,6 +4,7 @@ Stage C: 詳細メタデータ抽出 (Claude 4.5 Haiku)
 Stage Aで分類された文書から、詳細な構造化データを抽出します。
 旧名: Stage 2 Extractor
 """
+import re
 import json
 import json_repair
 from typing import Dict, Optional
@@ -831,8 +832,6 @@ class StageCExtractor:
         Returns:
             修正要求プロンプト
         """
-        import re
-
         # エラー箇所周辺を含めるため、2025年モデル性能に合わせて制限を大幅拡張
         max_content_length = 80000  # Claude 4.5 Haikuの性能に合わせて引き上げ
 

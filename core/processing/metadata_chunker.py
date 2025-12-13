@@ -7,6 +7,7 @@
 旧方式: タイトルと本文を混ぜて小チャンク化 → タイトル情報が希釈
 新方式: メタデータ種別ごとに独立したチャンクを生成 → 検索精度向上
 """
+import re
 from typing import List, Dict, Any, Optional
 from loguru import logger
 
@@ -258,8 +259,6 @@ class MetadataChunker:
         - 日付プレフィックスを整形
         - アンダースコアをスペースに変換
         """
-        import re
-
         # 拡張子を除去
         clean = re.sub(r'\.(pdf|docx?|xlsx?|pptx?|txt|html?)$', '', title, flags=re.IGNORECASE)
 

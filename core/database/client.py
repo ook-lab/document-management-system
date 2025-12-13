@@ -2,6 +2,7 @@
 Database Client
 Supabaseデータベースへの接続と操作を管理
 """
+import re
 from typing import Dict, Any, List, Optional
 import asyncio
 from supabase import create_client, Client
@@ -339,8 +340,6 @@ class DatabaseClient:
         Returns:
             マッチスコア（0.0～0.5）
         """
-        import re
-
         # 年を除いた月・日のみを抽出（例：2025-12-04 → 12-04）
         try:
             parts = target_date.split('-')
@@ -455,7 +454,6 @@ class DatabaseClient:
         Returns:
             正規化された日付文字列（YYYY-MM-DD）、または None
         """
-        import re
         from datetime import datetime
 
         # 現在の年を取得
@@ -495,7 +493,6 @@ class DatabaseClient:
         Returns:
             抽出されたキーワードのリスト
         """
-        import re
         keywords = []
 
         # 括弧内の文字を抽出（例：「学年通信（29）」→「29」「学年通信」）
