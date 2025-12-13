@@ -36,7 +36,7 @@ from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
 from core.ai.stageB_vision import StageBVisionProcessor
 from core.ai.stageC_extractor import StageCExtractor
 from core.ai.llm_client import LLMClient
-from core.utils.chunking import chunk_document
+from core.utils.chunking import TextChunker
 from config.workspaces import get_workspace_from_gmail_label
 from config.model_tiers import ModelTier
 
@@ -692,11 +692,8 @@ class GmailIngestionPipeline:
                             extracted_text = vision_result.get('extracted_text', '')
 
                             # 小チャンク（検索用、300文字）
-                            small_chunks = chunk_document(
-                                text=extracted_text,
-                                chunk_size=300,
-                                chunk_overlap=50
-                            )
+                            chunker = TextChunker(chunk_size=300, chunk_overlap=50)
+                            small_chunks = chunker.split_text(extracted_text)
 
                             if small_chunks:
                                 logger.info(f"  小チャンク作成完了: {len(small_chunks)}個のチャンク")

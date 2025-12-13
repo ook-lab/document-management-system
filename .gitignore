@@ -21,3 +21,4 @@ debug_*.py
 apply_*.py
 collect_codebase2.py
 .DS_Store
+project_full_backup_*.md

@@ -8,7 +8,7 @@ from typing import List, Dict, Optional
 import asyncio
 from loguru import logger
 
-from core.utils.chunking import chunk_document
+from core.utils.chunking import TextChunker
 from core.ai.llm_client import LLMClient
 from core.database.client import DatabaseClient
 
@@ -84,9 +84,10 @@ class ChunkProcessor:
                 logger.info(f"[ChunkProcessor] Deleting existing chunks for document {document_id}")
                 self.db.client.table('small_chunks').delete().eq('document_id', document_id).execute()
 
-            # テキストを小チャンクに分割（既存のchunk_document関数を使用）
+            # テキストを小チャンクに分割
             logger.info(f"[ChunkProcessor] Splitting text into chunks (size={self.chunk_size}, overlap={self.overlap})")
-            chunks = chunk_document(full_text, chunk_size=self.chunk_size, chunk_overlap=self.overlap)
+            chunker = TextChunker(chunk_size=self.chunk_size, chunk_overlap=self.overlap)
+            chunks = chunker.split_text(full_text)
 
             if not chunks:
                 logger.warning(f"[ChunkProcessor] No chunks created for document {document_id}")

@@ -21,7 +21,7 @@ from core.ai.stageC_extractor import StageCExtractor
 # from core.ai.embeddings import EmbeddingClient  # 768次元 - 使用しない
 from core.database.client import DatabaseClient
 from core.ai.llm_client import LLMClient
-from core.utils.chunking import chunk_document, chunk_document_parent_child
+from core.utils.chunking import TextChunker, ParentChildChunker
 from core.utils.synthetic_chunks import create_all_synthetic_chunks
 from core.utils.date_extractor import DateExtractor
 from core.processing.metadata_chunker import MetadataChunker
@@ -528,11 +528,8 @@ class TwoStageIngestionPipeline:
                         logger.info(f"  メタデータチャンク保存完了: {metadata_chunk_success_count}個")
 
                         # 小チャンク化（検索用）
-                        small_chunks = chunk_document(
-                            text=chunk_target_text,  # Classroom投稿本文 + 添付ファイル
-                            chunk_size=150,  # 最大150文字（より精密な検索）
-                            chunk_overlap=30  # オーバーラップも調整
-                        )
+                        chunker = TextChunker(chunk_size=150, chunk_overlap=30)
+                        small_chunks = chunker.split_text(chunk_target_text)
 
                         logger.info(f"  小チャンク作成完了: {len(small_chunks)}個")
 
