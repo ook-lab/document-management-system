@@ -21,11 +21,10 @@ COPY . .
 # 5. Pythonライブラリをインストール
 RUN pip install --no-cache-dir -r requirements.txt
 
-# 6. Playwrightブラウザをインストール
-RUN playwright install --with-deps chromium
+# Note: PlaywrightはローカルのGmail取り込みのみで使用。Cloud Runでは不要。
 
-# 7. ポート環境変数を設定（念のため）
+# 6. ポート環境変数を設定（念のため）
 ENV PORT=8080
 
-# 8. サーバーを起動
+# 7. サーバーを起動
 CMD ["python", "app.py"]

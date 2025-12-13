@@ -41,5 +41,5 @@ Flask-CORS==5.0.0
 json_repair
 beautifulsoup4==4.12.3
 lxml==5.1.0
-playwright==1.40.0
+# playwright==1.40.0  # Gmail取り込み専用（Cloud Runでは不要）
 
