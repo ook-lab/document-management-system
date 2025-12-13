@@ -354,8 +354,7 @@ class TwoStageIngestionPipeline:
             if 'tables' in metadata and metadata['tables']:
                 extracted_tables = metadata['tables']
 
-            # テキスト抽出とVision処理に使用したモデル情報を取得
-            text_extraction_model = base_metadata.get('extractor', None)  # 'pdfplumber', 'python-docx'等
+            # Vision処理に使用したモデル情報を取得
             vision_model = base_metadata.get('vision_model', None)  # Gemini Vision等
 
             # イベント日付配列を取得（Stage 2で抽出されたもの）
@@ -402,7 +401,7 @@ class TwoStageIngestionPipeline:
                 "file_type": self._get_file_type(mime_type),
                 "doc_type": workspace,  # doc_typeは入力元で決定（workspaceと同じ値を使用）
                 "workspace": workspace,  # 引数で渡された値を使用（入力元で決定）
-                "full_text": extracted_text,
+                "attachment_text": extracted_text,  # 添付ファイルから抽出したテキスト
                 "summary": summary,
                 "metadata": metadata,
                 # extracted_tables と event_dates は metadata 内に含まれているため、トップレベルカラムから削除
@@ -412,7 +411,6 @@ class TwoStageIngestionPipeline:
                 "processing_stage": processing_stage,
                 "stagea_classifier_model": ModelTier.STAGE1_CLASSIFIER["model"],  # B1更新（小文字）
                 "stagec_extractor_model": stage2_model,  # B1更新（小文字）
-                "text_extraction_model": text_extraction_model,  # テキスト抽出に使用したモデル
                 "stageb_vision_model": vision_model,  # B1更新（小文字）
                 "relevant_date": relevant_date,
             }
@@ -451,7 +449,7 @@ class TwoStageIngestionPipeline:
                 # - 合成チャンク
                 # ============================================
                 if extracted_text and document_id:
-                    logger.info(f"  ドキュメントのチャンク化開始（メタデータ + 小 + 大 + 合成）")
+                    logger.info(f"  ドキュメントのチャンク化開始（メタデータ + 小 + 合成）")
                     try:
                         # Classroom投稿本文を取得
                         classroom_subject = None
@@ -466,13 +464,6 @@ class TwoStageIngestionPipeline:
                             chunk_target_text = f"【投稿本文】\n{classroom_subject}\n\n【添付ファイル】\n{extracted_text}"
                             logger.info(f"  Classroom投稿本文を追加: {len(classroom_subject)}文字")
 
-                        # ============================================
-                        # 【修正】全文のembeddingを生成（大チャンク用）
-                        # ============================================
-                        logger.info("  全文embedding生成開始")
-                        full_text_embedding = self.llm_client.generate_embedding(chunk_target_text)
-                        logger.info("  全文embedding生成完了")
-
                         # チャンクインデックスカウンター
                         current_chunk_index = 0
                         metadata_chunk_success_count = 0
@@ -482,12 +473,26 @@ class TwoStageIngestionPipeline:
                         # ============================================
                         logger.info(f"  メタデータチャンクの生成開始")
                         metadata_chunker = MetadataChunker()
+
+                        # Classroom情報を取得（existing または file_meta から）
+                        classroom_fields = {}
+                        for field in ['classroom_subject', 'classroom_post_text', 'classroom_type',
+                                     'classroom_sender', 'classroom_sent_at', 'classroom_sender_email']:
+                            value = None
+                            if existing and existing.get(field):
+                                value = existing.get(field)
+                            elif field in file_meta:
+                                value = file_meta.get(field)
+                            if value:
+                                classroom_fields[field] = value
+
                         document_data = {
                             'file_name': file_name,
                             'summary': summary,
                             'document_date': document_date,
                             'tags': tags,
-                            'event_dates': event_dates if 'event_dates' in dir() else []
+                            'event_dates': event_dates if 'event_dates' in dir() else [],
+                            **classroom_fields  # Classroomフィールドを展開
                         }
                         metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
 
@@ -559,32 +564,7 @@ class TwoStageIngestionPipeline:
 
                         logger.info(f"  小チャンク保存完了: {small_chunk_success_count}/{len(small_chunks)}個")
 
-                        # ステップ2: 大チャンク（全文・回答生成用）を保存
-                        logger.info(f"  大チャンク（全文）の保存開始")
-                        large_chunk_success_count = 0
-                        try:
-                            # 全文を1つの大チャンクとして保存（Classroom投稿本文を含む）
-                            large_doc = {
-                                'document_id': document_id,
-                                'chunk_index': current_chunk_index,
-                                'chunk_text': chunk_target_text,  # Classroom投稿本文 + 添付ファイル
-                                'chunk_size': len(chunk_target_text),
-                                'chunk_type': 'content_large',  # B2: チャンク種別
-                                'search_weight': 1.0,  # B2: 検索重み
-                                'embedding': full_text_embedding  # ✅ 修正（未定義変数エラー解消）
-                            }
-
-                            chunk_result = await self.db.insert_document('document_chunks', large_doc)
-                            if chunk_result:
-                                large_chunk_success_count = 1
-                                current_chunk_index += 1
-                        except Exception as chunk_insert_error:
-                            logger.error(f"  大チャンク保存エラー: {type(chunk_insert_error).__name__}: {chunk_insert_error}")
-                            logger.debug(f"  エラー詳細: {repr(chunk_insert_error)}", exc_info=True)
-
-                        logger.info(f"  大チャンク保存完了: {large_chunk_success_count}/1個")
-
-                        # ステップ3: 合成チャンク（スケジュール・議題等）を生成・保存
+                        # ステップ2: 合成チャンク（スケジュール・議題等）を生成・保存
                         logger.info(f"  合成チャンク（構造化データ専用）の生成開始")
                         synthetic_chunk_success_count = 0
                         synthetic_chunks = create_all_synthetic_chunks(metadata, file_name)
@@ -625,14 +605,14 @@ class TwoStageIngestionPipeline:
                             logger.info(f"  合成チャンク生成: 対象データなし（スキップ）")
 
                         # B2: メタデータチャンクを含めた合計
-                        total_chunks = metadata_chunk_success_count + small_chunk_success_count + large_chunk_success_count + synthetic_chunk_success_count
-                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（メタ{metadata_chunk_success_count}個 + 小{small_chunk_success_count}個 + 大{large_chunk_success_count}個 + 合成{synthetic_chunk_success_count}個）")
+                        total_chunks = metadata_chunk_success_count + small_chunk_success_count + synthetic_chunk_success_count
+                        logger.info(f"  チャンク保存完了（合計）: {total_chunks}個（メタ{metadata_chunk_success_count}個 + 小{small_chunk_success_count}個 + 合成{synthetic_chunk_success_count}個）")
 
                         # ステップ4: document の chunk_count を更新
                         try:
                             update_data = {
                                 'chunk_count': total_chunks,
-                                'chunking_strategy': 'metadata_small_large_synthetic'  # B2: メタデータ + 小 + 大 + 合成
+                                'chunking_strategy': 'metadata_small_synthetic'  # B2: メタデータ + 小 + 合成
                             }
                             response = (
                                 self.db.client.table('documents')

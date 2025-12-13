@@ -38,8 +38,8 @@ def load_emails(filters: dict = None):
     # キーワード検索（件名または本文）
     if filters and filters.get('keyword'):
         keyword = filters['keyword']
-        # full_textにキーワードが含まれるものを検索
-        query = query.ilike('full_text', f'%{keyword}%')
+        # attachment_textにキーワードが含まれるものを検索
+        query = query.ilike('attachment_text', f'%{keyword}%')
 
     # 日付順にソート（新しい順）
     query = query.order('created_at', desc=True)

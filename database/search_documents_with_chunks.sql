@@ -26,15 +26,21 @@ RETURNS TABLE (
     document_date DATE,
     metadata JSONB,
     summary TEXT,
-    full_text TEXT,
+    attachment_text TEXT,
     chunk_content TEXT,
     chunk_id UUID,
     chunk_index INTEGER,
     chunk_score FLOAT,
     combined_score FLOAT,
     source_type VARCHAR,
-    source_url TEXT,
-    created_at TIMESTAMPTZ
+    source_url VARCHAR,
+    created_at TIMESTAMPTZ,
+    classroom_subject VARCHAR,
+    classroom_sender VARCHAR,
+    classroom_sender_email VARCHAR,
+    classroom_sent_at TIMESTAMPTZ,
+    classroom_post_text TEXT,
+    classroom_type VARCHAR
 ) AS $$
 BEGIN
     RETURN QUERY
@@ -88,7 +94,7 @@ BEGIN
         d.document_date,
         d.metadata,
         d.summary,
-        d.full_text,  -- 大チャンク（全文）for回答生成
+        d.attachment_text,  -- 添付ファイルから抽出したテキスト
         dbc.chunk_content,  -- ヒットした小チャンク
         dbc.chunk_id,
         dbc.chunk_index,
@@ -96,7 +102,13 @@ BEGIN
         dbc.chunk_score AS combined_score,
         d.source_type,
         d.source_url,
-        d.created_at
+        d.created_at,
+        d.classroom_subject,
+        d.classroom_sender,
+        d.classroom_sender_email,
+        d.classroom_sent_at,
+        d.classroom_post_text,
+        d.classroom_type
     FROM document_best_chunks dbc
     INNER JOIN documents d ON d.id = dbc.document_id
     WHERE

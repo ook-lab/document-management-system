@@ -432,8 +432,8 @@ def _build_context(documents: List[Dict[str, Any]]) -> str:
     for idx, doc in enumerate(documents, 1):
         file_name = doc.get('file_name', '無題')
         doc_type = doc.get('doc_type', '不明')
-        # ✅ contentを優先的に使用、フォールバックとしてsummary, full_textをチェック
-        content = doc.get('content') or doc.get('summary') or doc.get('full_text', '')
+        # ✅ contentを優先的に使用、フォールバックとしてsummary, attachment_textをチェック
+        content = doc.get('content') or doc.get('summary') or doc.get('attachment_text', '')
         similarity = doc.get('similarity', 0)
         metadata = doc.get('metadata', {})
 

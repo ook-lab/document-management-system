@@ -27,13 +27,19 @@ class MetadataChunker:
 
     # チャンク種別と検索重み
     CHUNK_WEIGHTS = {
-        'title': 2.0,           # タイトルマッチは最優先
-        'summary': 1.5,         # サマリーは高優先
-        'date': 1.3,            # 日付検索
-        'tags': 1.2,            # タグ検索
-        'content_small': 1.0,   # 本文検索（標準）
-        'content_large': 1.0,   # 回答生成用
-        'synthetic': 1.0,       # 構造化データ
+        'title': 2.0,                    # タイトルマッチは最優先
+        'classroom_subject': 2.0,        # Classroom件名（最重要）
+        'classroom_post_text': 1.8,      # Classroom投稿本文（重要）
+        'summary': 1.5,                  # サマリーは高優先
+        'classroom_type': 1.5,           # Classroom種別（お知らせ/課題/資料）
+        'classroom_sender': 1.3,         # Classroom送信者名
+        'classroom_sent_at': 1.3,        # Classroom送信日時
+        'date': 1.3,                     # 日付検索
+        'tags': 1.2,                     # タグ検索
+        'classroom_sender_email': 1.0,   # Classroom送信者メール
+        'content_small': 1.0,            # 本文検索（標準）
+        'content_large': 1.0,            # 回答生成用
+        'synthetic': 1.0,                # 構造化データ
     }
 
     def __init__(self):
@@ -111,6 +117,55 @@ class MetadataChunker:
                     text=tag_text
                 ))
                 logger.debug(f"[MetadataChunker] タグチャンク作成: {len(tags)}個のタグ")
+
+        # 5. Classroom専用チャンク（Google Classroom投稿情報）
+        classroom_subject = document_data.get('classroom_subject')
+        if classroom_subject and len(classroom_subject.strip()) > 0:
+            chunks.append(self._create_chunk(
+                chunk_type='classroom_subject',
+                text=f"件名: {classroom_subject.strip()}"
+            ))
+            logger.debug(f"[MetadataChunker] Classroom件名チャンク作成: {len(classroom_subject)}文字")
+
+        classroom_post_text = document_data.get('classroom_post_text')
+        if classroom_post_text and len(classroom_post_text.strip()) > 0:
+            chunks.append(self._create_chunk(
+                chunk_type='classroom_post_text',
+                text=f"投稿本文: {classroom_post_text.strip()}"
+            ))
+            logger.debug(f"[MetadataChunker] Classroom投稿本文チャンク作成: {len(classroom_post_text)}文字")
+
+        classroom_type = document_data.get('classroom_type')
+        if classroom_type:
+            chunks.append(self._create_chunk(
+                chunk_type='classroom_type',
+                text=f"種別: {classroom_type}"
+            ))
+            logger.debug(f"[MetadataChunker] Classroom種別チャンク作成: {classroom_type}")
+
+        classroom_sender = document_data.get('classroom_sender')
+        if classroom_sender:
+            chunks.append(self._create_chunk(
+                chunk_type='classroom_sender',
+                text=f"送信者: {classroom_sender}"
+            ))
+            logger.debug(f"[MetadataChunker] Classroom送信者チャンク作成: {classroom_sender}")
+
+        classroom_sent_at = document_data.get('classroom_sent_at')
+        if classroom_sent_at:
+            chunks.append(self._create_chunk(
+                chunk_type='classroom_sent_at',
+                text=f"送信日時: {classroom_sent_at}"
+            ))
+            logger.debug(f"[MetadataChunker] Classroom送信日時チャンク作成: {classroom_sent_at}")
+
+        classroom_sender_email = document_data.get('classroom_sender_email')
+        if classroom_sender_email:
+            chunks.append(self._create_chunk(
+                chunk_type='classroom_sender_email',
+                text=f"送信者メール: {classroom_sender_email}"
+            ))
+            logger.debug(f"[MetadataChunker] Classroom送信者メールチャンク作成")
 
         logger.info(f"[MetadataChunker] メタデータチャンク生成完了: {len(chunks)}個")
         return chunks

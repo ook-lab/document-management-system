@@ -190,8 +190,8 @@ class DatabaseClient:
                     'metadata': result.get('metadata'),
                     'summary': result.get('summary'),
 
-                    # 回答用：大チャンク（全文）
-                    'content': result.get('full_text'),  # 大チャンク = ドキュメント全文
+                    # 回答用：添付ファイルテキスト
+                    'content': result.get('attachment_text'),  # 添付ファイルから抽出したテキスト
                     'large_chunk_id': result.get('document_id'),  # ドキュメントID
 
                     # 小チャンク情報（ヒットした箇所）
@@ -210,8 +210,8 @@ class DatabaseClient:
                     doc_result['source_type'] = result.get('source_type')
                 if 'source_url' in result:
                     doc_result['source_url'] = result.get('source_url')
-                if 'full_text' in result:
-                    doc_result['full_text'] = result.get('full_text')
+                if 'attachment_text' in result:
+                    doc_result['attachment_text'] = result.get('attachment_text')
                 if 'created_at' in result:
                     doc_result['created_at'] = result.get('created_at')
                 if 'classroom_subject' in result:
@@ -222,10 +222,10 @@ class DatabaseClient:
                     doc_result['classroom_sender_email'] = result.get('classroom_sender_email')
                 if 'classroom_sent_at' in result:
                     doc_result['classroom_sent_at'] = result.get('classroom_sent_at')
-                if 'classroom_course_id' in result:
-                    doc_result['classroom_course_id'] = result.get('classroom_course_id')
-                if 'classroom_course_name' in result:
-                    doc_result['classroom_course_name'] = result.get('classroom_course_name')
+                if 'classroom_post_text' in result:
+                    doc_result['classroom_post_text'] = result.get('classroom_post_text')
+                if 'classroom_type' in result:
+                    doc_result['classroom_type'] = result.get('classroom_type')
 
                 final_results.append(doc_result)
 
@@ -357,8 +357,8 @@ class DatabaseClient:
             f"{month:02d}-{day:02d}",   # 12-04
         ]
 
-        # 1. 本文（content, summary, full_text）を検索 - 最優先
-        text_fields = ['content', 'summary', 'full_text']
+        # 1. 本文（content, summary, attachment_text）を検索 - 最優先
+        text_fields = ['content', 'summary', 'attachment_text']
         for field in text_fields:
             text = doc.get(field, '')
             if text:
