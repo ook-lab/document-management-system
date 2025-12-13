@@ -7,7 +7,6 @@ import os
 import base64
 from typing import Dict, List, Any, Optional, Union
 from pathlib import Path
-import json
 import mimetypes
 
 import google.generativeai as genai
@@ -16,7 +15,7 @@ from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type, RetryError
 from loguru import logger
 
-from config.model_tiers import AIProvider, ModelTier, get_model_config
+from config.model_tiers import AIProvider, get_model_config
 from config.settings import settings
 
 class LLMClient:

@@ -12,7 +12,6 @@ from datetime import datetime
 from pathlib import Path
 from loguru import logger
 
-from config.model_tiers import ModelTier
 from core.ai.llm_client import LLMClient
 
 
