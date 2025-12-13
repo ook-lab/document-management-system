@@ -20,7 +20,6 @@ class StageCExtractor:
     
     def __init__(self, llm_client: Optional[LLMClient] = None):
         self.llm = llm_client if llm_client else LLMClient()
-        self.confidence_threshold = 0.7
         self._table_extraction_template = None
 
     def _load_table_extraction_template(self) -> str:

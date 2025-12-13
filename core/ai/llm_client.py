@@ -230,7 +230,7 @@ class LLMClient:
             response = model.generate_content(
                 content_parts,
                 generation_config=genai.GenerationConfig(
-                    max_output_tokens=config.get("max_tokens", 2000),
+                    max_output_tokens=config.get("max_tokens", 8000),
                     temperature=config.get("temperature", 0.1)
                 ),
                 safety_settings=safety_settings

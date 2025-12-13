@@ -43,8 +43,7 @@ class HypotheticalQuestionGenerator:
             質問のリスト:
             [
                 {
-                    "question_text": str,
-                    "confidence_score": float (0.0-1.0)
+                    "question_text": str
                 },
                 ...
             ]
@@ -147,24 +146,16 @@ class HypotheticalQuestionGenerator:
 ```json
 [
   {{
-    "question_text": "質問1のテキスト",
-    "confidence_score": 0.95
+    "question_text": "質問1のテキスト"
   }},
   {{
-    "question_text": "質問2のテキスト",
-    "confidence_score": 0.90
+    "question_text": "質問2のテキスト"
   }},
   {{
-    "question_text": "質問3のテキスト",
-    "confidence_score": 0.85
+    "question_text": "質問3のテキスト"
   }}
 ]
 ```
-
-**confidence_score**: その質問が文書内容を正確に反映している信頼度（0.0-1.0）
-- 1.0: 文書に明確に書かれている事実に基づく質問
-- 0.8-0.9: 文書の内容から直接導ける質問
-- 0.5-0.7: やや推測を含む質問（できるだけ避ける）
 
 # 例
 
@@ -172,9 +163,9 @@ class HypotheticalQuestionGenerator:
 「2024年12月4日（水）14:00-16:00 社内MTG 議題:Q4振り返り 参加者:営業部全員 場所:会議室A」
 
 **良い質問の例（✅）**:
-1. 「12月4日の社内MTGの議題は？」（confidence: 1.0）
-2. 「Q4振り返りのMTGはいつ？」（confidence: 0.95）
-3. 「営業部のMTGの場所は？」（confidence: 1.0）
+1. 「12月4日の社内MTGの議題は？」
+2. 「Q4振り返りのMTGはいつ？」
+3. 「営業部のMTGの場所は？」
 
 **悪い質問の例（❌）**:
 1. 「Q4の売上目標は？」← 文書に書かれていない❌
@@ -231,23 +222,13 @@ class HypotheticalQuestionGenerator:
                     continue
 
                 question_text = q.get("question_text", "").strip()
-                confidence_score = q.get("confidence_score", 0.5)
 
-                # 質問テキストが空でないか
+                # 質問テキストが空でないか、または短すぎないか
                 if not question_text or len(question_text) < 5:
                     continue
 
-                # confidence_scoreの範囲チェック
-                confidence_score = max(0.0, min(1.0, float(confidence_score)))
-
-                # 低信頼度の質問はフィルタリング（落とし穴対策）
-                if confidence_score < 0.6:
-                    logger.warning(f"[HypotheticalQ] 低信頼度質問をスキップ: {question_text}")
-                    continue
-
                 validated_questions.append({
-                    "question_text": question_text,
-                    "confidence_score": confidence_score
+                    "question_text": question_text
                 })
 
             return validated_questions

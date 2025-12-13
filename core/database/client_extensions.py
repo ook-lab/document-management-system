@@ -81,8 +81,7 @@ async def insert_hypothetical_question(
     document_id: str,
     chunk_id: Optional[str],
     question_text: str,
-    question_embedding: List[float],
-    confidence_score: float = 1.0
+    question_embedding: List[float]
 ) -> bool:
     """
     仮想質問を1件挿入
@@ -95,8 +94,7 @@ async def insert_hypothetical_question(
             'document_id': document_id,
             'chunk_id': chunk_id,
             'question_text': question_text,
-            'question_embedding': embedding_str,
-            'confidence_score': confidence_score
+            'question_embedding': embedding_str
         }
 
         self.client.table('hypothetical_questions').insert(data).execute()

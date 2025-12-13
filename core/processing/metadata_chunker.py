@@ -17,9 +17,12 @@ class MetadataChunker:
 
     チャンク種別と重み付け:
     - title: タイトル専用チャンク（重み2.0）- 最高優先度
+    - persons: 担当者・関係者チャンク（重み1.8）- 高優先度 ★新規
+    - organizations: 組織名チャンク（重み1.7）- 高優先度 ★新規
     - summary: サマリー専用チャンク（重み1.5）
     - date: 日付専用チャンク（重み1.3）
     - tags: タグ専用チャンク（重み1.2）
+    - people: AI抽出人物チャンク（重み1.2）★新規
     - content_small: 本文小チャンク（重み1.0）- 150文字
     - content_large: 本文大チャンク（重み1.0）- 全文
     - synthetic: 合成チャンク（重み1.0）- 構造化データ
@@ -31,12 +34,15 @@ class MetadataChunker:
         'classroom_subject': 2.0,        # Classroom件名（最重要）
         'doc_type': 1.8,                 # 授業名・ドキュメント種別（重要）
         'classroom_post_text': 1.8,      # Classroom投稿本文（重要）
+        'persons': 1.8,                  # 担当者・関係者（重要）★新規追加
+        'organizations': 1.7,            # 組織名（重要）★新規追加
         'summary': 1.5,                  # サマリーは高優先
         'classroom_type': 1.5,           # Classroom種別（お知らせ/課題/資料）
         'classroom_sender': 1.3,         # Classroom送信者名
         'classroom_sent_at': 1.3,        # Classroom送信日時
         'date': 1.3,                     # 日付検索
         'tags': 1.2,                     # タグ検索
+        'people': 1.2,                   # AI抽出人物（やや重要）★新規追加
         'classroom_sender_email': 1.0,   # Classroom送信者メール
         'content_small': 1.0,            # 本文検索（標準）
         'content_large': 1.0,            # 回答生成用
@@ -177,6 +183,39 @@ class MetadataChunker:
             ))
             logger.debug(f"[MetadataChunker] Classroom送信者メールチャンク作成")
 
+        # 7. persons（担当者・関係者）チャンク（高重要）
+        persons = document_data.get('persons', [])
+        if persons and len(persons) > 0:
+            persons_text = self._format_persons_chunk(persons)
+            if persons_text:
+                chunks.append(self._create_chunk(
+                    chunk_type='persons',
+                    text=persons_text
+                ))
+                logger.debug(f"[MetadataChunker] personsチャンク作成: {len(persons)}名")
+
+        # 8. organizations（組織名）チャンク（高重要）
+        organizations = document_data.get('organizations', [])
+        if organizations and len(organizations) > 0:
+            orgs_text = self._format_organizations_chunk(organizations)
+            if orgs_text:
+                chunks.append(self._create_chunk(
+                    chunk_type='organizations',
+                    text=orgs_text
+                ))
+                logger.debug(f"[MetadataChunker] organizationsチャンク作成: {len(organizations)}組織")
+
+        # 9. people（AI抽出人物）チャンク
+        people = document_data.get('people', [])
+        if people and len(people) > 0:
+            people_text = self._format_people_chunk(people)
+            if people_text:
+                chunks.append(self._create_chunk(
+                    chunk_type='people',
+                    text=people_text
+                ))
+                logger.debug(f"[MetadataChunker] peopleチャンク作成: {len(people)}名")
+
         logger.info(f"[MetadataChunker] メタデータチャンク生成完了: {len(chunks)}個")
         return chunks
 
@@ -289,6 +328,61 @@ class MetadataChunker:
         hashtags = ' '.join([f"#{tag}" for tag in unique_tags])
 
         return f"タグ: {tag_text}\n{hashtags}"
+
+    def _format_persons_chunk(self, persons: List[str]) -> Optional[str]:
+        """
+        担当者・関係者リストをチャンク用テキストに整形
+
+        配列には複数の表記（漢字、ひらがな、アルファベット）が含まれる想定
+        例: ['山田太郎', 'やまだたろう', 'Yamada Taro', '山田']
+        """
+        if not persons:
+            return None
+
+        # 重複除去
+        unique_persons = list(dict.fromkeys(persons))
+
+        # スペース区切りで結合（ベクトル化時に全表記が考慮される）
+        persons_text = ' '.join(unique_persons)
+
+        return f"担当者: {persons_text}"
+
+    def _format_organizations_chunk(self, organizations: List[str]) -> Optional[str]:
+        """
+        組織名リストをチャンク用テキストに整形
+
+        配列には複数の表記（正式名称、略称、ひらがな、英語）が含まれる想定
+        例: ['東京大学', 'とうきょうだいがく', 'Tokyo University', '東大', 'UTokyo']
+        """
+        if not organizations:
+            return None
+
+        # 重複除去
+        unique_orgs = list(dict.fromkeys(organizations))
+
+        # スペース区切りで結合
+        orgs_text = ' '.join(unique_orgs)
+
+        return f"組織: {orgs_text}"
+
+    def _format_people_chunk(self, people: List[str]) -> Optional[str]:
+        """
+        AI抽出人物リストをチャンク用テキストに整形
+
+        Args:
+            people: AIが文書から抽出した人物名のリスト
+        """
+        if not people:
+            return None
+
+        # 重複除去
+        unique_people = list(dict.fromkeys(people))
+
+        # カンマ区切りとスペース区切りの両方で表現
+        people_text = ', '.join(unique_people)
+        people_spaced = ' '.join(unique_people)
+
+        return f"関係者: {people_text}\n{people_spaced}"
 
     def get_weight_for_type(self, chunk_type: str) -> float:
         """
