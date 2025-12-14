@@ -1,5 +1,5 @@
 """
-Document Review UI (v2.0 - Tab Edition)
+Document Review UI (v2.1 - Database Migration Edition)
 人間がAIの抽出結果を確認・修正するための管理画面
 
 新機能:
