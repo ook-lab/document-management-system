@@ -664,7 +664,7 @@ class GmailIngestionPipeline:
                     'file_type': 'email',
                     'doc_type': stage2_result.get('doc_type', 'email'),  # Stage 2の分類を使用
                     'workspace': workspace,
-                    'attachment_text': email_text_content,  # メール本文（添付ファイルテキストに相当）
+                    'full_text': email_text_content,  # メール本文（source_documentsテーブルのカラムに対応）
                     'summary': stage2_result.get('summary', vision_result.get('summary', '')),
                     'tags': stage2_result.get('tags', []),  # Stage 2のタグを追加
                     'document_date': stage2_result.get('document_date'),  # Stage 2の日付を追加
@@ -679,7 +679,7 @@ class GmailIngestionPipeline:
                 }
 
                 try:
-                    email_doc_result = await self.db.insert_document('documents', email_doc)
+                    email_doc_result = await self.db.insert_document('source_documents', email_doc)
                     logger.debug(f"  Supabase insert result type: {type(email_doc_result)}, keys: {email_doc_result.keys() if isinstance(email_doc_result, dict) else 'N/A'}")
                     if email_doc_result:
                         email_doc_id = email_doc_result.get('id')

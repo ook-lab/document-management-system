@@ -401,7 +401,7 @@ class TwoStageIngestionPipeline:
                 "file_type": self._get_file_type(mime_type),
                 "doc_type": workspace,  # doc_typeは入力元で決定（workspaceと同じ値を使用）
                 "workspace": workspace,  # 引数で渡された値を使用（入力元で決定）
-                "attachment_text": extracted_text,  # 添付ファイルから抽出したテキスト
+                "full_text": extracted_text,  # 抽出したテキスト（source_documentsテーブルのカラムに対応）
                 "summary": summary,
                 "metadata": metadata,
                 # extracted_tables と event_dates は metadata 内に含まれているため、トップレベルカラムから削除
@@ -420,7 +420,7 @@ class TwoStageIngestionPipeline:
                 # force_reprocess=True時は全フィールドを更新するが、GAS由来のフィールドは保持
                 preserve_fields = ['doc_type', 'workspace', 'source_type', 'classroom_sender', 'classroom_sender_email', 'classroom_sent_at', 'classroom_subject', 'classroom_course_id', 'classroom_course_name'] if force_reprocess else []
                 result = await self.db.upsert_document(
-                    'documents',
+                    'source_documents',  # 3層アーキテクチャのテーブル名に修正
                     document_data,
                     conflict_column='source_id',
                     force_update=force_reprocess,
@@ -658,7 +658,7 @@ class TwoStageIngestionPipeline:
 
             try:
                 # 既存レコードがある場合は上書き（force_reprocessモード対応）
-                await self.db.upsert_document('documents', error_data, conflict_column='source_id', force_update=True)
+                await self.db.upsert_document('source_documents', error_data, conflict_column='source_id', force_update=True)
             except Exception as db_error:
                 db_error_traceback = traceback.format_exc()
                 # KeyError回避: エラーメッセージを安全に文字列化
