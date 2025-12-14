@@ -42,10 +42,10 @@ async def reprocess_file(file_name: str):
 
     # 既存データを削除
     try:
-        response = db.client.table('documents').select('id').eq('source_id', target_file['id']).execute()
+        response = db.client.table('source_documents').select('id').eq('source_id', target_file['id']).execute()
         if response.data:
             for doc in response.data:
-                db.client.table('documents').delete().eq('id', doc['id']).execute()
+                db.client.table('source_documents').delete().eq('id', doc['id']).execute()
             logger.info(f"🗑️  既存データ削除: {len(response.data)} 件")
     except Exception as e:
         logger.error(f"❌ 既存データ削除失敗: {e}")

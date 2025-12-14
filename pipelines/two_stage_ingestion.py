@@ -435,7 +435,7 @@ class TwoStageIngestionPipeline:
                 if force_reprocess and document_id:
                     logger.info(f"  🔄 再処理モード: 既存チャンクを削除します")
                     try:
-                        delete_result = self.db.client.table('document_chunks').delete().eq('document_id', document_id).execute()
+                        delete_result = self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
                         deleted_count = len(delete_result.data) if delete_result.data else 0
                         logger.info(f"  既存チャンク削除完了: {deleted_count}個")
                     except Exception as e:
@@ -510,14 +510,14 @@ class TwoStageIngestionPipeline:
                                 meta_doc = {
                                     'document_id': document_id,
                                     'chunk_index': current_chunk_index,
-                                    'chunk_text': meta_text,
+                                    'chunk_content': meta_text,
                                     'chunk_size': len(meta_text),
                                     'chunk_type': meta_type,
                                     'search_weight': meta_weight,
                                     'embedding': meta_embedding
                                 }
 
-                                chunk_result = await self.db.insert_document('document_chunks', meta_doc)
+                                chunk_result = await self.db.insert_document('search_index', meta_doc)
                                 if chunk_result:
                                     metadata_chunk_success_count += 1
                                     current_chunk_index += 1
@@ -544,14 +544,14 @@ class TwoStageIngestionPipeline:
                                 small_doc = {
                                     'document_id': document_id,
                                     'chunk_index': current_chunk_index,  # メタデータチャンクの後から
-                                    'chunk_text': small_text,
+                                    'chunk_content': small_text,
                                     'chunk_size': small_chunk.get('chunk_size', len(small_text)),
                                     'chunk_type': 'content_small',  # B2: チャンク種別
                                     'search_weight': 1.0,  # B2: 検索重み
                                     'embedding': small_embedding
                                 }
 
-                                chunk_result = await self.db.insert_document('document_chunks', small_doc)
+                                chunk_result = await self.db.insert_document('search_index', small_doc)
                                 if chunk_result:
                                     small_chunk_success_count += 1
                                     current_chunk_index += 1
@@ -582,7 +582,7 @@ class TwoStageIngestionPipeline:
                                     synthetic_doc = {
                                         'document_id': document_id,
                                         'chunk_index': current_chunk_index,
-                                        'chunk_text': synthetic_text,
+                                        'chunk_content': synthetic_text,
                                         'chunk_size': len(synthetic_text),
                                         'chunk_type': 'synthetic',  # B2: チャンク種別
                                         'search_weight': 1.0,  # B2: 検索重み
@@ -590,7 +590,7 @@ class TwoStageIngestionPipeline:
                                         'section_title': f'[合成チャンク: {synthetic_type}]'  # 識別用
                                     }
 
-                                    chunk_result = await self.db.insert_document('document_chunks', synthetic_doc)
+                                    chunk_result = await self.db.insert_document('search_index', synthetic_doc)
                                     if chunk_result:
                                         synthetic_chunk_success_count += 1
                                         current_chunk_index += 1
@@ -612,7 +612,7 @@ class TwoStageIngestionPipeline:
                                 'chunking_strategy': 'metadata_small_synthetic'  # B2: メタデータ + 小 + 合成
                             }
                             response = (
-                                self.db.client.table('documents')
+                                self.db.client.table('source_documents')
                                 .update(update_data)
                                 .eq('id', document_id)
                                 .execute()

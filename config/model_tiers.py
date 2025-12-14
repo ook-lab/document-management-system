@@ -26,15 +26,15 @@ class ModelTier:
         "cost_per_1k_tokens": 0.00015
     }
 
-    # Email Vision処理（高精度HTMLスクリーンショット解析）
-    # Gemini 2.5 ProでHTMLメールスクリーンショットを高精度解析
+    # Email Vision処理（高速HTMLスクリーンショット解析）
+    # Gemini 2.5 FlashでHTMLメールスクリーンショットを高速解析
     EMAIL_VISION = {
         "provider": AIProvider.GEMINI,
-        "model": "gemini-2.5-pro",
-        "description": "メールスクリーンショット高精度解析",
+        "model": "gemini-2.5-flash",
+        "description": "メールスクリーンショット高速解析",
         "temperature": 0.0,
         "max_tokens": 16384,
-        "cost_per_1k_tokens": 0.00125  # Proは高精度だがコストは高め
+        "cost_per_1k_tokens": 0.00015  # Flashは低コスト
     }
 
     # Stage 2: 詳細抽出（速度・コスト重視）

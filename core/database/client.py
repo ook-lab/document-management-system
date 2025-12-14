@@ -33,7 +33,7 @@ class DatabaseClient:
             既存の文書レコード、存在しない場合は None
         """
         try:
-            response = self.client.table('documents').select('*').eq('source_id', source_id).execute()
+            response = self.client.table('source_documents').select('*').eq('source_id', source_id).execute()
             if response.data:
                 return response.data[0]
             return None
@@ -540,7 +540,7 @@ class DatabaseClient:
             ドキュメントのリスト（更新日時降順）
         """
         try:
-            query = self.client.table('documents').select('*')
+            query = self.client.table('source_documents').select('*')
 
             # File typeフィルタを適用
             if file_type:
@@ -608,7 +608,7 @@ class DatabaseClient:
                 update_data['reviewed_by'] = reviewed_by
 
             response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -639,7 +639,7 @@ class DatabaseClient:
             }
 
             response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -660,7 +660,7 @@ class DatabaseClient:
         try:
             # 未レビューの件数（review_status = 'pending' または NULL）
             unreviewed_response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .select('*', count='exact')
                 .in_('review_status', ['pending', None])
                 .execute()
@@ -669,7 +669,7 @@ class DatabaseClient:
 
             # レビュー済みの件数（review_status = 'reviewed'）
             reviewed_response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .select('*', count='exact')
                 .eq('review_status', 'reviewed')
                 .execute()
@@ -706,7 +706,7 @@ class DatabaseClient:
         """
         try:
             # 全ドキュメントからworkspaceを取得
-            response = self.client.table('documents').select('workspace').execute()
+            response = self.client.table('source_documents').select('workspace').execute()
 
             workspaces = set()
             for doc in response.data:
@@ -728,7 +728,7 @@ class DatabaseClient:
         """
         try:
             # 全ドキュメントからdoc_typeを取得
-            response = self.client.table('documents').select('doc_type').execute()
+            response = self.client.table('source_documents').select('doc_type').execute()
 
             doc_types = set()
             for doc in response.data:
@@ -750,7 +750,7 @@ class DatabaseClient:
         """
         try:
             # workspaceとdoc_typeの組み合わせを取得
-            response = self.client.table('documents').select('workspace, doc_type').execute()
+            response = self.client.table('source_documents').select('workspace, doc_type').execute()
 
             hierarchy = {}
             for doc in response.data:
@@ -786,7 +786,7 @@ class DatabaseClient:
             ドキュメント、存在しない場合は None
         """
         try:
-            response = self.client.table('documents').select('*').eq('id', doc_id).execute()
+            response = self.client.table('source_documents').select('*').eq('id', doc_id).execute()
             if response.data:
                 return response.data[0]
             return None
@@ -820,7 +820,7 @@ class DatabaseClient:
                 update_data['doc_type'] = new_doc_type
 
             response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -897,7 +897,7 @@ class DatabaseClient:
             # year, month のトップレベルカラムへの同期は削除（metadata 内で管理）
 
             document_response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -962,7 +962,7 @@ class DatabaseClient:
             }
 
             document_response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -1022,7 +1022,7 @@ class DatabaseClient:
         try:
             # source_idが存在するすべてのドキュメントを取得
             response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .select('source_id')
                 .not_.is_('source_id', 'null')
                 .execute()
@@ -1053,7 +1053,7 @@ class DatabaseClient:
         try:
             # content_hashが一致するドキュメントを検索
             response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .select('id, file_name, content_hash')
                 .eq('content_hash', content_hash)
                 .limit(1)
@@ -1089,7 +1089,7 @@ class DatabaseClient:
         try:
             # ドキュメントを削除（ON DELETE CASCADEにより関連データも削除される）
             response = (
-                self.client.table('documents')
+                self.client.table('source_documents')
                 .delete()
                 .eq('id', doc_id)
                 .execute()

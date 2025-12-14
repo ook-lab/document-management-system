@@ -117,10 +117,10 @@ async def reingest_all_data(skip_existing: bool = True):
         try:
             db = DatabaseClient()
             # すべてのPDFドキュメントを削除
-            response = db.client.table('documents').select('id, file_name').eq('file_type', 'pdf').execute()
+            response = db.client.table('source_documents').select('id, file_name').eq('file_type', 'pdf').execute()
             if response.data:
                 for doc in response.data:
-                    db.client.table('documents').delete().eq('id', doc['id']).execute()
+                    db.client.table('source_documents').delete().eq('id', doc['id']).execute()
                 logger.info(f"🗑️  削除完了: {len(response.data)} 件")
         except Exception as e:
             logger.error(f"❌ 既存データ削除失敗: {e}")

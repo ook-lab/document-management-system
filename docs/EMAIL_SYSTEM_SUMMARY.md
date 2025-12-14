@@ -184,7 +184,7 @@ python pipelines/gmail_ingestion.py
 1. **データ取得レベル**:
    ```python
    # メールUIでは必ず file_type = 'email' で絞り込み
-   query = db.client.table('documents').eq('file_type', 'email')
+   query = db.client.table('source_documents').eq('file_type', 'email')
    ```
 
 2. **処理レベル**:

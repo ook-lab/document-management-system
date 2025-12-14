@@ -81,7 +81,7 @@ WHERE content_hash IS NOT NULL;
 ```python
 def check_duplicate_hash(self, content_hash: str) -> bool:
     response = (
-        self.client.table('documents')
+        self.client.table('source_documents')
         .select('id, file_name, content_hash')
         .eq('content_hash', content_hash)
         .limit(1)

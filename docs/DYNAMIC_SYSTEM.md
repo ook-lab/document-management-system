@@ -71,13 +71,13 @@ if not is_valid:
 ```python
 # workspace一覧を動的に取得
 def get_available_workspaces(self) -> List[str]:
-    response = self.client.table('documents').select('workspace').execute()
+    response = self.client.table('source_documents').select('workspace').execute()
     workspaces = {doc.get('workspace') for doc in response.data if doc.get('workspace')}
     return sorted(list(workspaces))
 
 # doc_type一覧を動的に取得
 def get_available_doc_types(self) -> List[str]:
-    response = self.client.table('documents').select('doc_type').execute()
+    response = self.client.table('source_documents').select('doc_type').execute()
     doc_types = {doc.get('doc_type') for doc in response.data if doc.get('doc_type')}
     return sorted(list(doc_types))
 ```

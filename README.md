@@ -1,15 +1,15 @@
 # 文書検索・質問回答システム
 
-SupabaseとOpenAI GPT-4を使用した、ベクトル検索ベースの質問回答システムです。
+SupabaseとマルチAIモデル（Gemini, Claude, OpenAI）を使用した、ベクトル検索ベースの質問回答システムです。
 
 ## 概要
 
-このシステムは、Supabaseに保存された文書に対してベクトル検索を行い、GPT-4で自然な回答を生成するWebアプリケーションです。
+このシステムは、Supabaseに保存された文書に対してベクトル検索を行い、AIで自然な回答を生成するWebアプリケーションです。
 
 ### 主な機能
 
 - **ベクトル検索**: OpenAI Embeddingsを使用した高精度な文書検索
-- **AI回答生成**: GPT-4による自然で分かりやすい回答
+- **AI回答生成**: Gemini 2.5 Flash（デフォルト）による高速で自然な回答
 - **シンプルなUI**: ブラウザで簡単に操作できる直感的なインターフェース
 - **リアルタイム検索**: 質問入力から回答表示まで数秒で完了
 
@@ -126,8 +126,8 @@ gunicorn -w 4 -b localhost:5001 app:app
        │                  │
        ▼                  ▼
 ┌─────────────┐    ┌─────────────┐
-│  Supabase   │    │  OpenAI     │
-│  (pgvector) │    │  (GPT-4)    │
+│  Supabase   │    │   AI APIs   │
+│  (pgvector) │    │  Gemini/GPT │
 └─────────────┘    └─────────────┘
 ```
 
@@ -136,8 +136,8 @@ gunicorn -w 4 -b localhost:5001 app:app
 1. **ユーザーが質問を入力**
 2. **OpenAI Embeddingsで質問をベクトル化** (1536次元)
 3. **Supabaseでベクトル検索** (cosine類似度、上位5件)
-4. **検索結果をコンテキストとしてGPT-4に渡す**
-5. **GPT-4が自然な回答を生成**
+4. **検索結果をコンテキストとしてAIモデルに渡す**
+5. **AIモデル（Gemini 2.5 Flash）が自然な回答を生成**
 6. **ブラウザに回答と関連文書を表示**
 
 ## APIエンドポイント
@@ -177,7 +177,7 @@ gunicorn -w 4 -b localhost:5001 app:app
 
 ### POST /api/answer
 
-GPT-4で回答を生成
+AIモデルで回答を生成
 
 **リクエスト:**
 ```json
@@ -192,8 +192,8 @@ GPT-4で回答を生成
 {
   "success": true,
   "answer": "プロジェクトの納期は2024年3月31日です。...",
-  "model": "gpt-4o",
-  "provider": "openai"
+  "model": "gemini-2.5-flash",
+  "provider": "gemini"
 }
 ```
 
@@ -291,7 +291,11 @@ document_management_system/
 
 - **バックエンド**: Flask 3.0, Python 3.12
 - **フロントエンド**: HTML, CSS, JavaScript（Vanilla JS）
-- **AI/ML**: OpenAI GPT-4, OpenAI Embeddings (1536次元)
+- **AI/ML**:
+  - Gemini 2.5 Flash/Pro (分類・Vision・回答生成)
+  - Claude Haiku 4.5 (情報抽出)
+  - OpenAI GPT-5.1 (高精度回答オプション)
+  - OpenAI text-embedding-3-small (1536次元)
 - **データベース**: Supabase (PostgreSQL + pgvector)
 - **ベクトル検索**: pgvector (cosine類似度)
 

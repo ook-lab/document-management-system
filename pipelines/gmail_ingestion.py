@@ -708,12 +708,14 @@ class GmailIngestionPipeline:
                                         chunk_doc = {
                                             'document_id': email_doc_id,
                                             'chunk_index': chunk.get('chunk_index', 0),
-                                            'chunk_text': chunk_text,
+                                            'chunk_content': chunk_text,
                                             'chunk_size': chunk.get('chunk_size', len(chunk_text)),
+                                            'chunk_type': 'content_small',
+                                            'search_weight': 1.0,
                                             'embedding': chunk_embedding
                                         }
 
-                                        chunk_result = await self.db.insert_document('document_chunks', chunk_doc)
+                                        chunk_result = await self.db.insert_document('search_index', chunk_doc)
                                         if chunk_result:
                                             small_chunk_success_count += 1
                                     except Exception as chunk_insert_error:
@@ -728,13 +730,15 @@ class GmailIngestionPipeline:
                             large_doc = {
                                 'document_id': email_doc_id,
                                 'chunk_index': 0,
-                                'chunk_text': extracted_text,
+                                'chunk_content': extracted_text,
                                 'chunk_size': len(extracted_text),
+                                'chunk_type': 'content_large',
+                                'search_weight': 1.0,
                                 'embedding': embedding  # 既に生成済みの全文embedding
                             }
 
                             try:
-                                large_chunk_result = await self.db.insert_document('document_chunks', large_doc)
+                                large_chunk_result = await self.db.insert_document('search_index', large_doc)
                                 if large_chunk_result:
                                     logger.info(f"  大チャンク保存完了")
                                 else:

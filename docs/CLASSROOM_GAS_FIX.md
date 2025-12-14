@@ -278,7 +278,7 @@ file_id_mapping = {
 }
 
 # 既存データを更新
-docs = db.client.table('documents').select('*').eq('workspace', 'ikuya_classroom').execute()
+docs = db.client.table('source_documents').select('*').eq('workspace', 'ikuya_classroom').execute()
 
 for doc in docs.data:
     file_name = doc['file_name']
@@ -295,7 +295,7 @@ for doc in docs.data:
         metadata['original_file_id'] = new_id     # 新しいIDに更新
 
         # データベース更新
-        db.client.table('documents').update({
+        db.client.table('source_documents').update({
             'metadata': metadata
         }).eq('id', doc['id']).execute()
 

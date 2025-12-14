@@ -51,7 +51,7 @@ class LLMClient:
         self,
         prompt: str,
         image_data: Union[str, List[str]],
-        model: str = "gemini-2.0-flash-lite",
+        model: str = "gemini-2.5-flash-lite",
         temperature: float = 0.0,
         max_tokens: int = 2048
     ) -> str:

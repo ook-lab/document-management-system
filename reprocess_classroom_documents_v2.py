@@ -75,10 +75,10 @@ class ClassroomReprocessorV2:
         # 対象ドキュメントを取得
         if workspace == 'all':
             # 全ワークスペースを対象
-            result = self.db.client.table('documents').select('*').limit(limit).execute()
+            result = self.db.client.table('source_documents').select('*').limit(limit).execute()
         else:
             # 特定のワークスペースのみ
-            result = self.db.client.table('documents').select('*').eq(
+            result = self.db.client.table('source_documents').select('*').eq(
                 'workspace', workspace
             ).limit(limit).execute()
 
@@ -292,7 +292,7 @@ class ClassroomReprocessorV2:
             elif result and result.get('error') and 'duplicate key' in str(result.get('error')):
                 # 重複エラーの場合、古いレコードを削除して再試行
                 logger.warning(f"重複検出、古いレコードを削除して再試行")
-                self.db.client.table('documents').delete().eq('id', document_id).execute()
+                self.db.client.table('source_documents').delete().eq('id', document_id).execute()
 
                 # 再試行
                 result = await self.pipeline.process_file(
@@ -477,7 +477,7 @@ class ClassroomReprocessorV2:
                 'relevant_date': relevant_date
             }
 
-            response = self.db.client.table('documents').update(update_data).eq('id', document_id).execute()
+            response = self.db.client.table('source_documents').update(update_data).eq('id', document_id).execute()
 
             if response.data:
                 logger.success(f"✅ テキストのみドキュメント再処理成功: {file_name}")

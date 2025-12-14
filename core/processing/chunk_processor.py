@@ -68,7 +68,7 @@ class ChunkProcessor:
 
             # 既存のチャンクを確認
             if not force_reprocess:
-                existing_chunks = self.db.client.table('small_chunks').select('id').eq('document_id', document_id).execute()
+                existing_chunks = self.db.client.table('search_index').select('id').eq('document_id', document_id).execute()
                 if existing_chunks.data:
                     logger.info(f"[ChunkProcessor] Document {document_id} already has {len(existing_chunks.data)} chunks. Skipping.")
                     return {
@@ -82,7 +82,7 @@ class ChunkProcessor:
             # 再処理の場合は既存チャンクを削除
             if force_reprocess:
                 logger.info(f"[ChunkProcessor] Deleting existing chunks for document {document_id}")
-                self.db.client.table('small_chunks').delete().eq('document_id', document_id).execute()
+                self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
 
             # テキストを小チャンクに分割
             logger.info(f"[ChunkProcessor] Splitting text into chunks (size={self.chunk_size}, overlap={self.overlap})")
@@ -111,12 +111,15 @@ class ChunkProcessor:
             for chunk_data in chunks_with_embeddings:
                 if chunk_data.get("embedding"):
                     try:
-                        self.db.client.table('small_chunks').insert({
+                        chunk_text = chunk_data.get("chunk_text", chunk_data.get("content", ""))
+                        self.db.client.table('search_index').insert({
                             "document_id": document_id,
                             "chunk_index": chunk_data["chunk_index"],
-                            "content": chunk_data.get("chunk_text", chunk_data.get("content", "")),
-                            "embedding": chunk_data["embedding"],
-                            "token_count": chunk_data.get("chunk_size", chunk_data.get("token_count", 0))
+                            "chunk_content": chunk_text,
+                            "chunk_size": len(chunk_text),
+                            "chunk_type": "content_small",
+                            "search_weight": 1.0,
+                            "embedding": chunk_data["embedding"]
                         }).execute()
                         chunks_created += 1
                     except Exception as e:
@@ -204,7 +207,7 @@ class ChunkProcessor:
             成功/失敗
         """
         try:
-            self.db.client.table('small_chunks').delete().eq('document_id', document_id).execute()
+            self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
             logger.info(f"[ChunkProcessor] Deleted all chunks for document {document_id}")
             return True
         except Exception as e:
@@ -222,7 +225,7 @@ class ChunkProcessor:
             チャンクリスト
         """
         try:
-            result = self.db.client.table('small_chunks').select('*').eq('document_id', document_id).order('chunk_index').execute()
+            result = self.db.client.table('search_index').select('*').eq('document_id', document_id).order('chunk_index').execute()
             return result.data if result.data else []
         except Exception as e:
             logger.error(f"[ChunkProcessor] Failed to get chunks for document {document_id}: {e}")

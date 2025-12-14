@@ -473,6 +473,52 @@ def health_check():
     })
 
 
+@app.route('/api/debug/database', methods=['GET'])
+def debug_database():
+    """データベース接続とワークスペース情報のデバッグエンドポイント"""
+    try:
+        # クライアント取得
+        db_client, _, _ = get_clients()
+
+        # source_documentsテーブルの件数を確認
+        count_response = db_client.client.table('source_documents').select('id', count='exact').limit(1).execute()
+        total_count = count_response.count if hasattr(count_response, 'count') else 'unknown'
+
+        # サンプルデータを取得
+        sample_response = db_client.client.table('source_documents').select('workspace, doc_type').limit(10).execute()
+        samples = sample_response.data if sample_response.data else []
+
+        # get_workspace_hierarchy()を実行
+        hierarchy = db_client.get_workspace_hierarchy()
+
+        # 環境変数の確認（セキュリティのため一部のみ）
+        supabase_url = os.getenv('SUPABASE_URL', 'NOT_SET')
+        supabase_key_set = 'YES' if os.getenv('SUPABASE_KEY') else 'NO'
+
+        return jsonify({
+            'success': True,
+            'database_info': {
+                'total_documents': total_count,
+                'sample_count': len(samples),
+                'samples': samples[:5],  # 最初の5件のみ
+                'workspace_count': len(hierarchy),
+                'workspaces': list(hierarchy.keys()),
+                'hierarchy_sample': {k: v for k, v in list(hierarchy.items())[:2]}  # 最初の2つのみ
+            },
+            'env_check': {
+                'supabase_url_set': supabase_url[:30] + '...' if supabase_url != 'NOT_SET' else 'NOT_SET',
+                'supabase_key_set': supabase_key_set
+            }
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e),
+            'error_type': type(e).__name__
+        }), 500
+
+
 if __name__ == '__main__':
     # 開発環境での実行
     port = int(os.environ.get('PORT', 5001))
