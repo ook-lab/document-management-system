@@ -582,7 +582,8 @@ class ClassroomReprocessorV2:
         populate_only: bool = False,
         process_queue_only: bool = False,
         preserve_workspace: bool = True,
-        workspace: str = 'all'
+        workspace: str = 'all',
+        auto_yes: bool = False
     ):
         """
         再処理を実行
@@ -629,12 +630,15 @@ class ClassroomReprocessorV2:
             else:
                 logger.info(f"\n⚙️  キューからの処理を開始...")
 
-                # 確認
-                print("\n処理を開始しますか？ (y/N): ", end='')
-                response = input().strip().lower()
-                if response != 'y':
-                    logger.info("処理をキャンセルしました")
-                    return
+                # 確認（auto_yesが有効な場合はスキップ）
+                if not auto_yes:
+                    print("\n処理を開始しますか？ (y/N): ", end='')
+                    response = input().strip().lower()
+                    if response != 'y':
+                        logger.info("処理をキャンセルしました")
+                        return
+                else:
+                    logger.info("自動承認モード (--yes): 処理を開始します")
 
                 # 処理実行
                 stats = await self.process_queue(limit=limit)
@@ -659,6 +663,7 @@ async def main():
     populate_only = '--populate-only' in sys.argv
     process_queue_only = '--process-queue' in sys.argv
     preserve_workspace = '--no-preserve-workspace' not in sys.argv
+    auto_yes = '--yes' in sys.argv or '-y' in sys.argv  # 自動承認オプション
     limit = 100
     workspace = 'all'  # デフォルト: 全ワークスペース
 
@@ -679,7 +684,8 @@ async def main():
         populate_only=populate_only,
         process_queue_only=process_queue_only,
         preserve_workspace=preserve_workspace,
-        workspace=workspace
+        workspace=workspace,
+        auto_yes=auto_yes
     )
 
 
