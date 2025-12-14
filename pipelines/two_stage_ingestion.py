@@ -1,6 +1,6 @@
 """
 2段階取り込みパイプライン（v4.0: ハイブリッドAI版）
-Stage 2（Claude詳細抽出）実装版
+Stage A/B/C実装版（Stage C: Claude詳細抽出）
 """
 
 import os
@@ -123,7 +123,7 @@ class TwoStageIngestionPipeline:
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
-        # Stage 2は完全リレー方式（判定なし、Stage 1の結果を必ずStage 2へ）
+        # Stage Cは完全リレー方式（判定なし、Stage Aの結果を必ずStage Cへ）
 
         logger.info("TwoStageIngestionPipeline初期化完了 (完全リレー方式: Gemini→Haiku)")
     
@@ -161,24 +161,25 @@ class TwoStageIngestionPipeline:
     
     def _should_run_stageC(self, stageA_result: Dict[str, Any], extracted_text: str) -> bool:
         """
-        Stage 2を実行すべきかどうか判定（完全リレー方式）
+        Stage Cを実行すべきかどうか判定（完全リレー方式）
 
         【アーキテクチャ】
-        - Stage 1 (Gemini): 文書の分類と基本情報の抽出
-        - Stage 2 (Haiku): Stage 1の結果を受けて構造化・意味付け
+        - Stage A (Gemini): 文書の分類と基本情報の抽出
+        - Stage B (Gemini Vision): Vision処理（必要な場合）
+        - Stage C (Claude Haiku): Stage Aの結果を受けて構造化・意味付け
 
-        テキストが存在する限り、Stage 1の結果は必ずStage 2（Haiku）に渡して構造化する。
+        テキストが存在する限り、Stage Aの結果は必ずStage C（Haiku）に渡して構造化する。
         信頼度に関係なく、判定なしの完全リレー方式で動作する。
         """
 
         # 抽出テキストが空の場合のみスキップ
         if not extracted_text or not extracted_text.strip():
-            logger.info("[Stage 2] テキストが空のためスキップ")
+            logger.info("[Stage C] テキストが空のためスキップ")
             return False
 
-        # テキストがある限り、文字数に関係なく無条件でStage 2（構造化プロセス）へ
+        # テキストがある限り、文字数に関係なく無条件でStage C（構造化プロセス）へ
         doc_type = stageA_result.get('doc_type', 'other')
-        logger.info(f"[Stage 2] 構造化プロセスへ移行 ({doc_type}, テキスト長={len(extracted_text.strip())}文字)")
+        logger.info(f"[Stage C] 構造化プロセスへ移行 ({doc_type}, テキスト長={len(extracted_text.strip())}文字)")
         return True
 
     async def process_file(
@@ -257,9 +258,9 @@ class TwoStageIngestionPipeline:
             # workspaceは引数で渡された値をそのまま使用
             summary = stageA_result.get('summary', '')
             relevant_date = stageA_result.get('relevant_date')
-            document_date = None  # Stage 2で設定される可能性あり（初期化必須）
+            document_date = None  # Stage Cで設定される可能性あり（初期化必須）
 
-            logger.info(f"[Stage 1] 完了: summary={summary[:50] if summary else ''}...")
+            logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
 
             # ============================================
             # テキスト抽出が失敗した場合でもsummaryを使用
@@ -269,10 +270,10 @@ class TwoStageIngestionPipeline:
                 extracted_text = summary
 
             # ============================================
-            # Stage 2判定・実行（テキスト抽出失敗でも実行）
+            # Stage C判定・実行（テキスト抽出失敗でも実行）
             # ============================================
             if self._should_run_stageC(stageA_result, extracted_text):
-                logger.info("[Stage 2] Claude詳細抽出開始...")
+                logger.info("[Stage C] Claude詳細抽出開始...")
                 try:
                     stageC_result = self.stageC_extractor.extract_metadata(
                         full_text=extracted_text,
@@ -282,7 +283,7 @@ class TwoStageIngestionPipeline:
                         reference_date=reference_date  # ✅ Classroom投稿の場合は投稿日を渡す
                     )
 
-                    # Stage 2の結果を反映（doc_typeは使わない）
+                    # Stage Cの結果を反映（doc_typeは使わない）
                     summary = stageC_result.get('summary', summary)
                     document_date = stageC_result.get('document_date')
                     event_dates = stageC_result.get('event_dates', [])  # イベント日付配列を取得
@@ -290,11 +291,11 @@ class TwoStageIngestionPipeline:
                     tables = stageC_result.get('tables', [])  # 表データを取得
                     stageC_metadata = stageC_result.get('metadata', {})
 
-                    # metadataをマージ（Stage 2優先）
+                    # metadataをマージ（Stage C優先）
                     metadata = {
                         **base_metadata,
                         **stageC_metadata,
-                        'stage2_attempted': True
+                        'stagec_attempted': True  # 新しい命名規則
                     }
                     if tags:
                         metadata['tags'] = tags
@@ -305,10 +306,10 @@ class TwoStageIngestionPipeline:
                     if tables:
                         metadata['tables'] = tables  # 表データをmetadataに追加
 
-                    processing_stage = 'stage1_and_stage2'
-                    stage2_model = ModelTier.STAGE2_EXTRACTOR["model"]  # 設定ファイルから参照
+                    processing_stage = 'stagea_and_stagec'  # 新しい命名規則
+                    stagec_model = ModelTier.STAGEC_EXTRACTOR["model"]  # 設定ファイルから参照
 
-                    logger.info(f"[Stage 2] 完了: metadata_fields={len(stageC_metadata)}")
+                    logger.info(f"[Stage C] 完了: metadata_fields={len(stageC_metadata)}")
 
                 except Exception as e:
                     error_msg = str(e)
@@ -316,24 +317,24 @@ class TwoStageIngestionPipeline:
                     # KeyError回避: エラーメッセージを安全に文字列化
                     safe_error_msg = error_msg.replace('{', '{{').replace('}', '}}')
                     safe_traceback = error_traceback.replace('{', '{{').replace('}', '}}')
-                    logger.error(f"[Stage 2] 処理エラー: {safe_error_msg}\n{safe_traceback}")
+                    logger.error(f"[Stage C] 処理エラー: {safe_error_msg}\n{safe_traceback}")
 
                     # エラー情報をmetadataに記録
                     metadata = {
                         **base_metadata,
-                        'stage2_attempted': True,
-                        'stage2_error': str(e),
-                        'stage2_error_type': type(e).__name__,
-                        'stage2_error_timestamp': datetime.now().isoformat()
+                        'stagec_attempted': True,
+                        'stagec_error': str(e),
+                        'stagec_error_type': type(e).__name__,
+                        'stagec_error_timestamp': datetime.now().isoformat()
                     }
 
-                    processing_stage = 'stage2_failed'
-                    stage2_model = None
+                    processing_stage = 'stagec_failed'
+                    stagec_model = None
             else:
-                # Stage 1のみで完結
-                processing_stage = 'stage1_only'
-                metadata = {**base_metadata, 'stage2_attempted': False}
-                stage2_model = None
+                # Stage Aのみで完結
+                processing_stage = 'stagea_only'
+                metadata = {**base_metadata, 'stagec_attempted': False}
+                stagec_model = None
 
             # ============================================
             # コンテンツハッシュ生成
@@ -357,7 +358,7 @@ class TwoStageIngestionPipeline:
             # Vision処理に使用したモデル情報を取得
             vision_model = base_metadata.get('vision_model', None)  # Gemini Vision等
 
-            # イベント日付配列を取得（Stage 2で抽出されたもの）
+            # イベント日付配列を取得（Stage Cで抽出されたもの）
             event_dates_array = event_dates if 'event_dates' in locals() and event_dates else []
 
             # ============================================
@@ -410,7 +411,7 @@ class TwoStageIngestionPipeline:
                 "processing_status": PROCESSING_STATUS["COMPLETED"],
                 "processing_stage": processing_stage,
                 "stagea_classifier_model": ModelTier.STAGE1_CLASSIFIER["model"],  # B1更新（小文字）
-                "stagec_extractor_model": stage2_model,  # B1更新（小文字）
+                "stagec_extractor_model": stagec_model,  # Stage C抽出モデル
                 "stageb_vision_model": vision_model,  # B1更新（小文字）
                 "relevant_date": relevant_date,
             }

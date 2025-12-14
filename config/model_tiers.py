@@ -37,9 +37,9 @@ class ModelTier:
         "cost_per_1k_tokens": 0.00015  # Flashは低コスト
     }
 
-    # Stage 2: 詳細抽出（速度・コスト重視）
+    # Stage C: 詳細抽出（速度・コスト重視）
     # Claude Haiku 4.5に変更（コスト効率と速度向上）
-    STAGE2_EXTRACTOR = {
+    STAGEC_EXTRACTOR = {
         "provider": AIProvider.CLAUDE,
         "model": "claude-haiku-4-5-20251001",  # 最新のHaiku 4.5モデル
         "description": "高速な情報抽出・構造化",
@@ -48,9 +48,12 @@ class ModelTier:
         "cost_per_1k_tokens": 0.0008  # Haikuは低コスト
     }
 
-    # Email Stage 2: メール専用の詳細抽出（超高速・超低コスト）
+    # 後方互換性のためのエイリアス
+    STAGE2_EXTRACTOR = STAGEC_EXTRACTOR
+
+    # Email Stage C: メール専用の詳細抽出（超高速・超低コスト）
     # Gemini 2.5 Flash でメールのリッチ化処理
-    EMAIL_STAGE2_EXTRACTOR = {
+    EMAIL_STAGEC_EXTRACTOR = {
         "provider": AIProvider.GEMINI,
         "model": "gemini-2.5-flash",
         "description": "メール専用の情報抽出・構造化・タグ付け",
@@ -105,27 +108,31 @@ class ModelTier:
     def get_model_for_task(cls, task: str) -> Dict[str, Any]:
         """タスクに応じた最適なモデルを返す"""
         task_mapping = {
-            "stageA_classification": cls.STAGE1_CLASSIFIER,  # B1更新: stage1 → stageA
+            "stageA_classification": cls.STAGE1_CLASSIFIER,  # Stage A: 分類
             "stage1_classification": cls.STAGE1_CLASSIFIER,  # 後方互換性
             "email_vision": cls.EMAIL_VISION,
-            "stageC_extraction": cls.STAGE2_EXTRACTOR,  # B1更新: stage2 → stageC
-            "stage2_extraction": cls.STAGE2_EXTRACTOR,  # 後方互換性
-            "email_stage2_extraction": cls.EMAIL_STAGE2_EXTRACTOR,
+            "stageC_extraction": cls.STAGEC_EXTRACTOR,  # Stage C: 詳細抽出
+            "stage2_extraction": cls.STAGEC_EXTRACTOR,  # 後方互換性
+            "email_stageC_extraction": cls.EMAIL_STAGEC_EXTRACTOR,
+            "email_stage2_extraction": cls.EMAIL_STAGEC_EXTRACTOR,  # 後方互換性
             "ui_response": cls.UI_RESPONSE_GENERATOR,  # デフォルト: Gemini 2.5 Flash
             "ui_response_lite": cls.UI_RESPONSE_GENERATOR_LITE,  # 高速モード: Gemini 2.5 Flash-Lite
             "ui_response_premium": cls.UI_RESPONSE_GENERATOR_PREMIUM,  # 高精度モード: GPT-5.1
             "embeddings": cls.EMBEDDING
         }
-        return task_mapping.get(task, cls.STAGE2_EXTRACTOR)
+        return task_mapping.get(task, cls.STAGEC_EXTRACTOR)
     
     @classmethod
     def get_all_models(cls) -> Dict[str, Dict[str, Any]]:
         """全モデル設定を返す"""
         return {
-            "stage1": cls.STAGE1_CLASSIFIER,
-            "stage2": cls.STAGE2_EXTRACTOR,
+            "stageA": cls.STAGE1_CLASSIFIER,
+            "stageC": cls.STAGEC_EXTRACTOR,
             "ui": cls.UI_RESPONSE_GENERATOR,
-            "embedding": cls.EMBEDDING
+            "embedding": cls.EMBEDDING,
+            # 後方互換性
+            "stage1": cls.STAGE1_CLASSIFIER,
+            "stage2": cls.STAGEC_EXTRACTOR
         }
 
 def get_model_config(tier: str) -> Dict[str, Any]:
