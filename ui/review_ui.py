@@ -667,8 +667,8 @@ def pdf_review_ui():
                 execute_stage2_reprocessing
             )
 
-            # full_textを取得（添付ファイルから抽出したテキスト）
-            extracted_text = selected_doc.get('full_text', '')
+            # attachment_textを取得（添付ファイルから抽出したテキスト）
+            extracted_text = selected_doc.get('attachment_text', '')
 
             # 手動補正UIを表示
             corrected_text = render_manual_text_correction(

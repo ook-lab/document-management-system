@@ -36,10 +36,10 @@ def load_emails(filters: dict = None):
         query = query.eq('workspace', filters['workspace'])
 
     # キーワード検索（件名または本文）
-    if filters and filters.get('keyword'):
-        keyword = filters['keyword']
-        # full_textにキーワードが含まれるものを検索
-        query = query.ilike('full_text', f'%{keyword}%')
+    # attachment_textカラムが存在しない可能性があるため、キーワード検索は一旦スキップ
+    # if filters and filters.get('keyword'):
+    #     keyword = filters['keyword']
+    #     query = query.ilike('attachment_text', f'%{keyword}%')
 
     # 日付順にソート（新しい順）
     query = query.order('created_at', desc=True)
@@ -47,8 +47,14 @@ def load_emails(filters: dict = None):
     # 最大20件取得
     query = query.limit(20)
 
-    result = query.execute()
-    return result.data
+    try:
+        result = query.execute()
+        return result.data
+    except Exception as e:
+        import traceback
+        st.error(f"メール取得エラー: {str(e)}")
+        st.code(traceback.format_exc())
+        return []
 
 
 def email_inbox_ui():
