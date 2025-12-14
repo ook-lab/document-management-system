@@ -7,6 +7,9 @@ logs/
 credentials/google_credentials.json
 .env.bak
 
+# Streamlit secrets
+.streamlit/secrets.toml
+
 __pycache__/
 *.pyc
 project_codebase_*.md
