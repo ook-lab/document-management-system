@@ -29,7 +29,7 @@ async def main():
 
     # 全ドキュメントを取得
     print("\n[Step 1] ドキュメント取得中...")
-    result = db.client.table('documents').select('id,file_name,full_text').execute()
+    result = db.client.table('source_documents').select('id,file_name,attachment_text').execute()
     documents = result.data if result.data else []
 
     total = len(documents)
@@ -73,9 +73,9 @@ async def main():
     for idx, doc in enumerate(documents_to_process, 1):
         doc_id = doc['id']
         file_name = doc.get('file_name', 'unknown')
-        full_text = doc.get('full_text', '')
+        attachment_text = doc.get('attachment_text', '')
 
-        if not full_text or not full_text.strip():
+        if not attachment_text or not attachment_text.strip():
             print(f"[{idx}/{len(documents_to_process)}] ⚠️  {file_name}: 本文が空です（スキップ）")
             error_count += 1
             continue
@@ -86,7 +86,7 @@ async def main():
             # チャンク処理
             result = await chunk_processor.process_document(
                 document_id=doc_id,
-                full_text=full_text,
+                full_text=attachment_text,
                 force_reprocess=False  # 既存チャンクがある場合はスキップ
             )
 

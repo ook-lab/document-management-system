@@ -21,7 +21,7 @@ async def main():
 
     # 全ドキュメントを取得
     print("\n[Step 1] ドキュメント取得中...")
-    result = db.client.table('documents').select('id,file_name,full_text,summary').execute()
+    result = db.client.table('source_documents').select('id,file_name,attachment_text,summary').execute()
     documents = result.data if result.data else []
 
     total = len(documents)
@@ -47,11 +47,11 @@ async def main():
     for idx, doc in enumerate(documents, 1):
         doc_id = doc['id']
         file_name = doc.get('file_name', 'unknown')
-        full_text = doc.get('full_text', '')
+        attachment_text = doc.get('attachment_text', '')
         summary = doc.get('summary', '')
 
         # テキストを結合
-        text_to_embed = full_text if full_text else summary
+        text_to_embed = attachment_text if attachment_text else summary
         if not text_to_embed:
             print(f"[{idx}/{total}] スキップ: {file_name} (テキストなし)")
             error_count += 1
@@ -65,7 +65,7 @@ async def main():
             embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
 
             # データベースを更新
-            db.client.table('documents').update({
+            db.client.table('source_documents').update({
                 'embedding': embedding_str
             }).eq('id', doc_id).execute()
 

@@ -21,7 +21,7 @@ def main():
     # 1. ドキュメント総数を確認
     print("\n[診断1] ドキュメント総数を確認...")
     try:
-        result = db.client.table('documents').select('*', count='exact').execute()
+        result = db.client.table('source_documents').select('*', count='exact').execute()
         total = result.count if result.count else 0
         print(f"[OK] 総ドキュメント数: {total} 件")
     except Exception as e:
@@ -34,7 +34,7 @@ def main():
         result = db.client.rpc('execute_sql', {
             'query': """
                 SELECT processing_status, COUNT(*) as count
-                FROM documents
+                FROM source_documents
                 GROUP BY processing_status
                 ORDER BY count DESC;
             """
@@ -49,7 +49,7 @@ def main():
     # 3. embedding が存在するドキュメント数
     print("\n[診断3] embedding の有無...")
     try:
-        all_docs = db.client.table('documents').select('id,embedding').limit(1000).execute()
+        all_docs = db.client.table('source_documents').select('id,embedding').limit(1000).execute()
         with_embedding = sum(1 for doc in all_docs.data if doc.get('embedding') is not None)
         without_embedding = len(all_docs.data) - with_embedding
         print(f"  embedding あり: {with_embedding} 件")
@@ -60,7 +60,7 @@ def main():
     # 4. doc_type別の件数
     print("\n[診断4] doc_type別の件数（上位10件）...")
     try:
-        result = db.client.table('documents').select('doc_type').execute()
+        result = db.client.table('source_documents').select('doc_type').execute()
         doc_types = {}
         for doc in result.data:
             dt = doc.get('doc_type', 'NULL')
@@ -105,7 +105,7 @@ RETURNS TABLE (
     small_chunk_id UUID,
     source_type VARCHAR,
     source_url TEXT,
-    full_text TEXT,
+    attachment_text TEXT,
     created_at TIMESTAMPTZ
 ) AS $$
 BEGIN
@@ -118,19 +118,19 @@ BEGIN
         d.document_date,
         d.metadata,
         d.summary,
-        d.full_text AS large_chunk_text,
+        d.attachment_text AS large_chunk_text,
         d.id AS large_chunk_id,
         COALESCE(
             (1 - (d.embedding <=> query_embedding)) * vector_weight +
-            ts_rank(to_tsvector('simple', COALESCE(d.full_text, '')), plainto_tsquery('simple', query_text)) * fulltext_weight,
+            ts_rank(to_tsvector('simple', COALESCE(d.attachment_text, '')), plainto_tsquery('simple', query_text)) * fulltext_weight,
             0
         )::FLOAT AS combined_score,
         d.id AS small_chunk_id,
         d.source_type,
         d.source_url,
-        d.full_text,
+        d.attachment_text,
         d.created_at
-    FROM documents d
+    FROM source_documents d
     WHERE
         -- doc_type絞り込みのみ（processing_status条件を削除）
         (filter_doc_types IS NULL
