@@ -447,6 +447,32 @@ def pdf_review_ui():
     with col3:
         st.markdown(f"**信頼度**: {confidence:.3f}")
 
+    # ドキュメント内容プレビュー
+    summary = selected_doc.get('summary', '')
+    classroom_post_text = selected_doc.get('classroom_post_text', '')
+
+    if summary or classroom_post_text:
+        with st.expander("📄 ドキュメント内容プレビュー", expanded=True):
+            if classroom_post_text:
+                st.markdown("**Classroomの投稿内容:**")
+                st.text_area(
+                    "投稿本文",
+                    value=classroom_post_text,
+                    height=150,
+                    disabled=True,
+                    key=f"classroom_preview_{doc_id}"
+                )
+
+            if summary:
+                st.markdown("**要約・抽出されたテキスト:**")
+                st.text_area(
+                    "要約",
+                    value=summary,
+                    height=200,
+                    disabled=True,
+                    key=f"summary_preview_{doc_id}"
+                )
+
     st.markdown("---")
 
     # 修正履歴とロールバック機能（Phase 2）
@@ -667,8 +693,9 @@ def pdf_review_ui():
                 execute_stage2_reprocessing
             )
 
-            # attachment_textを取得（添付ファイルから抽出したテキスト）
-            extracted_text = selected_doc.get('attachment_text', '')
+            # テキストコンテンツを取得
+            # source_documentsテーブルの実際のカラムを使用
+            extracted_text = selected_doc.get('summary', '') or selected_doc.get('classroom_post_text', '')
 
             # 手動補正UIを表示
             corrected_text = render_manual_text_correction(

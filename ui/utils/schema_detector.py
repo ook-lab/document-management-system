@@ -13,7 +13,8 @@ class SchemaDetector:
     def __init__(self):
         """スキーマファイルをロード"""
         self.schemas = {}
-        self.schema_dir = Path(__file__).parent / "schemas"
+        # ui/utils/schema_detector.py → ui/schemas/
+        self.schema_dir = Path(__file__).parent.parent / "schemas"
         self._load_schemas()
 
     def _load_schemas(self):
