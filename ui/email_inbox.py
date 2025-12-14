@@ -29,7 +29,7 @@ def load_emails(filters: dict = None):
     db = DatabaseClient()
 
     # 基本クエリ: file_type = 'email' のみ（PDFを除外）
-    query = db.client.table('documents').select('*').eq('file_type', 'email')
+    query = db.client.table('source_documents').select('*').eq('file_type', 'email')
 
     # workspace フィルター
     if filters and filters.get('workspace'):
@@ -38,8 +38,8 @@ def load_emails(filters: dict = None):
     # キーワード検索（件名または本文）
     if filters and filters.get('keyword'):
         keyword = filters['keyword']
-        # attachment_textにキーワードが含まれるものを検索
-        query = query.ilike('attachment_text', f'%{keyword}%')
+        # full_textにキーワードが含まれるものを検索
+        query = query.ilike('full_text', f'%{keyword}%')
 
     # 日付順にソート（新しい順）
     query = query.order('created_at', desc=True)

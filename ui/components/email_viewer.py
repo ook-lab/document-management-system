@@ -114,10 +114,10 @@ def render_email_detail(email: Dict[str, Any]):
         st.code(str(meta_summary)[:500] if meta_summary else "なし")
         st.markdown(f"長さ: {len(str(meta_summary)) if meta_summary else 0} 文字")
 
-        st.markdown("**attachment_text (最初の1000文字):**")
-        attachment_text = email.get('attachment_text', '')
-        st.code(str(attachment_text)[:1000] if attachment_text else "なし")
-        st.markdown(f"長さ: {len(str(attachment_text)) if attachment_text else 0} 文字")
+        st.markdown("**full_text (最初の1000文字):**")
+        full_text = email.get('full_text', '')
+        st.code(str(full_text)[:1000] if full_text else "なし")
+        st.markdown(f"長さ: {len(str(full_text)) if full_text else 0} 文字")
 
     # summaryフィールドからJSONデータを抽出
     # 優先順位: documents.summary > metadata.summary
@@ -232,10 +232,10 @@ def render_email_detail(email: Dict[str, Any]):
 
         # extracted_textがmetadataに直接ある場合
         if 'extracted_text' not in email_data or not email_data.get('extracted_text'):
-            # attachment_textをextracted_textとして使用（構造化されていない場合のみ）
-            attachment_text = email.get('attachment_text', '')
-            if attachment_text and '要約:' not in attachment_text[:200]:
-                email_data['extracted_text'] = attachment_text
+            # full_textをextracted_textとして使用（構造化されていない場合のみ）
+            full_text = email.get('full_text', '')
+            if full_text and '要約:' not in full_text[:200]:
+                email_data['extracted_text'] = full_text
 
     st.markdown("### ✏️ メール情報")
 
@@ -318,12 +318,12 @@ def render_email_detail(email: Dict[str, Any]):
         if not extracted_text:
             extracted_text = metadata.get('extracted_text', '')
 
-        # attachment_textは最後の手段（構造化されたテキストが含まれている可能性がある）
+        # full_textは最後の手段（構造化されたテキストが含まれている可能性がある）
         if not extracted_text:
-            attachment_text = email.get('attachment_text', '')
-            # attachment_textに「要約:」などの構造が含まれている場合は除外
-            if attachment_text and '要約:' not in attachment_text[:100]:
-                extracted_text = attachment_text
+            full_text = email.get('full_text', '')
+            # full_textに「要約:」などの構造が含まれている場合は除外
+            if full_text and '要約:' not in full_text[:100]:
+                extracted_text = full_text
 
         if extracted_text:
             # From, To, Date行と画像表示についての注意書きを除外
