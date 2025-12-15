@@ -31,41 +31,53 @@ from config.model_tiers import ModelTier
 
 def flatten_metadata_to_text(metadata: Dict[str, Any]) -> str:
     """
-    メタデータを検索可能なテキストに変換
-    weekly_schedule、text_blocks、special_eventsなどを平坦化して検索対象にする
+    メタデータを検索可能なテキストに変換（再帰的に全フィールド抽出）
+    activities, recruitment, organization などの構造化データを完全に展開
     """
     searchable_parts = []
 
-    # weekly_schedule の展開
+    def extract_values(obj, prefix=''):
+        """再帰的に辞書やリストから値を抽出"""
+        if isinstance(obj, dict):
+            for key, value in obj.items():
+                # メタ情報やデバッグ用フィールドはスキップ
+                if key in ['extractor', 'num_pages', 'extraction_method', 'confidence']:
+                    continue
+                extract_values(value, f"{prefix}{key}: " if prefix or key not in ['weekly_schedule', 'text_blocks'] else '')
+        elif isinstance(obj, list):
+            for item in obj:
+                extract_values(item, prefix)
+        elif obj is not None and str(obj).strip():
+            # 有効な値のみ追加
+            searchable_parts.append(f"{prefix}{str(obj)}" if prefix else str(obj))
+
+    # 除外フィールド（検索に不要、または大きすぎる）
+    excluded_fields = ['weekly_schedule', 'text_blocks', 'extractor', 'num_pages']
+
+    # 全メタデータフィールドを再帰的に抽出
+    for key, value in metadata.items():
+        if key not in excluded_fields:
+            extract_values(value)
+
+    # weekly_schedule の展開（従来通り）
     if 'weekly_schedule' in metadata and metadata['weekly_schedule']:
         for day_schedule in metadata['weekly_schedule']:
-            # 日付と曜日
             if 'date' in day_schedule:
                 searchable_parts.append(day_schedule['date'])
             if 'day_of_week' in day_schedule:
                 searchable_parts.append(day_schedule['day_of_week'])
             if 'day' in day_schedule:
                 searchable_parts.append(f"{day_schedule['day']}曜日")
-
-            # イベント
             if 'events' in day_schedule and day_schedule['events']:
                 searchable_parts.extend(day_schedule['events'])
-
-            # ノート
             if 'note' in day_schedule and day_schedule['note']:
                 searchable_parts.append(day_schedule['note'])
-
-            # クラススケジュール
             if 'class_schedules' in day_schedule:
                 for class_schedule in day_schedule['class_schedules']:
                     if 'class' in class_schedule:
                         searchable_parts.append(class_schedule['class'])
-
-                    # subjects配列
                     if 'subjects' in class_schedule and class_schedule['subjects']:
                         searchable_parts.extend(class_schedule['subjects'])
-
-                    # periods配列
                     if 'periods' in class_schedule and class_schedule['periods']:
                         for period in class_schedule['periods']:
                             if 'subject' in period:
@@ -73,24 +85,13 @@ def flatten_metadata_to_text(metadata: Dict[str, Any]) -> str:
                             if 'time' in period:
                                 searchable_parts.append(period['time'])
 
-    # text_blocks の展開
+    # text_blocks の展開（従来通り）
     if 'text_blocks' in metadata and metadata['text_blocks']:
         for block in metadata['text_blocks']:
             if 'title' in block and block['title']:
                 searchable_parts.append(block['title'])
             if 'content' in block and block['content']:
                 searchable_parts.append(block['content'])
-
-    # special_events の展開
-    if 'special_events' in metadata and metadata['special_events']:
-        searchable_parts.extend(metadata['special_events'])
-
-    # basic_info の展開
-    if 'basic_info' in metadata and metadata['basic_info']:
-        basic_info = metadata['basic_info']
-        for key, value in basic_info.items():
-            if value:
-                searchable_parts.append(str(value))
 
     return ' '.join(searchable_parts)
 
@@ -460,10 +461,22 @@ class TwoStageIngestionPipeline:
                             classroom_subject = file_meta.get('classroom_subject')
 
                         # チャンク化対象テキスト：Classroom投稿本文 + 添付ファイル内容
-                        chunk_target_text = extracted_text
-                        if classroom_subject:
+                        chunk_target_text = ""
+                        if extracted_text and classroom_subject:
+                            # 両方ある場合：投稿本文 + 添付ファイル
                             chunk_target_text = f"【投稿本文】\n{classroom_subject}\n\n【添付ファイル】\n{extracted_text}"
                             logger.info(f"  Classroom投稿本文を追加: {len(classroom_subject)}文字")
+                        elif classroom_subject:
+                            # テキストのみの投稿（添付なし）
+                            chunk_target_text = f"【投稿本文】\n{classroom_subject}"
+                            logger.info(f"  テキストのみ投稿: {len(classroom_subject)}文字")
+                        elif extracted_text:
+                            # 添付ファイルのみ
+                            chunk_target_text = extracted_text
+                        elif summary:
+                            # サマリーのみ（フォールバック）
+                            chunk_target_text = summary
+                            logger.info(f"  サマリーをチャンク化: {len(summary)}文字")
 
                         # チャンクインデックスカウンター
                         current_chunk_index = 0
