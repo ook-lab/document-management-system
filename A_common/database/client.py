@@ -161,7 +161,7 @@ class DatabaseClient:
             # filter_year, filter_month の抽出は不要
             # 代わりに、クエリに含まれる日付は全文検索でマッチ
 
-            # DB関数を呼び出し（小チャンク検索＋重複排除＋大チャンク取得）
+            # DB関数を呼び出し（unified_search_v2: 高度な重み付けスコアリング）
             rpc_params = {
                 "query_text": query,
                 "query_embedding": embedding,
@@ -169,17 +169,18 @@ class DatabaseClient:
                 "match_count": limit,  # 指定された件数を取得
                 "vector_weight": 0.7,  # ベクトル検索70%
                 "fulltext_weight": 0.3,  # キーワード検索30%
-                # filter_year, filter_month は削除（all_mentioned_dates で検索）
-                "filter_doc_types": doc_types  # doc_typeのみで絞り込み
+                "filter_doc_types": doc_types,  # doc_typeのみで絞り込み
+                "filter_chunk_types": None,  # 全chunk_typeを対象（title, summary, display_subject等）
+                "filter_workspace": None  # 全workspaceを対象
             }
 
-            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}', doc_types={doc_types}")
-            response = self.client.rpc("search_documents_final", rpc_params).execute()
+            print(f"[DEBUG] unified_search_v2 呼び出し: query='{query}', doc_types={doc_types}")
+            response = self.client.rpc("unified_search_v2", rpc_params).execute()
             results = response.data if response.data else []
 
-            print(f"[DEBUG] search_documents_final 結果: {len(results)} 件")
+            print(f"[DEBUG] unified_search_v2 結果: {len(results)} 件")
 
-            # 結果を整形（小チャンク検索 + 大チャンク回答）
+            # 結果を整形（unified_search_v2: 高度な検索結果）
             final_results = []
             for result in results:
                 doc_result = {
@@ -191,19 +192,26 @@ class DatabaseClient:
                     'metadata': result.get('metadata'),
                     'summary': result.get('summary'),
 
-                    # 回答用：添付ファイルテキスト
-                    'content': result.get('attachment_text'),  # 添付ファイルから抽出したテキスト
+                    # 回答用：全文テキスト（unified_search_v2のfull_text）
+                    'content': result.get('full_text'),  # 全文
                     'large_chunk_id': result.get('document_id'),  # ドキュメントID
 
-                    # 小チャンク情報（ヒットした箇所）
-                    'chunk_content': result.get('chunk_content'),  # ヒットした小チャンクの内容
-                    'chunk_id': result.get('chunk_id'),  # 小チャンクID
-                    'chunk_index': result.get('chunk_index'),  # チャンクインデックス
+                    # ヒットしたチャンク情報（重み付けされた最適チャンク）
+                    'chunk_content': result.get('best_chunk_text'),  # ヒットした最適チャンク
+                    'chunk_id': result.get('best_chunk_id'),  # チャンクID
+                    'chunk_index': result.get('best_chunk_index'),  # チャンクインデックス
+                    'chunk_type': result.get('best_chunk_type'),  # チャンクタイプ（title, summary等）
 
-                    # 検索スコア：小チャンクの検索スコア
-                    'similarity': result.get('combined_score', 0),
-                    'chunk_score': result.get('chunk_score', 0),  # 小チャンクスコア
-                    'small_chunk_id': result.get('chunk_id')  # 後方互換性
+                    # 検索スコア（unified_search_v2の詳細スコア）
+                    'similarity': result.get('combined_score', 0),  # 統合スコア
+                    'raw_similarity': result.get('raw_similarity', 0),  # 生の類似度
+                    'weighted_similarity': result.get('weighted_similarity', 0),  # 重み付け類似度
+                    'fulltext_score': result.get('fulltext_score', 0),  # 全文検索スコア
+                    'title_matched': result.get('title_matched', False),  # タイトルマッチフラグ
+
+                    # 後方互換性
+                    'chunk_score': result.get('combined_score', 0),
+                    'small_chunk_id': result.get('best_chunk_id')
                 }
 
                 # ✅ Classroom表示用の追加フィールド（存在する場合のみ追加）
@@ -230,8 +238,8 @@ class DatabaseClient:
 
                 final_results.append(doc_result)
 
-            print(f"[DEBUG] 最終検索結果: {len(final_results)} 件（2階層検索）")
-            print(f"[DEBUG] 検索戦略: 小チャンク検索 + 重複排除 + 大チャンク回答")
+            print(f"[DEBUG] 最終検索結果: {len(final_results)} 件（unified_search_v2）")
+            print(f"[DEBUG] 検索戦略: 重み付けスコアリング + chunk_type優先順位 + タイトルマッチ")
 
             return final_results
 
