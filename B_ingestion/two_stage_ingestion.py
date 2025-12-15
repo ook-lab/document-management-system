@@ -681,7 +681,7 @@ class TwoStageIngestionPipeline:
                 logger.critical(f"DB保存失敗（エラーレコード）: {file_name} - DB Error: {safe_db_error}\n{safe_db_traceback}")
 
                 # ファイルシステムフォールバック
-                fallback_dir = Path('logs/db_errors')
+                fallback_dir = Path('_runtime/logs/db_errors')
                 fallback_dir.mkdir(parents=True, exist_ok=True)
 
                 fallback_file = fallback_dir / f"db_error_{datetime.now():%Y%m%d_%H%M%S}_{file_id}.json"

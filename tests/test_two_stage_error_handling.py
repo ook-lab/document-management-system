@@ -29,8 +29,8 @@ class TestDBErrorHandling:
             # クリーンアップ
             if Path("./temp_test").exists():
                 shutil.rmtree("./temp_test")
-            if Path("logs/db_errors").exists():
-                shutil.rmtree("logs/db_errors")
+            if Path("_runtime/logs/db_errors").exists():
+                shutil.rmtree("_runtime/logs/db_errors")
 
     @pytest.mark.asyncio
     async def test_db_save_failure_creates_fallback_file(self, pipeline):
@@ -79,7 +79,7 @@ class TestDBErrorHandling:
         assert result is None  # エラー時はNoneを返す
 
         # fallbackファイルが作成されたことを確認
-        fallback_dir = Path('logs/db_errors')
+        fallback_dir = Path('_runtime/logs/db_errors')
         assert fallback_dir.exists(), "fallback directory should be created"
 
         # JSONファイルが存在することを確認

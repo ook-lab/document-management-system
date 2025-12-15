@@ -1,18 +1,21 @@
+# Environment
 .env
-venv/
-logs/
-.env
-venv/
-logs/
-credentials/google_credentials.json
 .env.bak
+venv/
+
+# Runtime data
+_runtime/
 
 # Streamlit secrets
 .streamlit/secrets.toml
 
+# Python
 __pycache__/
 *.pyc
+
+# Generated files
 project_codebase_*.md
+project_full_backup_*.md
 
 # macOS
 .DS_Store
@@ -23,5 +26,3 @@ check_*.py
 debug_*.py
 apply_*.py
 collect_codebase2.py
-.DS_Store
-project_full_backup_*.md
