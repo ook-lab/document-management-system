@@ -1,8 +1,8 @@
 """
 ローカルPDFでVision処理をテスト
 """
-from core.processors.pdf import PDFProcessor
-from core.ai.llm_client import LLMClient
+from A_common.processors.pdf import PDFProcessor
+from C_ai_common.llm_client.llm_client import LLMClient
 
 # LLMClientとPDFProcessorを初期化
 llm_client = LLMClient()

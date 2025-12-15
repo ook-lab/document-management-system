@@ -36,8 +36,8 @@ OPENAI_API_KEY=your_openai_api_key
 2. **データベーススキーマの実行**
    ```bash
    # Supabase SQL Editorで以下のファイルを順に実行
-   database/schema_v4_unified.sql
-   database/add_match_documents_function.sql
+   J_resources/sql/schema_v4_unified.sql
+   J_resources/sql/add_match_documents_function.sql
    ```
 
 3. **文書データの投入**
@@ -63,7 +63,7 @@ venv\Scripts\activate  # Windows
 ### 3. 依存パッケージのインストール
 
 ```bash
-pip install -r requirements.txt
+pip install -r G_cloud_run/requirements.txt
 ```
 
 ## 実行方法
@@ -71,6 +71,7 @@ pip install -r requirements.txt
 ### 開発モード（デバッグ有効）
 
 ```bash
+cd G_cloud_run
 python app.py
 ```
 
@@ -89,6 +90,7 @@ Gunicornを使用する場合：
 pip install gunicorn
 
 # サーバー起動
+cd G_cloud_run
 gunicorn -w 4 -b localhost:5001 app:app
 ```
 
@@ -260,31 +262,82 @@ echo $OPENAI_API_KEY
 
 ### `match_documents`関数が見つからない
 
-`database/add_match_documents_function.sql`をSupabaseで実行してください：
+`J_resources/sql/add_match_documents_function.sql`をSupabaseで実行してください：
 
 ```bash
 # ファイル内容をコピーして、Supabase SQL Editorに貼り付けて実行
-cat database/add_match_documents_function.sql
+cat J_resources/sql/add_match_documents_function.sql
 ```
 
-## ファイル構成
+## プロジェクト構成
+
+プロジェクトは役割別に整理されています：
 
 ```
-document_management_system/
-├── app.py                              # Flaskアプリケーション
-├── templates/
-│   └── index.html                      # Webインターフェース
-├── core/
-│   ├── database/
-│   │   └── client.py                   # Supabaseクライアント
-│   └── ai/
-│       └── llm_client.py              # LLMクライアント
-├── database/
-│   ├── schema_v4_unified.sql          # メインスキーマ
-│   └── add_match_documents_function.sql  # ベクトル検索関数
-├── requirements.txt                    # 依存パッケージ
-├── .env                               # 環境変数
-└── README.md                          # このファイル
+document-management-system/
+├── A_common/                          # 共通モジュール
+│   ├── config/                       # 設定ファイル
+│   ├── database/                     # Supabaseクライアント
+│   ├── utils/                        # ユーティリティ
+│   ├── processors/                   # ファイル処理（PDF、Office等）
+│   ├── connectors/                   # 外部連携（Google Drive、Gmail等）
+│   └── processing/                   # チャンク処理
+│
+├── B_ingestion/                       # データ取り込み
+│   ├── gmail/                        # Gmail取り込み
+│   ├── google_drive/                 # Google Drive取り込み
+│   ├── google_classroom/             # Google Classroom取り込み
+│   ├── monitoring/                   # 監視スクリプト
+│   └── two_stage_ingestion.py       # 2段階取り込みパイプライン
+│
+├── C_ai_common/                       # AI共通機能
+│   ├── llm_client/                   # LLMクライアント（OpenAI、Gemini、Claude）
+│   ├── embeddings/                   # ベクトル埋め込み生成
+│   └── prompts/                      # 共通プロンプト
+│
+├── D_stage_a_classifier/             # Stage A: 文書分類
+│   └── classifier.py                # Gemini 2.5 Flashによる分類
+│
+├── E_stage_b_vision/                 # Stage B: ビジョン・OCR
+│   └── vision.py                    # Gemini 2.5 Flashによる画像処理
+│
+├── F_stage_c_extractor/              # Stage C: 構造化抽出
+│   ├── extractor.py                 # Claude Haiku 4.5による情報抽出
+│   ├── prompts/                     # 抽出用プロンプト
+│   └── schemas/                     # JSONスキーマ
+│
+├── G_cloud_run/                       # Cloud Run（Flask API）
+│   ├── app.py                       # メインFlaskアプリケーション
+│   ├── templates/                   # HTMLテンプレート
+│   ├── Dockerfile                   # Docker設定
+│   └── requirements.txt             # 依存パッケージ
+│
+├── H_streamlit/                       # Streamlit UI
+│   ├── components/                  # UIコンポーネント
+│   ├── schemas/                     # UIスキーマ
+│   ├── utils/                       # UI用ユーティリティ
+│   ├── review_ui.py                 # レビュー画面
+│   └── email_inbox.py               # メール受信箱
+│
+├── I_frontend/                        # React フロントエンド
+│   └── src/                         # Reactソースコード
+│
+├── J_resources/                       # 資料集
+│   ├── sql/                         # SQLスクリプト
+│   │   ├── schemas/                # スキーマ定義
+│   │   └── migrations/             # マイグレーション
+│   ├── gas/                         # Google Apps Script
+│   ├── docs/                        # ドキュメント
+│   ├── scripts/                     # ユーティリティスクリプト
+│   │   └── py/                     # Pythonスクリプト
+│   └── examples/                    # サンプルコード
+│
+├── tests/                             # テスト
+├── credentials/                       # 認証情報
+├── data/                             # データ
+├── logs/                             # ログ
+├── .env                              # 環境変数
+└── README.md                         # このファイル
 ```
 
 ## 技術スタック

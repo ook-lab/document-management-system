@@ -11,7 +11,7 @@ from datetime import datetime
 import shutil
 
 # テスト対象のインポート
-from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
+from B_ingestion.two_stage_ingestion import TwoStageIngestionPipeline
 
 
 class TestDBErrorHandling:

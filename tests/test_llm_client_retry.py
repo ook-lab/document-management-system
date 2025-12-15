@@ -6,8 +6,8 @@ import pytest
 from unittest.mock import Mock, patch, MagicMock
 from anthropic import RateLimitError, APIError
 from tenacity import RetryError
-from core.ai.llm_client import LLMClient
-from config.model_tiers import AIProvider
+from C_ai_common.llm_client.llm_client import LLMClient
+from A_common.config.model_tiers import AIProvider
 
 
 class TestLLMClientRetry:

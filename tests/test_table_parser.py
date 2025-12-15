@@ -3,7 +3,7 @@
 Markdown表パーサーのテスト
 """
 
-from ui.utils.table_parser import parse_markdown_table, parse_extracted_tables
+from H_streamlit.utils.table_parser import parse_markdown_table, parse_extracted_tables
 
 # テストケース1: シンプルなMarkdown表
 markdown_table = """| 項目 | 価格 | 税込 |
