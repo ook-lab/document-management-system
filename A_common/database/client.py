@@ -167,8 +167,8 @@ class DatabaseClient:
                 "query_embedding": embedding,
                 "match_threshold": 0.0,
                 "match_count": limit,  # 指定された件数を取得
-                "vector_weight": 0.7,  # ベクトル検索70%
-                "fulltext_weight": 0.3,  # キーワード検索30%
+                "vector_weight": 0.3,  # ベクトル検索30% - より柔軟に
+                "fulltext_weight": 0.7,  # キーワード検索70% - 実用的な完全一致を重視
                 "filter_doc_types": doc_types,  # doc_typeのみで絞り込み
                 "filter_chunk_types": None,  # 全chunk_typeを対象（title, summary, display_subject等）
                 "filter_workspace": None  # 全workspaceを対象
@@ -192,8 +192,8 @@ class DatabaseClient:
                     'metadata': result.get('metadata'),
                     'summary': result.get('summary'),
 
-                    # 回答用：全文テキスト（unified_search_v2のfull_text）
-                    'content': result.get('full_text'),  # 全文
+                    # 回答用：添付ファイルテキスト（unified_search_v2のattachment_text）
+                    'content': result.get('attachment_text'),  # 添付ファイルテキスト
                     'large_chunk_id': result.get('document_id'),  # ドキュメントID
 
                     # ヒットしたチャンク情報（重み付けされた最適チャンク）

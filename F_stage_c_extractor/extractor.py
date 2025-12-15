@@ -51,23 +51,30 @@ class StageCExtractor:
 
     def extract_metadata(
         self,
-        full_text: str,
         file_name: str,
         stage1_result: Dict,
         workspace: str = "personal",
         tier: str = "stage2_extraction",
-        reference_date: str = None
+        reference_date: str = None,
+        # 複数の入力ソースをサポート（いずれかを指定）
+        full_text: str = None,  # 後方互換性のために残す（廃止予定）
+        attachment_text: str = None,  # 添付ファイルから抽出したテキスト
+        display_subject: str = None,  # Classroom投稿の件名
+        display_post_text: str = None,  # Classroom投稿の本文
     ) -> Dict:
         """
         詳細メタデータを抽出
 
         Args:
-            full_text: 抽出済みテキスト
             file_name: ファイル名
             stage1_result: Stage A結果
             workspace: ワークスペース
             tier: モデル階層（デフォルト: "stageC_extraction"、メール用: "email_stageC_extraction"）
             reference_date: 基準日（YYYY-MM-DD形式、Classroom投稿日など）
+            full_text: 抽出済みテキスト（廃止予定、後方互換性のために残す）
+            attachment_text: 添付ファイルから抽出したテキスト
+            display_subject: Classroom投稿の件名
+            display_post_text: Classroom投稿の本文
 
         Returns:
             抽出結果辞書:
@@ -80,12 +87,30 @@ class StageCExtractor:
                 "metadata": Dict
             }
         """
+        # 入力テキストを構築（複数ソースに対応）
+        text_parts = []
+
+        if display_subject:
+            text_parts.append(f"【件名】\n{display_subject}")
+
+        if display_post_text:
+            text_parts.append(f"【本文】\n{display_post_text}")
+
+        if attachment_text:
+            text_parts.append(f"【添付ファイル】\n{attachment_text}")
+
+        # 後方互換性: full_text が指定されていて、他が空の場合
+        if full_text and not text_parts:
+            combined_text = full_text
+        else:
+            combined_text = '\n\n'.join(text_parts) if text_parts else ""
+
         doc_type = stage1_result.get("doc_type", "other")
 
         logger.info(f"[Stage 2] 詳細抽出開始: doc_type={doc_type}, tier={tier}, reference_date={reference_date}")
 
         prompt = self._build_extraction_prompt(
-            full_text=full_text,
+            full_text=combined_text,  # 構築された統合テキストを使用
             file_name=file_name,
             doc_type=doc_type,
             workspace=workspace,

@@ -664,7 +664,7 @@ class GmailIngestionPipeline:
                     'file_type': 'email',
                     'doc_type': stage2_result.get('doc_type', 'email'),  # Stage 2の分類を使用
                     'workspace': workspace,
-                    'full_text': email_text_content,  # メール本文（source_documentsテーブルのカラムに対応）
+                    'attachment_text': email_text_content,  # メール本文（source_documentsテーブルのattachment_textカラムに対応）
                     'summary': stage2_result.get('summary', vision_result.get('summary', '')),
                     'tags': stage2_result.get('tags', []),  # Stage 2のタグを追加
                     'document_date': stage2_result.get('document_date'),  # Stage 2の日付を追加

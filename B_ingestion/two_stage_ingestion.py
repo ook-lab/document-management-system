@@ -277,11 +277,12 @@ class TwoStageIngestionPipeline:
                 logger.info("[Stage C] Claude詳細抽出開始...")
                 try:
                     stageC_result = self.stageC_extractor.extract_metadata(
-                        full_text=extracted_text,
                         file_name=file_name,
                         stage1_result=stageA_result,  # StageCExtractorは stage1_result を期待
                         workspace=workspace,  # 引数で渡された元のworkspaceを使用
-                        reference_date=reference_date  # ✅ Classroom投稿の場合は投稿日を渡す
+                        reference_date=reference_date,  # ✅ Classroom投稿の場合は投稿日を渡す
+                        # 添付ファイルから抽出したテキストを渡す
+                        attachment_text=extracted_text if extracted_text else None,
                     )
 
                     # Stage Cの結果を反映（doc_typeは使わない）
@@ -403,7 +404,7 @@ class TwoStageIngestionPipeline:
                 "file_type": self._get_file_type(mime_type),
                 "doc_type": workspace,  # doc_typeは入力元で決定（workspaceと同じ値を使用）
                 "workspace": workspace,  # 引数で渡された値を使用（入力元で決定）
-                "full_text": extracted_text,  # 抽出したテキスト（source_documentsテーブルのカラムに対応）
+                "attachment_text": extracted_text,  # 添付ファイルから抽出したテキスト（source_documentsテーブルのカラムに対応）
                 "summary": summary,
                 "metadata": metadata,
                 # extracted_tables と event_dates は metadata 内に含まれているため、トップレベルカラムから削除

@@ -12,7 +12,7 @@ from loguru import logger
 
 def reprocess_with_stageC(
     doc_id: str,
-    full_text: str,
+    attachment_text: str,
     file_name: str,
     metadata: Dict[str, Any],
     workspace: str,
@@ -24,7 +24,7 @@ def reprocess_with_stageC(
 
     Args:
         doc_id: ドキュメントID
-        full_text: 補正後の全文テキスト
+        attachment_text: 補正後の添付ファイルテキスト
         file_name: ファイル名
         metadata: 既存のメタデータ
         workspace: ワークスペース
@@ -39,7 +39,7 @@ def reprocess_with_stageC(
 
     logger.info(f"[Stage C 再実行] 開始 - トリガー: {trigger_source}")
     logger.info(f"  ドキュメントID: {doc_id}")
-    logger.info(f"  テキスト長: {len(full_text)} 文字")
+    logger.info(f"  テキスト長: {len(attachment_text)} 文字")
     logger.info(f"  Workspace: {workspace}")
 
     try:
@@ -58,7 +58,7 @@ def reprocess_with_stageC(
         # Stage 2再実行
         with st.spinner(f"🔄 Stage 2（構造化）を再実行中... ({trigger_source})"):
             stage2_result = extractor.extract_metadata(
-                full_text=full_text,
+                attachment_text=attachment_text,
                 file_name=file_name,
                 stage1_result=stage1_result,
                 workspace=workspace
@@ -73,7 +73,7 @@ def reprocess_with_stageC(
             'manually_corrected': True,
             'correction_trigger': trigger_source,
             'correction_timestamp': __import__('datetime').datetime.now().isoformat(),
-            'corrected_text_length': len(full_text)
+            'corrected_text_length': len(attachment_text)
         }
 
         # データベースに保存
@@ -117,7 +117,7 @@ def reprocess_with_stageC(
 
 def show_reprocess_button(
     doc_id: str,
-    full_text: str,
+    attachment_text: str,
     original_text: str,
     file_name: str,
     metadata: Dict[str, Any],
@@ -131,7 +131,7 @@ def show_reprocess_button(
 
     Args:
         doc_id: ドキュメントID
-        full_text: 補正後の全文テキスト
+        attachment_text: 補正後の添付ファイルテキスト
         original_text: 元のテキスト
         file_name: ファイル名
         metadata: 既存のメタデータ
@@ -144,18 +144,18 @@ def show_reprocess_button(
         再実行が成功した場合True
     """
     # 変更検知
-    text_changed = full_text != original_text
+    text_changed = attachment_text != original_text
 
     if not text_changed:
         st.info("💡 変更がありません。編集後に再実行ボタンが表示されます。")
         return False
 
     # 変更があることを表示
-    char_diff = len(full_text) - len(original_text)
+    char_diff = len(attachment_text) - len(original_text)
     if char_diff > 0:
-        st.success(f"✅ {char_diff} 文字追加されました（合計: {len(full_text)} 文字）")
+        st.success(f"✅ {char_diff} 文字追加されました（合計: {len(attachment_text)} 文字）")
     elif char_diff < 0:
-        st.warning(f"⚠️ {abs(char_diff)} 文字削除されました（合計: {len(full_text)} 文字）")
+        st.warning(f"⚠️ {abs(char_diff)} 文字削除されました（合計: {len(attachment_text)} 文字）")
 
     # 再実行ボタン
     col_btn1, col_btn2 = st.columns([3, 1])
@@ -169,7 +169,7 @@ def show_reprocess_button(
         ):
             success = reprocess_with_stageC(
                 doc_id=doc_id,
-                full_text=full_text,
+                attachment_text=attachment_text,
                 file_name=file_name,
                 metadata=metadata,
                 workspace=workspace,

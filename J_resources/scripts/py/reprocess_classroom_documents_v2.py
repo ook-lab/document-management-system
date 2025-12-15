@@ -39,8 +39,8 @@ import json
 import sys
 from datetime import datetime
 
-from core.database.client import DatabaseClient
-from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
+from A_common.database.client import DatabaseClient
+from B_ingestion.two_stage_ingestion import TwoStageIngestionPipeline
 
 
 class ClassroomReprocessorV2:
@@ -375,41 +375,38 @@ class ClassroomReprocessorV2:
         Returns:
             成功したかどうか
         """
-        from core.ai.stageA_classifier import StageAClassifier
-        from core.ai.stageC_extractor import StageCExtractor
-        from config.yaml_loader import get_classification_yaml_string
+        from D_stage_a_classifier.classifier import StageAClassifier
+        from F_stage_c_extractor.extractor import StageCExtractor
+        from A_common.config.yaml_loader import get_classification_yaml_string
 
         file_name = doc.get('file_name', 'text_only')
         source_type = doc.get('source_type', '')
 
-        # Classroom投稿（添付ファイルなし）の場合、Classroomフィールドから本文を構築
-        if source_type == 'classroom_text':
-            classroom_subject = doc.get('classroom_subject', '')
-            classroom_post_text = doc.get('classroom_post_text', '')
+        # 各ソースから個別にデータを取得（結合しない）
+        display_subject = doc.get('display_subject', '')
+        display_post_text = doc.get('display_post_text', '')
+        attachment_text = doc.get('attachment_text', '')
 
-            if classroom_subject or classroom_post_text:
-                parts = []
-                if classroom_subject:
-                    parts.append(f"【件名】\n{classroom_subject}")
-                if classroom_post_text:
-                    parts.append(f"【本文】\n{classroom_post_text}")
-                full_text = '\n\n'.join(parts)
-                logger.info(f"📝 Classroomフィールドから本文を構築: {len(full_text)}文字")
-            else:
-                error_msg = "classroom_subjectもclassroom_post_textも空です"
+        # Classroom投稿（添付ファイルなし）の場合の検証
+        if source_type == 'classroom_text':
+            if not (display_subject or display_post_text):
+                error_msg = "display_subjectもdisplay_post_textも空です"
                 logger.error(f"{error_msg}: {file_name}")
                 self._mark_task_failed(queue_id, error_msg)
                 return False
+            total_length = len(display_subject) + len(display_post_text)
+            logger.info(f"📝 Classroomフィールド: 件名={len(display_subject)}文字, 本文={len(display_post_text)}文字")
         else:
             # text_only など、通常のテキストドキュメントの場合
-            full_text = doc.get('attachment_text', '')
-            if not full_text:
+            if not attachment_text:
                 error_msg = "attachment_textが空です"
                 logger.error(f"{error_msg}: {file_name}")
                 self._mark_task_failed(queue_id, error_msg)
                 return False
+            total_length = len(attachment_text)
+            logger.info(f"📝 添付ファイルテキスト: {total_length}文字")
 
-        logger.info(f"テキスト長: {len(full_text)}文字")
+        logger.info(f"テキスト総量: {total_length}文字")
 
         try:
             # Stage 1とStage 2のクライアントを初期化
@@ -424,6 +421,16 @@ class ClassroomReprocessorV2:
             # Stage 1: Gemini分類
             # ============================================
             logger.info("[Stage 1] Gemini分類開始...")
+            # Stage 1用にテキストを結合（Stage 1はまだ単一パラメータのみ対応）
+            text_for_stage1_parts = []
+            if display_subject:
+                text_for_stage1_parts.append(f"【件名】\n{display_subject}")
+            if display_post_text:
+                text_for_stage1_parts.append(f"【本文】\n{display_post_text}")
+            if attachment_text:
+                text_for_stage1_parts.append(f"【添付ファイル】\n{attachment_text}")
+            text_for_stage1 = '\n\n'.join(text_for_stage1_parts)
+
             # テキストのみドキュメントの場合、file_pathは不要
             # mime_typeをtext/plainに設定し、text_contentを渡す
             from pathlib import Path as PathLib
@@ -431,7 +438,7 @@ class ClassroomReprocessorV2:
                 file_path=PathLib("dummy"),  # ダミーパス（使用されない）
                 doc_types_yaml=yaml_string,
                 mime_type="text/plain",  # PDFではないことを示す
-                text_content=full_text
+                text_content=text_for_stage1
             )
 
             # Stage1はdoc_typeとworkspaceを返さない（入力元で決定されるため）
@@ -446,10 +453,13 @@ class ClassroomReprocessorV2:
             # ============================================
             logger.info("[Stage 2] Claude詳細抽出開始...")
             stage2_result = stage2_extractor.extract_metadata(
-                full_text=full_text,
                 file_name=file_name,
                 stage1_result=stage1_result,
-                workspace=doc.get('workspace', 'unknown')  # 元のworkspaceを使用
+                workspace=doc.get('workspace', 'unknown'),  # 元のworkspaceを使用
+                # 各ソースを個別に渡す
+                attachment_text=attachment_text if attachment_text else None,
+                display_subject=display_subject if display_subject else None,
+                display_post_text=display_post_text if display_post_text else None,
             )
 
             # Stage 2の結果を反映

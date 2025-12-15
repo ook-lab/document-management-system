@@ -284,7 +284,7 @@ def execute_stage2_reprocessing(
 
     # Stage 2再実行
     stage2_result = extractor.extract_metadata(
-        full_text=corrected_text,
+        attachment_text=corrected_text,
         file_name=file_name,
         stage1_result=stage1_result,
         workspace=workspace

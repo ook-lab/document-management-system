@@ -24,7 +24,7 @@ RETURNS TABLE (
     document_date DATE,
     metadata JSONB,
     summary TEXT,
-    full_text TEXT,
+    attachment_text TEXT,  -- ✅ 修正: full_text → attachment_text
     best_chunk_text TEXT,
     best_chunk_type VARCHAR,
     best_chunk_id UUID,
@@ -100,7 +100,7 @@ BEGIN
         sd.document_date,
         sd.metadata,
         sd.summary,
-        sd.full_text,
+        sd.attachment_text,
         dbc.chunk_content AS best_chunk_text,
         dbc.chunk_type::VARCHAR AS best_chunk_type,
         dbc.chunk_id AS best_chunk_id,
