@@ -215,18 +215,18 @@ class DatabaseClient:
                     doc_result['attachment_text'] = result.get('attachment_text')
                 if 'created_at' in result:
                     doc_result['created_at'] = result.get('created_at')
-                if 'classroom_subject' in result:
-                    doc_result['classroom_subject'] = result.get('classroom_subject')
-                if 'classroom_sender' in result:
-                    doc_result['classroom_sender'] = result.get('classroom_sender')
+                if 'display_subject' in result:
+                    doc_result['display_subject'] = result.get('display_subject')
+                if 'display_sender' in result:
+                    doc_result['display_sender'] = result.get('display_sender')
                 if 'classroom_sender_email' in result:
                     doc_result['classroom_sender_email'] = result.get('classroom_sender_email')
-                if 'classroom_sent_at' in result:
-                    doc_result['classroom_sent_at'] = result.get('classroom_sent_at')
-                if 'classroom_post_text' in result:
-                    doc_result['classroom_post_text'] = result.get('classroom_post_text')
-                if 'classroom_type' in result:
-                    doc_result['classroom_type'] = result.get('classroom_type')
+                if 'display_sent_at' in result:
+                    doc_result['display_sent_at'] = result.get('display_sent_at')
+                if 'display_post_text' in result:
+                    doc_result['display_post_text'] = result.get('display_post_text')
+                if 'display_type' in result:
+                    doc_result['display_type'] = result.get('display_type')
 
                 final_results.append(doc_result)
 

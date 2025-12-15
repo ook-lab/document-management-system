@@ -1113,8 +1113,8 @@
                         const metadata = doc.metadata || {};
 
                         // 複数の条件でClassroom投稿を判定
-                        const hasClassroomSubject = doc.classroom_subject && doc.classroom_subject.trim() !== '';
-                        const hasClassroomSender = doc.classroom_sender && doc.classroom_sender.trim() !== '';
+                        const hasClassroomSubject = doc.display_subject && doc.display_subject.trim() !== '';
+                        const hasClassroomSender = doc.display_sender && doc.display_sender.trim() !== '';
                         const hasClassroomMetadata = metadata.course_name || metadata.course_id;
                         const isClassroomRoute = doc.ingestion_route === 'classroom';
 
@@ -1143,38 +1143,38 @@
         function renderClassroomPost(doc) {
             // デバッグ: どのデータが来ているか確認
             console.log('[DEBUG] Classroom投稿データ:', {
-                classroom_subject: doc.classroom_subject,
-                classroom_post_text: doc.classroom_post_text,
+                display_subject: doc.display_subject,
+                display_post_text: doc.display_post_text,
                 chunk_content: doc.chunk_content,
                 file_name: doc.file_name
             });
 
             // ✅ タイトルと本文を正しく取得
-            // classroom_subject: タイトル（課題/資料名、またはお知らせの件名）
-            // classroom_post_text: 投稿本文（classroom_textの場合のみ）
+            // display_subject: タイトル（課題/資料名、またはお知らせの件名）
+            // display_post_text: 投稿本文（classroom_textの場合のみ）
             // full_text: ドキュメント本体（PDFの内容など）
 
             // タイトルは最初の50文字に制限（長すぎる場合）
-            let title = doc.classroom_subject || '';
+            let title = doc.display_subject || '';
             if (title && title.length > 50) {
                 title = title.substring(0, 50) + '...';
             }
 
-            // 投稿本文はclassroom_post_textから取得、なければ検索でヒットしたチャンクを表示
-            const bodyText = (doc.classroom_post_text && doc.classroom_post_text.trim())
-                ? doc.classroom_post_text
+            // 投稿本文はdisplay_post_textから取得、なければ検索でヒットしたチャンクを表示
+            const bodyText = (doc.display_post_text && doc.display_post_text.trim())
+                ? doc.display_post_text
                 : (doc.chunk_content || '');
 
-            // ✅ 送信者情報（classroom_senderを優先）
+            // ✅ 送信者情報（display_senderを優先）
             const metadata = doc.metadata || {};
-            const sender = doc.classroom_sender || metadata.author_name || metadata.sender || metadata.sender_name || '不明';
+            const sender = doc.display_sender || metadata.author_name || metadata.sender || metadata.sender_name || '不明';
 
-            // ✅ 送信日時（classroom_sent_atを優先）
-            const dateStr = doc.classroom_sent_at || doc.created_at || metadata.created_time || '';
+            // ✅ 送信日時（display_sent_atを優先）
+            const dateStr = doc.display_sent_at || doc.created_at || metadata.created_time || '';
             const formattedDate = dateStr ? formatDate(dateStr) : '日時不明';
 
-            // ✅ 投稿種別（classroom_type）
-            const postType = doc.classroom_type || metadata.post_type || 'Classroom';
+            // ✅ 投稿種別（display_type）
+            const postType = doc.display_type || metadata.post_type || 'Classroom';
 
             // 添付ファイル（source_urlまたはmetadataのmaterialsから）
             const attachments = [];

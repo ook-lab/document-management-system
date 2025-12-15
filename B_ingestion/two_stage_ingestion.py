@@ -210,13 +210,13 @@ class TwoStageIngestionPipeline:
         if existing and force_reprocess:
             logger.info(f"🔄 再処理モード: 既存レコードを上書きします")
 
-        # ✅ Classroom投稿の場合、classroom_sent_atを取得してreference_dateとして使用
+        # ✅ Classroom投稿の場合、display_sent_atを取得してreference_dateとして使用
         reference_date = None
-        if existing and existing.get('classroom_sent_at'):
-            reference_date = str(existing['classroom_sent_at']).split('T')[0]  # YYYY-MM-DD形式に変換
-            logger.info(f"[Classroom] reference_date={reference_date} (classroom_sent_at から取得)")
-        elif 'classroom_sent_at' in file_meta:
-            reference_date = str(file_meta['classroom_sent_at']).split('T')[0]
+        if existing and existing.get('display_sent_at'):
+            reference_date = str(existing['display_sent_at']).split('T')[0]  # YYYY-MM-DD形式に変換
+            logger.info(f"[Classroom] reference_date={reference_date} (display_sent_at から取得)")
+        elif 'display_sent_at' in file_meta:
+            reference_date = str(file_meta['display_sent_at']).split('T')[0]
             logger.info(f"[Classroom] reference_date={reference_date} (file_meta から取得)")
         
         local_path = None
@@ -383,7 +383,7 @@ class TwoStageIngestionPipeline:
                 if document_date:
                     all_dates_set.add(document_date)
 
-                # classroom_sent_atも追加（投稿日も検索対象）
+                # display_sent_atも追加（投稿日も検索対象）
                 if reference_date:
                     all_dates_set.add(reference_date)
 
@@ -420,7 +420,7 @@ class TwoStageIngestionPipeline:
             try:
                 # upsertを使用
                 # force_reprocess=True時は全フィールドを更新するが、GAS由来のフィールドは保持
-                preserve_fields = ['doc_type', 'workspace', 'source_type', 'classroom_sender', 'classroom_sender_email', 'classroom_sent_at', 'classroom_subject', 'classroom_course_id', 'classroom_course_name'] if force_reprocess else []
+                preserve_fields = ['doc_type', 'workspace', 'source_type', 'display_sender', 'classroom_sender_email', 'display_sent_at', 'display_subject', 'classroom_course_id', 'classroom_course_name'] if force_reprocess else []
                 result = await self.db.upsert_document(
                     'source_documents',  # 3層アーキテクチャのテーブル名に修正
                     document_data,
@@ -454,22 +454,22 @@ class TwoStageIngestionPipeline:
                     logger.info(f"  ドキュメントのチャンク化開始（メタデータ + 小 + 合成）")
                     try:
                         # Classroom投稿本文を取得
-                        classroom_subject = None
-                        if existing and existing.get('classroom_subject'):
-                            classroom_subject = existing.get('classroom_subject')
-                        elif 'classroom_subject' in file_meta:
-                            classroom_subject = file_meta.get('classroom_subject')
+                        display_subject = None
+                        if existing and existing.get('display_subject'):
+                            display_subject = existing.get('display_subject')
+                        elif 'display_subject' in file_meta:
+                            display_subject = file_meta.get('display_subject')
 
                         # チャンク化対象テキスト：Classroom投稿本文 + 添付ファイル内容
                         chunk_target_text = ""
-                        if extracted_text and classroom_subject:
+                        if extracted_text and display_subject:
                             # 両方ある場合：投稿本文 + 添付ファイル
-                            chunk_target_text = f"【投稿本文】\n{classroom_subject}\n\n【添付ファイル】\n{extracted_text}"
-                            logger.info(f"  Classroom投稿本文を追加: {len(classroom_subject)}文字")
-                        elif classroom_subject:
+                            chunk_target_text = f"【投稿本文】\n{display_subject}\n\n【添付ファイル】\n{extracted_text}"
+                            logger.info(f"  Classroom投稿本文を追加: {len(display_subject)}文字")
+                        elif display_subject:
                             # テキストのみの投稿（添付なし）
-                            chunk_target_text = f"【投稿本文】\n{classroom_subject}"
-                            logger.info(f"  テキストのみ投稿: {len(classroom_subject)}文字")
+                            chunk_target_text = f"【投稿本文】\n{display_subject}"
+                            logger.info(f"  テキストのみ投稿: {len(display_subject)}文字")
                         elif extracted_text:
                             # 添付ファイルのみ
                             chunk_target_text = extracted_text
@@ -490,8 +490,8 @@ class TwoStageIngestionPipeline:
 
                         # Classroom情報を取得（existing または file_meta から）
                         classroom_fields = {}
-                        for field in ['classroom_subject', 'classroom_post_text', 'classroom_type',
-                                     'classroom_sender', 'classroom_sent_at', 'classroom_sender_email']:
+                        for field in ['display_subject', 'display_post_text', 'display_type',
+                                     'display_sender', 'display_sent_at', 'classroom_sender_email']:
                             value = None
                             if existing and existing.get(field):
                                 value = existing.get(field)

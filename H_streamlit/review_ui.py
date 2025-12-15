@@ -449,15 +449,15 @@ def pdf_review_ui():
 
     # ドキュメント内容プレビュー
     summary = selected_doc.get('summary', '')
-    classroom_post_text = selected_doc.get('classroom_post_text', '')
+    display_post_text = selected_doc.get('display_post_text', '')
 
-    if summary or classroom_post_text:
+    if summary or display_post_text:
         with st.expander("📄 ドキュメント内容プレビュー", expanded=True):
-            if classroom_post_text:
+            if display_post_text:
                 st.markdown("**Classroomの投稿内容:**")
                 st.text_area(
                     "投稿本文",
-                    value=classroom_post_text,
+                    value=display_post_text,
                     height=150,
                     disabled=True,
                     key=f"classroom_preview_{doc_id}"
@@ -695,7 +695,7 @@ def pdf_review_ui():
 
             # テキストコンテンツを取得
             # source_documentsテーブルの実際のカラムを使用
-            extracted_text = selected_doc.get('summary', '') or selected_doc.get('classroom_post_text', '')
+            extracted_text = selected_doc.get('summary', '') or selected_doc.get('display_post_text', '')
 
             # 手動補正UIを表示
             corrected_text = render_manual_text_correction(

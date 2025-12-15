@@ -207,12 +207,12 @@ function processCourse(course, startDate, endDate, destFolder, config) {
               doc_type:    DOC_TYPE_VAL, // コース名
 
               // ★★★ 必須の6個のclassroomカラム ★★★
-              classroom_sender: senderName,
-              classroom_sender_email: senderEmail,
-              classroom_sent_at: creationTime,
-              classroom_subject: postSubject,
-              classroom_post_text: postText,
-              classroom_type: postType, // ✅ 新規追加: お知らせ/課題/資料
+              display_sender: senderName,
+              display_sender_email: senderEmail,
+              display_sent_at: creationTime,
+              display_subject: postSubject,
+              display_post_text: postText,
+              display_type: postType, // ✅ 新規追加: お知らせ/課題/資料
 
               metadata: {
                 'original_classroom_id': originalFileId,
@@ -246,12 +246,12 @@ function processCourse(course, startDate, endDate, destFolder, config) {
         doc_type:    DOC_TYPE_VAL, // コース名
 
         // ★★★ 必須の6個のclassroomカラム ★★★
-        classroom_sender: senderName,
-        classroom_sender_email: senderEmail,
-        classroom_sent_at: creationTime,
-        classroom_subject: postSubject,
-        classroom_post_text: postText,
-        classroom_type: postType, // ✅ 新規追加: お知らせ/課題/資料
+        display_sender: senderName,
+        display_sender_email: senderEmail,
+        display_sent_at: creationTime,
+        display_subject: postSubject,
+        display_post_text: postText,
+        display_type: postType, // ✅ 新規追加: お知らせ/課題/資料
 
         metadata: {
           'post_type': postType,

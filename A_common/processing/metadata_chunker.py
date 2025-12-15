@@ -32,15 +32,15 @@ class MetadataChunker:
     # チャンク種別と検索重み
     CHUNK_WEIGHTS = {
         'title': 2.0,                    # タイトルマッチは最優先
-        'classroom_subject': 2.0,        # Classroom件名（最重要）
+        'display_subject': 2.0,          # 表示件名（最重要）
         'doc_type': 1.8,                 # 授業名・ドキュメント種別（重要）
-        'classroom_post_text': 1.8,      # Classroom投稿本文（重要）
+        'display_post_text': 1.8,        # 表示投稿本文（重要）
         'persons': 1.8,                  # 担当者・関係者（重要）★新規追加
         'organizations': 1.7,            # 組織名（重要）★新規追加
         'summary': 1.5,                  # サマリーは高優先
-        'classroom_type': 1.5,           # Classroom種別（お知らせ/課題/資料）
-        'classroom_sender': 1.3,         # Classroom送信者名
-        'classroom_sent_at': 1.3,        # Classroom送信日時
+        'display_type': 1.5,             # 表示種別（お知らせ/課題/資料）
+        'display_sender': 1.3,           # 表示送信者名
+        'display_sent_at': 1.3,          # 表示送信日時
         'date': 1.3,                     # 日付検索
         'tags': 1.2,                     # タグ検索
         'people': 1.2,                   # AI抽出人物（やや重要）★新規追加
@@ -135,46 +135,46 @@ class MetadataChunker:
             ))
             logger.debug(f"[MetadataChunker] doc_typeチャンク作成: {doc_type}")
 
-        # 6. Classroom専用チャンク（Google Classroom投稿情報）
-        classroom_subject = document_data.get('classroom_subject')
-        if classroom_subject and classroom_subject.strip():
+        # 6. 表示用専用チャンク（Google Classroom等の投稿情報）
+        display_subject = document_data.get('display_subject')
+        if display_subject and display_subject.strip():
             chunks.append(self._create_chunk(
-                chunk_type='classroom_subject',
-                text=f"件名: {classroom_subject.strip()}"
+                chunk_type='display_subject',
+                text=f"件名: {display_subject.strip()}"
             ))
-            logger.debug(f"[MetadataChunker] Classroom件名チャンク作成: {len(classroom_subject)}文字")
+            logger.debug(f"[MetadataChunker] 表示件名チャンク作成: {len(display_subject)}文字")
 
-        classroom_post_text = document_data.get('classroom_post_text')
-        if classroom_post_text and classroom_post_text.strip():
+        display_post_text = document_data.get('display_post_text')
+        if display_post_text and display_post_text.strip():
             chunks.append(self._create_chunk(
-                chunk_type='classroom_post_text',
-                text=f"投稿本文: {classroom_post_text.strip()}"
+                chunk_type='display_post_text',
+                text=f"投稿本文: {display_post_text.strip()}"
             ))
-            logger.debug(f"[MetadataChunker] Classroom投稿本文チャンク作成: {len(classroom_post_text)}文字")
+            logger.debug(f"[MetadataChunker] 表示投稿本文チャンク作成: {len(display_post_text)}文字")
 
-        classroom_type = document_data.get('classroom_type')
-        if classroom_type:
+        display_type = document_data.get('display_type')
+        if display_type:
             chunks.append(self._create_chunk(
-                chunk_type='classroom_type',
-                text=f"種別: {classroom_type}"
+                chunk_type='display_type',
+                text=f"種別: {display_type}"
             ))
-            logger.debug(f"[MetadataChunker] Classroom種別チャンク作成: {classroom_type}")
+            logger.debug(f"[MetadataChunker] 表示種別チャンク作成: {display_type}")
 
-        classroom_sender = document_data.get('classroom_sender')
-        if classroom_sender:
+        display_sender = document_data.get('display_sender')
+        if display_sender:
             chunks.append(self._create_chunk(
-                chunk_type='classroom_sender',
-                text=f"送信者: {classroom_sender}"
+                chunk_type='display_sender',
+                text=f"送信者: {display_sender}"
             ))
-            logger.debug(f"[MetadataChunker] Classroom送信者チャンク作成: {classroom_sender}")
+            logger.debug(f"[MetadataChunker] 表示送信者チャンク作成: {display_sender}")
 
-        classroom_sent_at = document_data.get('classroom_sent_at')
-        if classroom_sent_at:
+        display_sent_at = document_data.get('display_sent_at')
+        if display_sent_at:
             chunks.append(self._create_chunk(
-                chunk_type='classroom_sent_at',
-                text=f"送信日時: {classroom_sent_at}"
+                chunk_type='display_sent_at',
+                text=f"送信日時: {display_sent_at}"
             ))
-            logger.debug(f"[MetadataChunker] Classroom送信日時チャンク作成: {classroom_sent_at}")
+            logger.debug(f"[MetadataChunker] 表示送信日時チャンク作成: {display_sent_at}")
 
         classroom_sender_email = document_data.get('classroom_sender_email')
         if classroom_sender_email:

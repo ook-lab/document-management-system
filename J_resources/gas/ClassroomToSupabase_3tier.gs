@@ -195,12 +195,12 @@ function processPost(post, postType, courseId, courseName, docType, destFolder, 
             organizations: config.ORGANIZATIONS_ARRAY.length > 0 ? config.ORGANIZATIONS_ARRAY : null,
 
             // Classroom固有フィールド（直接カラムとして送信）
-            classroom_sender: senderName,
-            classroom_sender_email: senderEmail,
-            classroom_sent_at: creationTime,
-            classroom_subject: postSubject,
-            classroom_post_text: postText,
-            classroom_type: postType,
+            display_sender: senderName,
+            display_sender_email: senderEmail,
+            display_sent_at: creationTime,
+            display_subject: postSubject,
+            display_post_text: postText,
+            display_type: postType,
 
             // メタデータ（追加情報）
             metadata: {
@@ -240,12 +240,12 @@ function processPost(post, postType, courseId, courseName, docType, destFolder, 
       organizations: config.ORGANIZATIONS_ARRAY.length > 0 ? config.ORGANIZATIONS_ARRAY : null,
 
       // Classroom固有フィールド（直接カラムとして送信）
-      classroom_sender: senderName,
-      classroom_sender_email: senderEmail,
-      classroom_sent_at: creationTime,
-      classroom_subject: postSubject,
-      classroom_post_text: postText,
-      classroom_type: postType,
+      display_sender: senderName,
+      display_sender_email: senderEmail,
+      display_sent_at: creationTime,
+      display_subject: postSubject,
+      display_post_text: postText,
+      display_type: postType,
 
       // メタデータ（追加情報）
       metadata: {
