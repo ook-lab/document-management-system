@@ -173,11 +173,11 @@ class DatabaseClient:
                 "filter_doc_types": doc_types  # doc_typeのみで絞り込み
             }
 
-            print(f"[DEBUG] search_documents_with_chunks 呼び出し: query='{query}', doc_types={doc_types}")
-            response = self.client.rpc("search_documents_with_chunks", rpc_params).execute()
+            print(f"[DEBUG] search_documents_final 呼び出し: query='{query}', doc_types={doc_types}")
+            response = self.client.rpc("search_documents_final", rpc_params).execute()
             results = response.data if response.data else []
 
-            print(f"[DEBUG] search_documents_with_chunks 結果: {len(results)} 件")
+            print(f"[DEBUG] search_documents_final 結果: {len(results)} 件")
 
             # 結果を整形（小チャンク検索 + 大チャンク回答）
             final_results = []
