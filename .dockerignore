@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+
+# Directories not needed in Cloud Run
+B_ingestion/
+D_stage_a_classifier/
+E_stage_b_vision/
+F_stage_c_extractor/
+H_streamlit/
+I_frontend/
+J_resources/
+
+# Git
+.git/
+.gitignore
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Test files
+test_*.py
+*_test.py

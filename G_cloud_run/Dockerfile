@@ -15,11 +15,18 @@ RUN apt-get update && apt-get install -y \
 # 3. 作業ディレクトリを設定
 WORKDIR /app
 
-# 4. ファイルをコピー
-COPY . .
-
-# 5. Pythonライブラリをインストール
+# 4. プロジェクトルート全体をコピー（親ディレクトリから）
+# ビルドコンテキストはプロジェクトルート (document_management_system/) です
+# まずrequirements.txtだけコピーしてインストール（キャッシュ効率化）
+COPY G_cloud_run/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
+
+# 5. 必要なモジュールとアプリケーションファイルをコピー
+COPY G_cloud_run/app.py .
+COPY G_cloud_run/templates/ ./templates/
+# プロジェクトルートからの共通モジュール
+COPY A_common/ ./A_common/
+COPY C_ai_common/ ./C_ai_common/
 
 # Note: PlaywrightはローカルのGmail取り込みのみで使用。Cloud Runでは不要。
 
