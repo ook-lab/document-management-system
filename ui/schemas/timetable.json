@@ -1,0 +1,100 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "type": "object",
+  "title": "時間割スキーマ",
+  "description": "学校の時間割データの構造定義",
+  "properties": {
+    "school_name": {
+      "type": "string",
+      "title": "学校名",
+      "description": "学校の正式名称"
+    },
+    "grade": {
+      "type": "string",
+      "title": "学年",
+      "description": "対象学年（例: 5年生）"
+    },
+    "period": {
+      "type": "string",
+      "title": "対象期間",
+      "description": "時間割の対象期間（例: 2024年11月18日-21日）"
+    },
+    "daily_schedule": {
+      "type": "array",
+      "title": "日別時間割",
+      "description": "各日の詳細なスケジュール",
+      "items": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "title": "日付",
+            "description": "YYYY-MM-DD形式"
+          },
+          "day_of_week": {
+            "type": "string",
+            "title": "曜日",
+            "description": "月曜日、火曜日など"
+          },
+          "periods": {
+            "type": "array",
+            "title": "時限別科目",
+            "items": {
+              "type": "object",
+              "properties": {
+                "period": {
+                  "type": "integer",
+                  "title": "時限",
+                  "description": "1限、2限など"
+                },
+                "subject": {
+                  "type": "string",
+                  "title": "科目",
+                  "description": "国語、算数など"
+                },
+                "time": {
+                  "type": "string",
+                  "title": "時間",
+                  "description": "開始-終了時刻（例: 8:45-9:30）"
+                }
+              },
+              "required": ["period", "subject"]
+            }
+          }
+        },
+        "required": ["date", "day_of_week", "periods"]
+      }
+    },
+    "special_events": {
+      "type": "array",
+      "title": "特別イベント",
+      "description": "通常授業以外の特別な予定",
+      "items": {
+        "type": "string"
+      }
+    },
+    "text_blocks": {
+      "type": "array",
+      "title": "文章セクション（記事ブロック）",
+      "description": "表以外の場所にある、まとまった文章セクション（朝会の話、振り返り、道徳の内容など）",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "title": "見出し",
+            "description": "セクションのタイトル（例: 朝会「マナーとルールについて」、今日のふりかえり）"
+          },
+          "content": {
+            "type": "string",
+            "title": "本文",
+            "description": "セクションの本文（長文可、原文そのまま）"
+          }
+        },
+        "required": ["title", "content"]
+      }
+    }
+  },
+  "required": ["school_name", "grade", "daily_schedule"]
+}
