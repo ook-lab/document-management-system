@@ -667,11 +667,31 @@
                         <input type="number" id="limitInput" value="5" min="1" max="20">
                     </label>
                     <label>
-                        AIモデル:
-                        <select id="model-select" style="padding: 5px; border: 1px solid #e0e0e0; border-radius: 4px;">
-                            <option value="gemini-2.5-flash" selected>Gemini 2.5 Flash (デフォルト・高速・安定)</option>
-                            <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash-Lite (超高速・超低コスト)</option>
-                            <option value="gpt-5.1">GPT-5.1 (最高精度・推論)</option>
+                        構成フロー:
+                        <select id="flow-select" style="padding: 5px; border: 1px solid #e0e0e0; border-radius: 4px;">
+                            <option value="flash-x1" selected>Flash×1 (標準・高速)</option>
+                            <option value="lite-lite-pro">Lite→Lite→Pro (コスパ最強)</option>
+                            <option value="lite-flash-pro">Lite→Flash→Pro (黄金比)</option>
+                            <option value="flash-flash-pro">Flash→Flash→Pro (3回ループの王)</option>
+                            <option value="lite-flash-flash-pro">Lite→Flash→Flash→Pro (賢い節約術)</option>
+                            <option value="flash-flash-flash-pro">Flash→Flash→Flash→Pro (Deep Research推奨)</option>
+                            <option value="lite-lite-flash-flash">Lite→Lite→Flash×Flash (粘りの凡人)</option>
+                            <option value="flash-flash-flash">Flash→Flash→Flash (ザ・標準)</option>
+                            <option value="lite-lite-lite-flash">Lite→Lite→Lite→Flash (人海戦術)</option>
+                            <option value="flash-flash-flash-flash">Flash→Flash→Flash→Flash (優等生の限界)</option>
+                            <option value="lite-lite-pro">Lite→Lite→Pro (コスパ最強)</option>
+                            <option value="lite-flash-pro">Lite→Flash→Pro (黄金比・標準)</option>
+                            <option value="lite-lite-flash-pro">Lite→Lite→Flash→Pro (泥臭い名探偵)</option>
+                            <option value="lite-lite-lite-pro">Lite→Lite→Lite→Pro (質より量の極み)</option>
+                            <option value="flash-pro-pro">Flash→Pro→Pro (精鋭部隊)</option>
+                            <option value="lite-pro-pro">Lite→Pro→Pro (一点突破・改)</option>
+                            <option value="lite-lite-pro-pro">Lite→Lite→Pro→Pro (素材重視のプロ)</option>
+                            <option value="lite-flash-pro-pro">Lite→Flash→Pro→Pro (超・黄金比)</option>
+                            <option value="flash-flash-pro-pro">Flash→Flash→Pro→Pro (編集長決済)</option>
+                            <option value="pro-pro-pro">Pro→Pro→Pro (富豪の鉄板)</option>
+                            <option value="lite-pro-pro-pro">Lite→Pro→Pro→Pro (成り上がり)</option>
+                            <option value="flash-pro-pro-pro">Flash→Pro→Pro→Pro (天才集団)</option>
+                            <option value="pro-pro-pro-pro">Pro→Pro→Pro→Pro (全知全能)</option>
                         </select>
                     </label>
                 </div>
@@ -1054,7 +1074,7 @@
                 currentDocuments = searchData.results;
 
                 // ステップ2: 回答生成
-                const selectedModel = document.getElementById('model-select').value;
+                const selectedFlow = document.getElementById('flow-select').value;
                 const answerResponse = await fetch('/api/answer', {
                     method: 'POST',
                     headers: {
@@ -1063,7 +1083,7 @@
                     body: JSON.stringify({
                         query,
                         documents: currentDocuments,
-                        model: selectedModel
+                        flow: selectedFlow
                     })
                 });
 

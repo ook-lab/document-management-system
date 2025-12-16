@@ -179,21 +179,126 @@ def search_documents():
 @app.route('/api/answer', methods=['POST'])
 def generate_answer():
     """
-    回答生成API
-    検索結果を元にGPT-4で自然な回答を生成
+    回答生成API（構成フロー対応）
+    検索結果を元にAIで自然な回答を生成
     """
     try:
         # クライアント取得（遅延初期化）
-        _, llm_client, _ = get_clients()
+        db_client, llm_client, _ = get_clients()
 
         data = request.get_json()
         query = data.get('query', '')
         documents = data.get('documents', [])
-        model = data.get('model')  # ユーザーが選択したモデル
+        flow_id = data.get('flow', 'flash-x1')  # ユーザーが選択した構成フロー
 
         if not query:
             return jsonify({'success': False, 'error': 'クエリが空です'}), 400
 
+        # ✅ 構成フローを取得
+        from A_common.config.model_tiers import ResearchFlow
+        flow_config = ResearchFlow.get_flow(flow_id)
+        steps = flow_config.get('steps', ['gemini-2.5-flash'])
+
+        print(f"[INFO] 構成フロー実行: {flow_id} ({len(steps)}ステップ)")
+
+        # ✅ 構成フローの実行
+        current_query = query
+        current_documents = documents
+
+        for step_idx, model_name in enumerate(steps, 1):
+            print(f"[INFO] ステップ {step_idx}/{len(steps)}: {model_name}")
+
+            # 2ステップ目以降は、前の回答を使ってクエリを改善
+            if step_idx > 1 and 'answer' in locals():
+                # クエリ改善プロンプト
+                refinement_prompt = f"""以下のユーザーの質問と、これまでの回答を踏まえて、より的確な検索クエリを生成してください。
+
+【元の質問】
+{query}
+
+【これまでの回答】
+{answer}
+
+【指示】
+- 元の質問の意図を保ちつつ、より具体的で詳細な検索キーワードを含むクエリを生成してください
+- 回答から得られた重要なキーワードを追加してください
+- 改善されたクエリのみを出力してください（説明は不要）
+
+【改善されたクエリ】"""
+
+                refinement_response = llm_client.call_model(
+                    tier="ui_response",
+                    prompt=refinement_prompt,
+                    model_name=model_name
+                )
+
+                if refinement_response.get('success'):
+                    current_query = refinement_response.get('content', current_query).strip()
+                    print(f"[INFO] クエリ改善: '{query}' → '{current_query}'")
+
+                    # 改善されたクエリで再検索
+                    embedding = llm_client.generate_embedding(current_query)
+                    current_documents = db_client.search_documents_sync(
+                        current_query,
+                        embedding,
+                        limit=5,
+                        doc_types=None
+                    )
+                    print(f"[INFO] 再検索結果: {len(current_documents)} 件")
+
+            # 現在のステップで回答生成
+            answer, model_used = _generate_answer_with_model(
+                llm_client,
+                model_name,
+                query,
+                current_documents,
+                is_final_step=(step_idx == len(steps))
+            )
+
+            if not answer:
+                return jsonify({
+                    'success': False,
+                    'error': f'ステップ{step_idx}で回答生成に失敗しました'
+                }), 500
+
+        # 最終回答を返す
+        return jsonify({
+            'success': True,
+            'answer': answer,
+            'model': model_used,
+            'provider': 'gemini',
+            'flow': flow_id,
+            'steps': len(steps)
+        })
+
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+def _generate_answer_with_model(
+    llm_client,
+    model_name: str,
+    query: str,
+    documents: List[Dict[str, Any]],
+    is_final_step: bool = True
+) -> tuple:
+    """
+    指定されたモデルで回答を生成
+
+    Args:
+        llm_client: LLMクライアント
+        model_name: 使用するモデル名
+        query: ユーザーの質問
+        documents: 検索結果
+        is_final_step: 最終ステップかどうか
+
+    Returns:
+        (回答テキスト, モデル名)
+    """
+    try:
         # ユーザーコンテキストを読み込み、関連情報を抽出（回答生成用：詳細）
         from A_common.utils.context_extractor import ContextExtractor
         from A_common.config.yaml_loader import load_user_context
@@ -251,31 +356,21 @@ def generate_answer():
         # プロンプトを結合
         prompt = "\n".join(prompt_parts)
 
-        # GPT で回答生成（モデル選択対応）
+        # AIモデルで回答生成
         response = llm_client.call_model(
             tier="ui_response",
             prompt=prompt,
-            model_name=model  # ユーザーが選択したモデルを渡す
+            model_name=model_name
         )
 
         if not response.get('success'):
-            return jsonify({
-                'success': False,
-                'error': response.get('error', '回答生成に失敗しました')
-            }), 500
+            return None, None
 
-        return jsonify({
-            'success': True,
-            'answer': response.get('content', ''),
-            'model': response.get('model', ''),
-            'provider': response.get('provider', '')
-        })
+        return response.get('content', ''), model_name
 
     except Exception as e:
-        return jsonify({
-            'success': False,
-            'error': str(e)
-        }), 500
+        print(f"[ERROR] 回答生成エラー: {e}")
+        return None, None
 
 
 def _format_table_to_markdown(table_data: Dict[str, Any]) -> str:
