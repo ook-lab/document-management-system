@@ -663,7 +663,7 @@ class ClassroomReprocessorV2:
             self._mark_task_completed(queue_id, success=True)
             return True
 
-        # metadata から Google Drive URL を取得
+        # metadata から Google Drive ファイルID/URLを取得
         metadata = doc.get('metadata')
         if metadata is None:
             metadata = {}
@@ -673,16 +673,41 @@ class ClassroomReprocessorV2:
             except:
                 metadata = {}
 
-        drive_url = metadata.get('drive_url')
-        if not drive_url:
-            error_msg = "metadata.drive_url が見つかりません"
+        # ファイルIDを複数のソースから取得（優先順位順）
+        # ★修正: source_idを最優先（GASでコピーされたファイルID、サービスアカウントに権限付与済み）
+        file_id = None
+        source_description = ""
+
+        # 1. source_id（コピー後のファイルID、サービスアカウントがアクセス可能）
+        source_id = doc.get('source_id')
+        if source_id and not source_id.isdigit():
+            file_id = source_id
+            source_description = f"source_id: {file_id}"
+
+        # 2. metadata.drive_url からの抽出（URL形式）
+        if not file_id:
+            drive_url = metadata.get('drive_url')
+            if drive_url:
+                file_id = self._extract_file_id_from_url(drive_url)
+                source_description = f"Drive URL: {drive_url}"
+
+        # 3. metadata.original_classroom_id（元のファイルID、権限がない可能性あり）
+        if not file_id:
+            original_classroom_id = metadata.get('original_classroom_id')
+            if original_classroom_id and not original_classroom_id.isdigit():
+                file_id = original_classroom_id
+                source_description = f"original_classroom_id: {file_id}"
+
+        if not file_id:
+            error_msg = "ファイルIDが見つかりません（drive_url, original_classroom_id, source_id のいずれも無効）"
             logger.error(f"{error_msg}: {file_name}")
             self._mark_task_failed(queue_id, error_msg)
             return False
 
         logger.info(f"📎 Classroom添付ファイルを検出")
-        logger.info(f"  件名: {display_subject[:50]}...")
-        logger.info(f"  Drive URL: {drive_url}")
+        logger.info(f"  件名: {display_subject[:50] if display_subject else '(なし)'}...")
+        logger.info(f"  ファイルソース: {source_description}")
+        logger.info(f"  ファイルID: {file_id}")
 
         try:
             # ============================================
@@ -690,22 +715,14 @@ class ClassroomReprocessorV2:
             # ============================================
             logger.info("[Pre-processing] ファイルダウンロード開始...")
 
-            # Drive URLからファイルIDを抽出
-            file_id = self._extract_file_id_from_url(drive_url)
-            if not file_id:
-                error_msg = "Drive URLからファイルIDを抽出できません"
-                logger.error(f"{error_msg}: {drive_url}")
-                self._mark_task_failed(queue_id, error_msg)
-                return False
-
-            logger.info(f"  ファイルID: {file_id}")
-
-            # ファイルメタデータを構築
+            # ファイルメタデータを構築（Classroomフィールドを含める）
             file_meta = {
                 'id': file_id,
                 'name': file_name,
                 'mimeType': self._guess_mime_type(file_name),
-                'doc_type': doc.get('doc_type', 'classroom_document')
+                'doc_type': doc.get('doc_type', 'classroom_document'),
+                'display_subject': display_subject,
+                'display_post_text': display_post_text
             }
 
             # workspaceを決定
@@ -735,95 +752,8 @@ class ClassroomReprocessorV2:
             processed_doc_id = result.get('document_id')
 
             # ============================================
-            # Classroomフィールドの追加更新
-            # ============================================
-            logger.info("[Classroom統合] display_subject と display_post_text を追加...")
-
-            # パイプラインで処理されたドキュメントにClassroomフィールドを追加
-            classroom_update = {}
-            if display_subject:
-                classroom_update['display_subject'] = display_subject
-            if display_post_text:
-                classroom_update['display_post_text'] = display_post_text
-
-            if classroom_update:
-                self.db.client.table('source_documents').update(classroom_update).eq(
-                    'id', processed_doc_id
-                ).execute()
-                logger.info(f"  Classroomフィールド追加完了")
-
-            # ============================================
-            # チャンク再生成（Classroomフィールドを含める）
-            # ============================================
-            logger.info("[チャンク再生成] Classroomフィールドを含めて再生成...")
-
-            # 更新されたドキュメントを取得
-            updated_doc = self.db.get_document_by_id(processed_doc_id)
-            if not updated_doc:
-                error_msg = "更新後のドキュメントが見つかりません"
-                logger.error(error_msg)
-                self._mark_task_failed(queue_id, error_msg)
-                return False
-
-            # 既存チャンクを削除
-            try:
-                delete_result = self.db.client.table('search_index').delete().eq(
-                    'document_id', processed_doc_id
-                ).execute()
-                deleted_count = len(delete_result.data) if delete_result.data else 0
-                logger.info(f"  既存チャンク削除: {deleted_count}個")
-            except Exception as e:
-                logger.warning(f"  既存チャンク削除エラー（継続）: {e}")
-
-            # チャンクデータ準備
-            document_data = {
-                'file_name': file_name,
-                'summary': updated_doc.get('summary', ''),
-                'document_date': updated_doc.get('document_date'),
-                'tags': updated_doc.get('tags', []),
-                'display_subject': display_subject,
-                'display_post_text': display_post_text,
-                'attachment_text': updated_doc.get('attachment_text', '')
-            }
-
-            # メタデータチャンク生成
-            from A_common.processing.metadata_chunker import MetadataChunker
-            metadata_chunker = MetadataChunker()
-            metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
-
-            current_chunk_index = 0
-            for meta_chunk in metadata_chunks:
-                meta_text = meta_chunk.get('chunk_text', '')
-                meta_type = meta_chunk.get('chunk_type', 'metadata')
-                meta_weight = meta_chunk.get('search_weight', 1.0)
-
-                if not meta_text:
-                    continue
-
-                # Embedding生成
-                meta_embedding = self.pipeline.llm_client.generate_embedding(meta_text)
-
-                # search_indexに保存
-                meta_doc = {
-                    'document_id': processed_doc_id,
-                    'chunk_index': current_chunk_index,
-                    'chunk_content': meta_text,
-                    'chunk_size': len(meta_text),
-                    'chunk_type': meta_type,
-                    'embedding': meta_embedding,
-                    'search_weight': meta_weight
-                }
-
-                try:
-                    self.db.client.table('search_index').insert(meta_doc).execute()
-                    current_chunk_index += 1
-                except Exception as e:
-                    logger.error(f"  チャンク保存エラー: {e}")
-
-            logger.info(f"[チャンク再生成] 完了: {current_chunk_index}個のチャンク作成")
-
-            # ============================================
             # 元のドキュメントを削除し、新しいドキュメントIDを維持
+            # （file_metaにClassroomフィールドを含めたので、チャンク再生成は不要）
             # ============================================
             if processed_doc_id != document_id:
                 logger.info(f"[ドキュメント統合] 元のID {document_id} → 新ID {processed_doc_id}")
@@ -835,7 +765,7 @@ class ClassroomReprocessorV2:
                     logger.warning(f"  古いドキュメント削除エラー（継続）: {e}")
 
             logger.success(f"✅ Classroom添付ファイルドキュメント再処理成功: {file_name}")
-            logger.info(f"  チャンク数: {current_chunk_index}")
+            # チャンク数はパイプライン処理で自動的に記録されます
             self._mark_task_completed(queue_id, success=True)
             return True
 
@@ -848,7 +778,14 @@ class ClassroomReprocessorV2:
 
     def _extract_file_id(self, doc: Dict[str, Any]) -> str:
         """ドキュメントからGoogle Drive ファイルIDを抽出"""
-        # 1. metadata->original_file_id を確認
+        # ★修正: source_idを最優先（GASでコピーされたファイルID、サービスアカウントに権限付与済み）
+
+        # 1. source_id（コピー後のファイルID、サービスアカウントがアクセス可能）
+        source_id = doc.get('source_id', '')
+        if source_id and not source_id.isdigit():
+            return source_id
+
+        # 2. metadata->original_file_id（元のファイルID、権限がない可能性あり）
         metadata = doc.get('metadata')
         if metadata is None:
             metadata = {}
@@ -860,11 +797,6 @@ class ClassroomReprocessorV2:
 
         if metadata.get('original_file_id'):
             return metadata['original_file_id']
-
-        # 3. source_id を確認（数字だけの場合はClassroom IDなので使わない）
-        source_id = doc.get('source_id', '')
-        if source_id and not source_id.isdigit():
-            return source_id
 
         return ''
 
