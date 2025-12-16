@@ -460,32 +460,6 @@ def pdf_review_ui():
     with col2:
         st.markdown(f"**文書タイプ**: {doc_type}")
 
-    # ドキュメント内容プレビュー
-    summary = selected_doc.get('summary', '')
-    display_post_text = selected_doc.get('display_post_text', '')
-
-    if summary or display_post_text:
-        with st.expander("📄 ドキュメント内容プレビュー", expanded=True):
-            if display_post_text:
-                st.markdown("**Classroomの投稿内容:**")
-                st.text_area(
-                    "投稿本文",
-                    value=display_post_text,
-                    height=150,
-                    disabled=True,
-                    key=f"classroom_preview_{doc_id}"
-                )
-
-            if summary:
-                st.markdown("**要約・抽出されたテキスト:**")
-                st.text_area(
-                    "要約",
-                    value=summary,
-                    height=200,
-                    disabled=True,
-                    key=f"summary_preview_{doc_id}"
-                )
-
     st.markdown("---")
 
     # 修正履歴とロールバック機能（Phase 2）
