@@ -519,18 +519,25 @@ def pdf_review_ui():
     with col_left:
         st.markdown("### 📄 ドキュメントプレビュー")
 
+        # デバッグ情報をログに記録
+        logger.info(f"プレビュー準備: file_id={file_id}, file_name={file_name}")
+
         # ファイルのダウンロードと表示
         if file_id:
             with st.spinner("ファイルをダウンロード中..."):
                 file_path = download_file_from_drive(file_id, file_name)
 
-            # デバッグ情報を表示
+            # ダウンロード結果の確認
             if not file_path:
-                st.error(f"❌ ファイルのダウンロードに失敗しました（file_path=None）")
-                st.info(f"file_id: {file_id}")
+                st.error("❌ ファイルのダウンロードに失敗しました")
+                st.info("Google Driveからファイルを取得できませんでした。アクセス権限を確認してください。")
+                with st.expander("🔍 デバッグ情報"):
+                    st.code(f"file_id: {file_id}\nfile_name: {file_name}")
             elif not Path(file_path).exists():
-                st.error(f"❌ ダウンロードされたファイルが見つかりません")
-                st.info(f"パス: {file_path}")
+                st.error("❌ ダウンロードされたファイルが見つかりません")
+                st.info("ファイルはダウンロードされましたが、保存先に見つかりませんでした。")
+                with st.expander("🔍 デバッグ情報"):
+                    st.code(f"パス: {file_path}")
 
             if file_path and Path(file_path).exists():
                 # ファイルタイプに応じてプレビュー表示
@@ -668,7 +675,15 @@ def pdf_review_ui():
                 logger.warning(f"ファイルを読み込めませんでした。file_path={file_path}, exists={Path(file_path).exists() if file_path else False}")
                 st.warning("ファイルを読み込めませんでした")
         else:
-            st.info("ファイルIDが見つかりません")
+            st.warning("⚠️ ファイルIDが見つかりません")
+            st.info("このドキュメントにはファイルIDが設定されていないため、プレビューを表示できません。")
+            with st.expander("🔍 デバッグ情報"):
+                st.json({
+                    "drive_file_id": selected_doc.get('drive_file_id'),
+                    "source_id": selected_doc.get('source_id'),
+                    "file_name": file_name,
+                    "doc_type": doc_type
+                })
 
         # ============================================
         # 【新機能】手動テキスト補正（Human-in-the-loop）
