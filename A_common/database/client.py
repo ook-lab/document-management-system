@@ -564,7 +564,8 @@ class DatabaseClient:
             if review_status == 'reviewed':
                 query = query.eq('review_status', 'reviewed')
             elif review_status == 'pending':
-                query = query.in_('review_status', ['pending', None])
+                # review_statusが'pending'またはNULLの場合
+                query = query.or_('review_status.eq.pending,review_status.is.null')
 
             if search_query:
                 # 検索モード: レビュー状態に関係なく検索
