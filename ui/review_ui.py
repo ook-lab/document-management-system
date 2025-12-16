@@ -270,7 +270,6 @@ def pdf_review_ui():
             'ID': doc.get('id', '')[:8],
             'ファイル名': doc.get('file_name', ''),
             '文書タイプ': doc.get('doc_type', ''),
-            '信頼度': round(doc.get('confidence') or 0, 3),
             '作成日時': doc.get('created_at', '')[:10]
         })
 
@@ -303,7 +302,7 @@ def pdf_review_ui():
                 default=False,
             )
         },
-        disabled=["ID", "ファイル名", "文書タイプ", "信頼度", "作成日時"],
+        disabled=["ID", "ファイル名", "文書タイプ", "作成日時"],
         key="document_list_editor"
     )
 
@@ -376,7 +375,7 @@ def pdf_review_ui():
     selected_index = st.selectbox(
         "編集するドキュメントを選択",
         range(len(documents)),
-        format_func=lambda i: f"{documents[i].get('file_name', 'Unknown')} (信頼度: {documents[i].get('confidence') or 0:.3f})",
+        format_func=lambda i: f"{documents[i].get('file_name', 'Unknown')}",
         key=selector_key
     )
 
@@ -418,8 +417,6 @@ def pdf_review_ui():
             metadata['extracted_tables'] = extracted_tables
             logger.info(f"Added extracted_tables to metadata: {len(extracted_tables)} tables")
 
-    confidence = selected_doc.get('confidence') or 0
-
     # デバッグ: メタデータの状態を確認
     logger.info(f"metadata keys: {list(metadata.keys())}")
     logger.info(f"metadata size: {len(str(metadata))} bytes")
@@ -457,13 +454,11 @@ def pdf_review_ui():
         st.rerun()
 
     # 基本情報表示
-    col1, col2, col3 = st.columns([2, 1, 1])
+    col1, col2 = st.columns([2, 1])
     with col1:
         st.markdown(f"**ファイル名**: {file_name}")
     with col2:
         st.markdown(f"**文書タイプ**: {doc_type}")
-    with col3:
-        st.markdown(f"**信頼度**: {confidence:.3f}")
 
     # ドキュメント内容プレビュー
     summary = selected_doc.get('summary', '')
@@ -738,7 +733,6 @@ def pdf_review_ui():
 
                         # メタデータを更新
                         new_metadata = reprocessed_result['metadata']
-                        new_confidence = reprocessed_result['confidence']
 
                         # データベースに保存
                         success = db_client.record_correction(
@@ -760,12 +754,10 @@ def pdf_review_ui():
                                 with col_before:
                                     st.markdown("**補正前**")
                                     st.metric("文字数", len(extracted_text))
-                                    st.metric("信頼度", f"{confidence:.2%}")
 
                                 with col_after:
                                     st.markdown("**補正後**")
                                     st.metric("文字数", len(corrected_text))
-                                    st.metric("信頼度", f"{new_confidence:.2%}")
 
                             # ページをリロード
                             import time

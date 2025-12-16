@@ -47,8 +47,7 @@ def reprocess_with_stageC(
         stage1_result = {
             "doc_type": metadata.get('doc_type', 'other'),
             "summary": metadata.get('summary', ''),
-            "relevant_date": metadata.get('relevant_date'),
-            "confidence": metadata.get('stage1_confidence', 0.0)
+            "relevant_date": metadata.get('relevant_date')
         }
 
         # Stage 2 Extractorを初期化
@@ -64,7 +63,7 @@ def reprocess_with_stageC(
                 workspace=workspace
             )
 
-        logger.info(f"[Stage 2 再実行] 完了: 信頼度={stage2_result.get('extraction_confidence', 0):.2f}")
+        logger.info(f"[Stage 2 再実行] 完了")
 
         # メタデータを更新
         new_metadata = {
@@ -95,12 +94,10 @@ def reprocess_with_stageC(
 
                 with col_before:
                     st.markdown("**補正前**")
-                    st.metric("信頼度", f"{metadata.get('extraction_confidence', 0):.2%}")
                     st.metric("メタデータフィールド数", len(metadata.get('metadata', {})))
 
                 with col_after:
                     st.markdown("**補正後**")
-                    st.metric("信頼度", f"{stage2_result.get('extraction_confidence', 0):.2%}")
                     st.metric("メタデータフィールド数", len(new_metadata.get('metadata', {})))
 
             return True

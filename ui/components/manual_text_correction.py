@@ -101,13 +101,10 @@ def render_manual_text_correction(
         """)
 
     # 現在の抽出状況
-    col_info1, col_info2, col_info3 = st.columns(3)
+    col_info1, col_info2 = st.columns(2)
     with col_info1:
         st.metric("元の文字数", len(extracted_text))
     with col_info2:
-        stage1_confidence = metadata.get('stage1_confidence', 0)
-        st.metric("Stage 1 信頼度", f"{stage1_confidence:.2%}")
-    with col_info3:
         st.metric("ファイル名", file_name[:20] + "..." if len(file_name) > 20 else file_name)
 
     # Stage 1の情報を表示
@@ -115,8 +112,7 @@ def render_manual_text_correction(
         st.json({
             "doc_type": doc_type,
             "summary": metadata.get('summary', '')[:200] + "...",
-            "relevant_date": metadata.get('relevant_date'),
-            "confidence": metadata.get('stage1_confidence', 0)
+            "relevant_date": metadata.get('relevant_date')
         })
 
     st.markdown("---")
@@ -274,8 +270,7 @@ def execute_stage2_reprocessing(
     stage1_result = {
         "doc_type": metadata.get('doc_type', 'other'),
         "summary": metadata.get('summary', ''),
-        "relevant_date": metadata.get('relevant_date'),
-        "confidence": metadata.get('stage1_confidence', 0.0)
+        "relevant_date": metadata.get('relevant_date')
     }
 
     # Stage 2 Extractorを初期化
@@ -290,7 +285,7 @@ def execute_stage2_reprocessing(
         workspace=workspace
     )
 
-    logger.info(f"[Stage 2 再実行] 完了: 信頼度={stage2_result.get('extraction_confidence', 0):.2f}")
+    logger.info(f"[Stage 2 再実行] 完了")
 
     # メタデータを更新
     new_metadata = {
@@ -305,6 +300,5 @@ def execute_stage2_reprocessing(
         'summary': stage2_result.get('summary'),
         'document_date': stage2_result.get('document_date'),
         'tags': stage2_result.get('tags', []),
-        'metadata': new_metadata,
-        'confidence': stage2_result.get('extraction_confidence', 0.0)
+        'metadata': new_metadata
     }
