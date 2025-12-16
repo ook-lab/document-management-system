@@ -24,9 +24,11 @@
 **reprocess_classroom_documents_v2.py の現状:**
 
 ```
-✅ Stage A (Gemini分類) - 実装済み
-✅ Stage C (Claude詳細抽出) - 実装済み
-❌ Stage B (テキスト抽出) - 完全に欠落
+⚠️ 処理順序が間違っている（現状: Stage A → Stage C、正: Pre-processing → Stage B → Stage C → Stage A）
+❌ Pre-processing (ファイルダウンロード) - 部分的に実装
+❌ Stage B (テキスト抽出・Vision処理) - 完全に欠落
+⚠️ Stage C (構造化) - 実装済みだが順序が間違っている
+⚠️ Stage A (統合・要約) - 実装済みだが順序が間違っている
 ❌ チャンク化処理 - 完全に欠落
 ```
 
@@ -86,19 +88,21 @@ search_index:
 │ Python: process_queued_documents.py (新名称)                │
 │                                                              │
 │ ┌─ source_type: 'classroom' (添付ファイルあり) ────────┐   │
-│ │ 1. Stage B: Drive URL → ダウンロード → テキスト抽出 │   │
-│ │ 2. Stage A: Gemini分類 (テキスト全体)               │   │
-│ │ 3. Stage C: Claude詳細抽出                           │   │
-│ │ 4. チャンク化: subject + post_text + attachment_text │   │
-│ │ 5. Supabaseに保存 (attachment_text + search_index)  │   │
+│ │ 1. Pre-processing: Drive URL → ダウンロード          │   │
+│ │ 2. Stage B: テキスト抽出 (Vision処理)               │   │
+│ │ 3. Stage C: Claude構造化 (メタデータ抽出)           │   │
+│ │ 4. Stage A: Gemini統合・要約 (タグ付け・日付)       │   │
+│ │ 5. チャンク化: subject + post_text + attachment_text │   │
+│ │ 6. Supabaseに保存 (attachment_text + search_index)  │   │
 │ └──────────────────────────────────────────────────────┘   │
 │                                                              │
 │ ┌─ source_type: 'classroom_text' (テキストのみ) ───────┐   │
-│ │ 1. (Stage B スキップ - テキストは既にDBにある)       │   │
-│ │ 2. Stage A: Gemini分類 (subject + post_text)        │   │
-│ │ 3. Stage C: Claude詳細抽出                           │   │
-│ │ 4. チャンク化: subject + post_text                   │   │
-│ │ 5. Supabaseに保存 (search_index)                     │   │
+│ │ 1. Pre-processing: スキップ (テキストは既にDBにある) │   │
+│ │ 2. Stage B: スキップ (ファイルなし)                  │   │
+│ │ 3. Stage C: Claude構造化 (subject + post_text)      │   │
+│ │ 4. Stage A: Gemini統合・要約 (タグ付け・日付)       │   │
+│ │ 5. チャンク化: subject + post_text                   │   │
+│ │ 6. Supabaseに保存 (search_index)                     │   │
 │ └──────────────────────────────────────────────────────┘   │
 └─────────────────────────────────────────────────────────────┘
                         ↓
@@ -197,29 +201,27 @@ search_index:
 - `display_post_text`: 投稿本文
 
 **処理**:
-1. **Stage B (新規実装が必要)**:
+1. **Pre-processing (ファイルダウンロード)**:
    ```python
    # source_urlからファイルダウンロード
    local_path = drive.download_file(file_id, file_name, temp_dir)
+   ```
 
+2. **Stage B (Vision処理・新規実装が必要)**:
+   ```python
    # テキスト抽出 (two_stage_ingestion.py の _extract_text を流用)
+   # ライブラリ抽出 + Vision処理（必要時のみ）
    extraction_result = pdf_processor.extract_text(local_path)
    attachment_text = extraction_result['content']
    ```
 
-2. **Stage A**:
+3. **Stage C (構造化)**:
    ```python
-   # display_subject + display_post_text + attachment_text を結合して分類
-   text_for_stage_a = f"【件名】\n{display_subject}\n\n【本文】\n{display_post_text}\n\n【添付ファイル】\n{attachment_text}"
-   stage_a_result = await stage_a_classifier.classify(text_content=text_for_stage_a)
-   ```
-
-3. **Stage C**:
-   ```python
+   # 統合テキストを使って構造化データを抽出
    # 個別パラメータとして渡す（変数肥大化を避ける）
    stage_c_result = stage_c_extractor.extract_metadata(
        file_name=file_name,
-       stage1_result=stage_a_result,
+       stage1_result={'doc_type': doc_type, 'workspace': workspace},
        workspace=workspace,
        attachment_text=attachment_text,
        display_subject=display_subject,
@@ -227,7 +229,18 @@ search_index:
    )
    ```
 
-4. **データベース更新**:
+4. **Stage A (統合・要約)**:
+   ```python
+   # Stage Cの構造化結果を活用して統合・要約
+   # display_subject + display_post_text + attachment_text を結合
+   text_for_stage_a = f"【件名】\n{display_subject}\n\n【本文】\n{display_post_text}\n\n【添付ファイル】\n{attachment_text}"
+   stage_a_result = await stage_a_classifier.classify(
+       text_content=text_for_stage_a,
+       structured_metadata=stage_c_result  # Stage Cの結果を渡す
+   )
+   ```
+
+5. **データベース更新**:
    ```python
    update_data = {
        'attachment_text': attachment_text,  # ← これを保存
@@ -238,7 +251,7 @@ search_index:
    db.update('source_documents', document_id, update_data)
    ```
 
-5. **チャンク化 (新規実装が必要)**:
+6. **チャンク化 (新規実装が必要)**:
    ```python
    # two_stage_ingestion.py の Line 454-580 のロジックを移植
    chunks = create_metadata_chunks({
@@ -269,26 +282,32 @@ search_index:
 - `display_post_text`: 投稿本文
 
 **処理**:
-1. **Stage B**: スキップ（テキストは既にDBにある）
+1. **Pre-processing**: スキップ（テキストは既にDBにある）
 
-2. **Stage A**:
-   ```python
-   text_for_stage_a = f"【件名】\n{display_subject}\n\n【本文】\n{display_post_text}"
-   stage_a_result = await stage_a_classifier.classify(text_content=text_for_stage_a)
-   ```
+2. **Stage B**: スキップ（ファイルなし）
 
-3. **Stage C**:
+3. **Stage C (構造化)**:
    ```python
    stage_c_result = stage_c_extractor.extract_metadata(
        file_name='text_only',
-       stage1_result=stage_a_result,
+       stage1_result={'doc_type': doc_type, 'workspace': workspace},
        workspace=workspace,
        display_subject=display_subject,
        display_post_text=display_post_text
    )
    ```
 
-4. **チャンク化 (新規実装が必要)**:
+4. **Stage A (統合・要約)**:
+   ```python
+   # Stage Cの構造化結果を活用
+   text_for_stage_a = f"【件名】\n{display_subject}\n\n【本文】\n{display_post_text}"
+   stage_a_result = await stage_a_classifier.classify(
+       text_content=text_for_stage_a,
+       structured_metadata=stage_c_result  # Stage Cの結果を渡す
+   )
+   ```
+
+5. **チャンク化 (新規実装が必要)**:
    ```python
    chunks = create_metadata_chunks({
        'display_subject': display_subject,
@@ -399,10 +418,11 @@ async def _reprocess_classroom_document_with_attachment(
     添付ファイル付きClassroomドキュメントを再処理
 
     処理フロー:
-    1. Stage B: Drive URLからファイルダウンロード → テキスト抽出
-    2. Stage A: Gemini分類
-    3. Stage C: Claude詳細抽出
-    4. チャンク化
+    1. Pre-processing: Drive URLからファイルダウンロード
+    2. Stage B: テキスト抽出 (Vision処理)
+    3. Stage C: Claude構造化 (メタデータ抽出)
+    4. Stage A: Gemini統合・要約 (タグ付け・日付)
+    5. チャンク化
     """
 
     file_name = doc.get('file_name', 'unknown')
@@ -420,9 +440,9 @@ async def _reprocess_classroom_document_with_attachment(
 
     try:
         # ============================================
-        # Stage B: ファイルダウンロード + テキスト抽出
+        # Pre-processing: ファイルダウンロード
         # ============================================
-        logger.info("[Stage B] ファイルダウンロード開始...")
+        logger.info("[Pre-processing] ファイルダウンロード開始...")
 
         # ダウンロード
         temp_dir = Path("./temp")
@@ -432,7 +452,14 @@ async def _reprocess_classroom_document_with_attachment(
         # MIME type推測
         mime_type = self._guess_mime_type(file_name)
 
-        # テキスト抽出
+        logger.info(f"[Pre-processing] 完了: ファイルダウンロード完了")
+
+        # ============================================
+        # Stage B: テキスト抽出 (Vision処理)
+        # ============================================
+        logger.info("[Stage B] テキスト抽出開始...")
+
+        # テキスト抽出 (ライブラリ + Vision)
         extraction_result = self.pipeline._extract_text(local_path, mime_type)
 
         if not extraction_result["success"]:
@@ -444,7 +471,7 @@ async def _reprocess_classroom_document_with_attachment(
         logger.info(f"[Stage B] 完了: {len(attachment_text)}文字抽出")
 
         # ============================================
-        # Stage A: Gemini分類
+        # 統合テキスト準備
         # ============================================
         # 全てのテキストソースを結合
         text_parts = []
@@ -457,38 +484,45 @@ async def _reprocess_classroom_document_with_attachment(
 
         combined_text = '\n\n'.join(text_parts)
 
-        logger.info("[Stage A] Gemini分類開始...")
-        stage_a_result = await self.pipeline.stageA_classifier.classify(
-            file_path=Path(local_path),
-            doc_types_yaml=self.yaml_string,
-            mime_type=mime_type,
-            text_content=combined_text
-        )
-
-        summary = stage_a_result.get('summary', '')
-        relevant_date = stage_a_result.get('relevant_date')
-
-        logger.info(f"[Stage A] 完了")
-
         # ============================================
-        # Stage C: Claude詳細抽出
+        # Stage C: Claude構造化 (メタデータ抽出)
         # ============================================
-        logger.info("[Stage C] Claude詳細抽出開始...")
+        logger.info("[Stage C] Claude構造化開始...")
         stage_c_result = self.pipeline.stageC_extractor.extract_metadata(
             file_name=file_name,
-            stage1_result=stage_a_result,
+            stage1_result={'doc_type': doc.get('doc_type', 'unknown'), 'workspace': doc.get('workspace', 'unknown')},
             workspace=doc.get('workspace', 'unknown'),
             attachment_text=attachment_text if attachment_text else None,
             display_subject=display_subject if display_subject else None,
             display_post_text=display_post_text if display_post_text else None,
         )
 
-        summary = stage_c_result.get('summary', summary)
         document_date = stage_c_result.get('document_date')
         tags = stage_c_result.get('tags', [])
         metadata = stage_c_result.get('metadata', {})
 
         logger.info(f"[Stage C] 完了")
+
+        # ============================================
+        # Stage A: Gemini統合・要約
+        # ============================================
+        logger.info("[Stage A] Gemini統合・要約開始...")
+        stage_a_result = await self.pipeline.stageA_classifier.classify(
+            file_path=Path(local_path),
+            doc_types_yaml=self.yaml_string,
+            mime_type=mime_type,
+            text_content=combined_text,
+            structured_metadata=stage_c_result  # Stage Cの結果を渡す
+        )
+
+        summary = stage_a_result.get('summary', '')
+        relevant_date = stage_a_result.get('relevant_date')
+
+        # Stage Cの要約がある場合は優先
+        if stage_c_result.get('summary'):
+            summary = stage_c_result.get('summary', summary)
+
+        logger.info(f"[Stage A] 完了")
 
         # ============================================
         # データベース更新
@@ -659,12 +693,14 @@ except Exception as e:
 **必須ログ**:
 
 ```python
-logger.info(f"[Stage B] 開始: {file_name}")
+logger.info(f"[Pre-processing] 開始: {file_name}")
+logger.info(f"[Pre-processing] 完了: ファイルダウンロード完了")
+logger.info(f"[Stage B] 開始")
 logger.info(f"[Stage B] 完了: {len(attachment_text)}文字抽出")
+logger.info(f"[Stage C] 開始")
+logger.info(f"[Stage C] 完了: metadata_fields={len(metadata)}")
 logger.info(f"[Stage A] 開始")
 logger.info(f"[Stage A] 完了: summary={summary[:50]}...")
-logger.info(f"[Stage C] 開始")
-logger.info(f"[Stage C] 完了: doc_type={doc_type}")
 logger.info(f"[チャンク化] 開始")
 logger.info(f"[チャンク化] 完了: {chunk_count}個のチャンク作成")
 logger.success(f"✅ 処理成功: {file_name}")
@@ -857,6 +893,7 @@ LIMIT 10;
 **ファイル**: `B_ingestion/two_stage_ingestion.py`
 **行**: 186-320 (`process_file`メソッド)
 **内容**: 完全なパイプライン実装例
+**警告**: このファイルは現在 **Stage A → Stage C** の順序で実行されており、これは**明確なルール違反**です。正しい順序は **Pre-processing → Stage B → Stage C → Stage A** です。
 
 ---
 

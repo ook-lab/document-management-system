@@ -245,98 +245,126 @@ class TwoStageIngestionPipeline:
             base_metadata = extraction_result.get("metadata", {})
 
             # ============================================
-            # Stage 1: Gemini分類（テキストを渡す）
+            # Stage C: Claude構造化（メタデータ抽出）
             # ============================================
-            logger.info("[Stage 1] Gemini分類開始...")
-            stageA_result = await self.stageA_classifier.classify(
-                file_path=Path(local_path),
-                doc_types_yaml=self.yaml_string,
-                mime_type=mime_type,
-                text_content=extracted_text
-            )
+            stagec_result = None
+            document_date = None
+            event_dates = []
+            tags = []
+            tables = []
+            stageC_metadata = {}
+            stagec_model = None
+            processing_stage = 'stagec_not_run'
 
-            # Stage1はdoc_typeとworkspaceを返さない（入力元で決定されるため）
-            # workspaceは引数で渡された値をそのまま使用
-            summary = stageA_result.get('summary', '')
-            relevant_date = stageA_result.get('relevant_date')
-            document_date = None  # Stage Cで設定される可能性あり（初期化必須）
+            # stage1_resultにはdoc_typeとworkspaceのみを渡す（Stage Aの結果ではない）
+            stage1_result = {'doc_type': doc_type, 'workspace': workspace}
 
-            logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
-
-            # ============================================
-            # テキスト抽出が失敗した場合でもsummaryを使用
-            # ============================================
-            if not extraction_result["success"]:
-                logger.warning("[テキスト抽出] 失敗 → summaryをfull_textとして使用")
-                extracted_text = summary
-
-            # ============================================
-            # Stage C判定・実行（テキスト抽出失敗でも実行）
-            # ============================================
-            if self._should_run_stageC(stageA_result, extracted_text):
-                logger.info("[Stage C] Claude詳細抽出開始...")
+            # _should_run_stageC の判定は維持（現状のロジックを保持）
+            if self._should_run_stageC(stage1_result, extracted_text):
+                logger.info("[Stage C] Claude構造化開始...")
                 try:
-                    stageC_result = self.stageC_extractor.extract_metadata(
+                    stagec_result = self.stageC_extractor.extract_metadata(
                         file_name=file_name,
-                        stage1_result=stageA_result,  # StageCExtractorは stage1_result を期待
-                        workspace=workspace,  # 引数で渡された元のworkspaceを使用
-                        reference_date=reference_date,  # ✅ Classroom投稿の場合は投稿日を渡す
-                        # 添付ファイルから抽出したテキストを渡す
+                        stage1_result=stage1_result,  # doc_type と workspace のみ
+                        workspace=workspace,
+                        reference_date=reference_date,
                         attachment_text=extracted_text if extracted_text else None,
                     )
 
-                    # Stage Cの結果を反映（doc_typeは使わない）
-                    summary = stageC_result.get('summary', summary)
-                    document_date = stageC_result.get('document_date')
-                    event_dates = stageC_result.get('event_dates', [])  # イベント日付配列を取得
-                    tags = stageC_result.get('tags', [])
-                    tables = stageC_result.get('tables', [])  # 表データを取得
-                    stageC_metadata = stageC_result.get('metadata', {})
-
-                    # metadataをマージ（Stage C優先）
-                    metadata = {
-                        **base_metadata,
-                        **stageC_metadata,
-                        'stagec_attempted': True  # 新しい命名規則
-                    }
-                    if tags:
-                        metadata['tags'] = tags
-                    if document_date:
-                        metadata['document_date'] = document_date
-                    if event_dates:
-                        metadata['event_dates'] = event_dates  # イベント日付配列をmetadataに追加
-                    if tables:
-                        metadata['tables'] = tables  # 表データをmetadataに追加
-
-                    processing_stage = 'stagea_and_stagec'  # 新しい命名規則
-                    stagec_model = ModelTier.STAGEC_EXTRACTOR["model"]  # 設定ファイルから参照
+                    # Stage Cの結果を取得
+                    document_date = stagec_result.get('document_date')
+                    event_dates = stagec_result.get('event_dates', [])
+                    tags = stagec_result.get('tags', [])
+                    tables = stagec_result.get('tables', [])
+                    stageC_metadata = stagec_result.get('metadata', {})
+                    stagec_model = ModelTier.STAGEC_EXTRACTOR["model"]
 
                     logger.info(f"[Stage C] 完了: metadata_fields={len(stageC_metadata)}")
 
                 except Exception as e:
                     error_msg = str(e)
                     error_traceback = traceback.format_exc()
-                    # KeyError回避: エラーメッセージを安全に文字列化
                     safe_error_msg = error_msg.replace('{', '{{').replace('}', '}}')
                     safe_traceback = error_traceback.replace('{', '{{').replace('}', '}}')
                     logger.error(f"[Stage C] 処理エラー: {safe_error_msg}\n{safe_traceback}")
 
-                    # エラー情報をmetadataに記録
-                    metadata = {
-                        **base_metadata,
-                        'stagec_attempted': True,
+                    # エラー時はNoneで継続
+                    stagec_result = None
+                    stageC_metadata = {
                         'stagec_error': str(e),
                         'stagec_error_type': type(e).__name__,
                         'stagec_error_timestamp': datetime.now().isoformat()
                     }
 
-                    processing_stage = 'stagec_failed'
-                    stagec_model = None
-            else:
-                # Stage Aのみで完結
+            # ============================================
+            # Stage A: Gemini統合・要約（Stage Cの結果を活用）
+            # ============================================
+            summary = ''
+            relevant_date = None
+
+            logger.info("[Stage A] Gemini統合・要約開始...")
+            try:
+                stageA_result = await self.stageA_classifier.classify(
+                    file_path=Path(local_path),
+                    doc_types_yaml=self.yaml_string,
+                    mime_type=mime_type,
+                    text_content=extracted_text,
+                    stagec_result=stagec_result  # Stage Cの結果を渡す（Noneの場合は従来の動作）
+                )
+
+                summary = stageA_result.get('summary', '')
+                relevant_date = stageA_result.get('relevant_date')
+
+                logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
+
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[Stage A] 処理エラー: {error_msg}")
+
+                # Stage Cのsummaryをフォールバックとして使用
+                if stagec_result:
+                    summary = stagec_result.get('summary', '')
+                    relevant_date = stagec_result.get('document_date')
+                    logger.info("[Stage A] 失敗 → Stage Cのsummaryを使用")
+                else:
+                    # 両方失敗した場合は空文字
+                    summary = ''
+                    relevant_date = None
+
+            # ============================================
+            # テキスト抽出が失敗した場合でもsummaryを使用
+            # ============================================
+            if not extraction_result["success"] and summary:
+                logger.warning("[テキスト抽出] 失敗 → summaryをfull_textとして使用")
+                extracted_text = summary
+
+            # ============================================
+            # 結果の統合
+            # ============================================
+            # metadataをマージ（Stage C優先）
+            metadata = {
+                **base_metadata,
+                **stageC_metadata,
+                'stagec_attempted': bool(stagec_result or stageC_metadata)
+            }
+            if tags:
+                metadata['tags'] = tags
+            if document_date:
+                metadata['document_date'] = document_date
+            if event_dates:
+                metadata['event_dates'] = event_dates
+            if tables:
+                metadata['tables'] = tables
+
+            # processing_stageの決定
+            if stagec_result and summary:
+                processing_stage = 'stagea_and_stagec'
+            elif stagec_result:
+                processing_stage = 'stagec_only'
+            elif summary:
                 processing_stage = 'stagea_only'
-                metadata = {**base_metadata, 'stagec_attempted': False}
-                stagec_model = None
+            else:
+                processing_stage = 'both_failed'
 
             # ============================================
             # コンテンツハッシュ生成

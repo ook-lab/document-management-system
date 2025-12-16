@@ -54,22 +54,23 @@ class StageAClassifier:
 
         return "\n".join(doc_types_text)
 
-    def generate_classification_prompt(self, doc_types_yaml: str = None) -> str:
+    def generate_classification_prompt(self, doc_types_yaml: str = None, stagec_result: Optional[Dict] = None) -> str:
         """
         分類プロンプトを生成（単一Doc Type版: ikuya_school統合）
 
         Args:
             doc_types_yaml: 後方互換性のため残しているが、使用しない
+            stagec_result: Stage Cの構造化結果（オプション）
 
         Returns:
             分類用プロンプト
         """
-        return f"""あなたは文書分析の専門家です。この文書を分析し、以下のJSON形式で回答してください:
+        base_prompt = """あなたは文書分析の専門家です。この文書を分析し、以下のJSON形式で回答してください:
 
-{{
+{
   "relevant_date": "重要な日付 (YYYY-MM-DD形式、なければnull)",
   "summary": "文書の要約 (最大100文字程度)"
-}}
+}
 
 **重要な指示:**
 1. relevant_date: 文書内で言及されている重要な日付（提出期限、イベント日など）を抽出してください
@@ -79,18 +80,66 @@ class StageAClassifier:
 **重要: 以下のフィールドは判定しないでください**
 - doc_type: システムが投入時に決定済み（AIで推測不要）
 - workspace: システムが投入時に決定済み（AIで推測不要）
+"""
 
-必ずJSON形式のみで回答してください。"""
+        # Stage Cの構造化データがある場合、その情報を活用
+        if stagec_result:
+            try:
+                # stagec_resultの検証
+                if not isinstance(stagec_result, dict):
+                    # 不正な形式の場合は無視
+                    return base_prompt + "\n必ずJSON形式のみで回答してください。"
+
+                # Stage Cから得られた情報を追加コンテキストとして提供
+                context_parts = []
+
+                if stagec_result.get('document_date'):
+                    context_parts.append(f"- 文書日付: {stagec_result['document_date']}")
+
+                if stagec_result.get('event_dates'):
+                    event_dates_str = ', '.join(stagec_result['event_dates'])
+                    context_parts.append(f"- イベント日付: {event_dates_str}")
+
+                if stagec_result.get('tags'):
+                    tags_str = ', '.join(stagec_result['tags'])
+                    context_parts.append(f"- 関連タグ: {tags_str}")
+
+                if stagec_result.get('summary'):
+                    context_parts.append(f"- Stage C要約: {stagec_result['summary']}")
+
+                if context_parts:
+                    additional_context = "\n**Stage Cで抽出された構造化情報（参考）:**\n" + "\n".join(context_parts)
+                    additional_context += "\n\nこれらの情報を参考にしながら、より精度の高い要約を生成してください。"
+                    base_prompt += additional_context
+
+            except Exception:
+                # エラーが発生した場合は無視して基本プロンプトを使用
+                pass
+
+        return base_prompt + "\n\n必ずJSON形式のみで回答してください。"
 
     async def classify(
         self,
         file_path: Path,
         doc_types_yaml: str,
         mime_type: Optional[str] = None,
-        text_content: Optional[str] = None
+        text_content: Optional[str] = None,
+        stagec_result: Optional[Dict] = None
     ) -> Dict[str, Any]:
-        """ファイルを分類（PDF以外はテキストを埋め込み）"""
-        prompt = self.generate_classification_prompt(doc_types_yaml)
+        """
+        ファイルを分類（PDF以外はテキストを埋め込み）
+
+        Args:
+            file_path: ファイルパス
+            doc_types_yaml: 後方互換性のため残しているが、使用しない
+            mime_type: MIMEタイプ
+            text_content: テキストコンテンツ
+            stagec_result: Stage Cの構造化結果（オプション）
+
+        Returns:
+            分類結果
+        """
+        prompt = self.generate_classification_prompt(doc_types_yaml, stagec_result)
 
         # PDF以外の場合（Excel、Word等）はテキストをプロンプトに埋め込む
         if mime_type and mime_type != "application/pdf" and text_content:

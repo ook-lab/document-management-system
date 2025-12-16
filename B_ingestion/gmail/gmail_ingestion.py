@@ -607,19 +607,45 @@ class GmailIngestionPipeline:
 {vision_result.get('extracted_text', '')}
 """
 
-                # Stage 2でメタデータ抽出、タグ付け、構造化
-                stage2_result = self.stageC_extractor.extract_metadata(
+                # Stage C: 構造化（メタデータ抽出、タグ付け）
+                stagec_result = self.stageC_extractor.extract_metadata(
                     full_text=full_text_for_stage2,
                     file_name=f"{subject}_{message_id[:8]}.html",
                     stage1_result=stage1_result,
                     workspace=workspace,
-                    tier="email_stage2_extraction"  # メール専用のGemini 2.5 Flash使用
+                    tier="email_stageC_extraction"  # メール専用のClaude使用
                 )
 
-                logger.info(f"  Stage 2処理完了: doc_type={stage2_result.get('doc_type')}, tags={stage2_result.get('tags', [])}")
+                logger.info(f"  Stage C処理完了: doc_type={stagec_result.get('doc_type')}, tags={stagec_result.get('tags', [])}")
+
+                # Stage A: 統合・要約（Stage Cの結果を活用）
+                logger.info(f"  Stage A処理開始（統合・要約）")
+                try:
+                    stageA_result = await self.ingestion_pipeline.stageA_classifier.classify(
+                        file_path=Path(f"{subject}_{message_id[:8]}.html"),
+                        doc_types_yaml="",  # 不使用
+                        mime_type="text/html",
+                        text_content=full_text_for_stage2,
+                        stagec_result=stagec_result  # Stage Cの結果を渡す
+                    )
+
+                    summary = stageA_result.get('summary', '')
+                    relevant_date = stageA_result.get('relevant_date')
+
+                    logger.info(f"  Stage A処理完了: summary={summary[:50] if summary else ''}...")
+
+                except Exception as e:
+                    logger.error(f"  Stage A処理エラー: {e}")
+                    # Stage Cのsummaryをフォールバックとして使用
+                    summary = stagec_result.get('summary', vision_result.get('summary', ''))
+                    relevant_date = stagec_result.get('document_date')
+                    logger.info(f"  Stage A失敗 → Stage Cのsummaryを使用")
+
+                # 下位互換性のため stage2_result を残す
+                stage2_result = stagec_result
 
                 # メール内容をSupabaseに直接保存
-                # メールテキストを整形（Stage 2の結果を使用）
+                # メールテキストを整形（Stage A の要約を使用）
                 email_text_content = f"""メール情報:
 送信者: {email_metadata['from']}
 受信者: {email_metadata['to']}
@@ -627,7 +653,7 @@ class GmailIngestionPipeline:
 日時: {email_metadata['date']}
 
 要約:
-{stage2_result.get('summary', vision_result.get('summary', ''))}
+{summary}
 
 本文:
 {vision_result.get('extracted_text', '')}
@@ -636,12 +662,12 @@ class GmailIngestionPipeline:
 {chr(10).join('- ' + info for info in vision_result.get('key_information', []))}
 """
 
-                # Supabaseに保存（workspaceベースのスキーマ + Stage 2結果）
+                # Supabaseに保存（workspaceベースのスキーマ + Stage C結果 + Stage A要約）
                 import hashlib
                 content_hash = hashlib.sha256(email_text_content.encode('utf-8')).hexdigest()
 
-                # Stage 2のメタデータをマージ
-                stage2_metadata = stage2_result.get('metadata', {})
+                # Stage Cのメタデータをマージ
+                stagec_metadata = stagec_result.get('metadata', {})
                 merged_metadata = {
                     'from': email_metadata['from'],
                     'to': email_metadata['to'],
@@ -649,11 +675,12 @@ class GmailIngestionPipeline:
                     'date': email_metadata['date'],
                     'gmail_label': self.gmail_label,
                     'workspace': workspace,
-                    'summary': stage2_result.get('summary', vision_result.get('summary', '')),
+                    'summary': summary,  # Stage Aの統合要約を使用
+                    'relevant_date': relevant_date,  # Stage Aの日付を追加
                     'key_information': vision_result.get('key_information', []),
                     'has_images': vision_result.get('has_images', False),
                     'links': vision_result.get('links', []),
-                    **stage2_metadata  # Stage 2の構造化メタデータを追加
+                    **stagec_metadata  # Stage Cの構造化メタデータを追加
                 }
 
                 email_doc = {

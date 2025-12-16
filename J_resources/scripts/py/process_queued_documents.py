@@ -1,35 +1,42 @@
 """
-Google Classroom ドキュメントの再処理スクリプト v2
+キュー処理型ドキュメント再処理スクリプト
 
-処理状態管理テーブル (document_reprocessing_queue) を使用した改良版。
+処理状態管理テーブル (document_reprocessing_queue) を使用した統合処理スクリプト。
 重複処理を防ぎ、処理進捗を追跡し、エラー時のリトライを可能にします。
 
 処理内容:
 1. すべてのワークスペース（デフォルト）または指定されたワークスペースのドキュメントをキューに登録
 2. キューから順次タスクを取得して処理
-3. 既存の2段階パイプライン（Gemini分類 + Claude抽出）で処理
-4. attachment_text、構造化metadataを生成
+3. 完全なパイプライン（Pre-processing → Stage B → Stage C → Stage A → Chunking）で処理
+4. attachment_text、構造化metadata、search_indexを生成
 5. 処理状態をデータベースで管理（pending → processing → completed/failed）
+
+対応するソースタイプ:
+- classroom: Google Classroom添付ファイル付き（Drive URL経由）
+- classroom_text: Google Classroomテキストのみ投稿
+- text_only: 一般的なテキストドキュメント
+- drive: Google Driveファイル
+- email_attachment: メール添付ファイル
 
 使い方:
     # 全ワークスペースを処理（デフォルト）
-    python reprocess_classroom_documents_v2.py --limit=100
+    python process_queued_documents.py --limit=100
 
     # ドライラン（確認のみ）
-    python reprocess_classroom_documents_v2.py --dry-run
+    python process_queued_documents.py --dry-run
 
     # 特定のワークスペースのみ処理
-    python reprocess_classroom_documents_v2.py --workspace=ema_classroom --limit=20
-    python reprocess_classroom_documents_v2.py --workspace=ikuya_classroom --limit=20
+    python process_queued_documents.py --workspace=ema_classroom --limit=20
+    python process_queued_documents.py --workspace=ikuya_classroom --limit=20
 
     # キューに追加のみ（処理は実行しない）
-    python reprocess_classroom_documents_v2.py --populate-only --limit=50
+    python process_queued_documents.py --populate-only --limit=50
 
     # キューから処理実行
-    python reprocess_classroom_documents_v2.py --process-queue --limit=10
+    python process_queued_documents.py --process-queue --limit=10
 
-    # ワークスペースを保持しない（Stage1 AIに判定させる）
-    python reprocess_classroom_documents_v2.py --no-preserve-workspace
+    # ワークスペースを保持しない（AI判定に任せる）
+    python process_queued_documents.py --no-preserve-workspace
 """
 
 import asyncio
@@ -45,6 +52,9 @@ from B_ingestion.two_stage_ingestion import TwoStageIngestionPipeline
 
 class ClassroomReprocessorV2:
     """Google Classroomドキュメントの再処理（処理状態管理テーブル対応版）"""
+
+    # 動画ファイル拡張子（トークン消費が多いためスキップ対象）
+    VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpeg', '.mpg']
 
     def __init__(self, worker_id: str = "reprocessor_v2"):
         self.db = DatabaseClient()
@@ -240,6 +250,18 @@ class ClassroomReprocessorV2:
             source_type = doc.get('source_type', '')
 
             # ============================================
+            # Classroom添付ファイル付きドキュメント（classroom）の処理
+            # ============================================
+            if source_type == 'classroom':
+                logger.info(f"📎 Classroom添付ファイル付きドキュメントを検出（{source_type}）")
+                return await self._reprocess_classroom_document_with_attachment(
+                    queue_id=queue_id,
+                    document_id=document_id,
+                    doc=doc,
+                    preserve_workspace=preserve_workspace
+                )
+
+            # ============================================
             # テキストのみドキュメント（classroom_text, text_only）の処理
             # ============================================
             if source_type in ['classroom_text', 'text_only']:
@@ -264,6 +286,15 @@ class ClassroomReprocessorV2:
                 return False
 
             logger.info(f"ファイルID: {file_id}")
+
+            # 動画ファイルはスキップ（トークン消費が多いため）
+            file_ext = '.' + file_name.lower().split('.')[-1] if '.' in file_name else ''
+
+            if file_ext in self.VIDEO_EXTENSIONS:
+                logger.info(f"🎬 動画ファイルを検出: {file_name}")
+                logger.info(f"  → トークン消費削減のためスキップします")
+                self._mark_task_completed(queue_id, success=True)
+                return True
 
             # ファイルメタデータを構築
             file_meta = {
@@ -417,82 +448,162 @@ class ClassroomReprocessorV2:
             # workspaceを決定
             workspace_to_use = doc.get('workspace', 'unknown') if preserve_workspace else 'unknown'
 
-            # ============================================
-            # Stage 1: Gemini分類
-            # ============================================
-            logger.info("[Stage 1] Gemini分類開始...")
-            # Stage 1用にテキストを結合（Stage 1はまだ単一パラメータのみ対応）
-            text_for_stage1_parts = []
+            # テキストを結合
+            text_parts = []
             if display_subject:
-                text_for_stage1_parts.append(f"【件名】\n{display_subject}")
+                text_parts.append(f"【件名】\n{display_subject}")
             if display_post_text:
-                text_for_stage1_parts.append(f"【本文】\n{display_post_text}")
+                text_parts.append(f"【本文】\n{display_post_text}")
             if attachment_text:
-                text_for_stage1_parts.append(f"【添付ファイル】\n{attachment_text}")
-            text_for_stage1 = '\n\n'.join(text_for_stage1_parts)
-
-            # テキストのみドキュメントの場合、file_pathは不要
-            # mime_typeをtext/plainに設定し、text_contentを渡す
-            from pathlib import Path as PathLib
-            stage1_result = await stage1_classifier.classify(
-                file_path=PathLib("dummy"),  # ダミーパス（使用されない）
-                doc_types_yaml=yaml_string,
-                mime_type="text/plain",  # PDFではないことを示す
-                text_content=text_for_stage1
-            )
-
-            # Stage1はdoc_typeとworkspaceを返さない（入力元で決定されるため）
-            stage1_doc_type = doc.get('doc_type', 'unknown')  # 元のdoc_typeを保持
-            summary = stage1_result.get('summary', '')
-            relevant_date = stage1_result.get('relevant_date')
-
-            logger.info(f"[Stage 1] 完了: summary={summary[:50]}...")
+                text_parts.append(f"【添付ファイル】\n{attachment_text}")
+            combined_text = '\n\n'.join(text_parts)
 
             # ============================================
-            # Stage 2: Claude詳細抽出
+            # Stage C: Claude構造化（メタデータ抽出）
             # ============================================
-            logger.info("[Stage 2] Claude詳細抽出開始...")
-            stage2_result = stage2_extractor.extract_metadata(
+            logger.info("[Stage C] Claude構造化開始...")
+
+            # stage1_resultにはdoc_typeとworkspaceのみを渡す
+            stage1_result_for_stagec = {
+                'doc_type': doc.get('doc_type', 'unknown'),
+                'workspace': doc.get('workspace', 'unknown')
+            }
+
+            stagec_result = stage2_extractor.extract_metadata(
                 file_name=file_name,
-                stage1_result=stage1_result,
-                workspace=doc.get('workspace', 'unknown'),  # 元のworkspaceを使用
-                # 各ソースを個別に渡す
+                stage1_result=stage1_result_for_stagec,  # doc_typeとworkspaceのみ
+                workspace=doc.get('workspace', 'unknown'),
                 attachment_text=attachment_text if attachment_text else None,
                 display_subject=display_subject if display_subject else None,
                 display_post_text=display_post_text if display_post_text else None,
             )
 
-            # Stage 2の結果を反映
-            doc_type = stage2_result.get('doc_type', stage1_doc_type)
-            summary = stage2_result.get('summary', summary)
-            document_date = stage2_result.get('document_date')
-            tags = stage2_result.get('tags', [])
-            metadata = stage2_result.get('metadata', {})
+            # Stage Cの結果を取得
+            document_date = stagec_result.get('document_date')
+            tags = stagec_result.get('tags', [])
+            stagec_metadata = stagec_result.get('metadata', {})
 
-            logger.info(f"[Stage 2] 完了: doc_type={doc_type}")
+            logger.info(f"[Stage C] 完了: metadata_fields={len(stagec_metadata)}")
+
+            # ============================================
+            # Stage A: Gemini統合・要約（Stage Cの結果を活用）
+            # ============================================
+            logger.info("[Stage A] Gemini統合・要約開始...")
+
+            summary = ''
+            relevant_date = None
+
+            try:
+                from pathlib import Path as PathLib
+                stageA_result = await stage1_classifier.classify(
+                    file_path=PathLib("dummy"),  # ダミーパス（使用されない）
+                    doc_types_yaml=yaml_string,
+                    mime_type="text/plain",
+                    text_content=combined_text,
+                    stagec_result=stagec_result  # Stage Cの結果を渡す
+                )
+
+                summary = stageA_result.get('summary', '')
+                relevant_date = stageA_result.get('relevant_date')
+
+                logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
+
+            except Exception as e:
+                logger.error(f"[Stage A] 処理エラー: {e}")
+                # Stage Cのsummaryをフォールバックとして使用
+                summary = stagec_result.get('summary', '')
+                relevant_date = stagec_result.get('document_date')
+                logger.info("[Stage A] 失敗 → Stage Cのsummaryを使用")
+
+            # 結果の統合
+            doc_type = doc.get('doc_type', 'unknown')  # 元のdoc_typeを保持（変更しない）
+            metadata = stagec_metadata
+
+            logger.info(f"[処理完了] doc_type={doc_type}")
+
+            # ============================================
+            # チャンク化処理（新規追加）
+            # ============================================
+            logger.info("[チャンク化] 開始...")
+
+            # 既存チャンクを削除（再処理の場合）
+            try:
+                delete_result = self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
+                deleted_count = len(delete_result.data) if delete_result.data else 0
+                logger.info(f"  既存チャンク削除: {deleted_count}個")
+            except Exception as e:
+                logger.warning(f"  既存チャンク削除エラー（継続）: {e}")
+
+            # チャンクデータ準備
+            document_data = {
+                'file_name': file_name,
+                'summary': summary,
+                'document_date': document_date,
+                'tags': tags,
+                'display_subject': display_subject,
+                'display_post_text': display_post_text,
+                'attachment_text': attachment_text  # classroom_textの場合はNone
+            }
+
+            # メタデータチャンク生成
+            from A_common.processing.metadata_chunker import MetadataChunker
+            metadata_chunker = MetadataChunker()
+            metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
+
+            current_chunk_index = 0
+            for meta_chunk in metadata_chunks:
+                meta_text = meta_chunk.get('chunk_text', '')
+                meta_type = meta_chunk.get('chunk_type', 'metadata')
+                meta_weight = meta_chunk.get('search_weight', 1.0)
+
+                if not meta_text:
+                    continue
+
+                # Embedding生成
+                meta_embedding = self.pipeline.llm_client.generate_embedding(meta_text)
+
+                # search_indexに保存
+                meta_doc = {
+                    'document_id': document_id,
+                    'chunk_index': current_chunk_index,
+                    'chunk_content': meta_text,
+                    'chunk_size': len(meta_text),
+                    'chunk_type': meta_type,
+                    'embedding': meta_embedding,
+                    'search_weight': meta_weight
+                }
+
+                try:
+                    self.db.client.table('search_index').insert(meta_doc).execute()
+                    current_chunk_index += 1
+                except Exception as e:
+                    logger.error(f"  チャンク保存エラー: {e}")
+
+            logger.info(f"[チャンク化] 完了: {current_chunk_index}個のチャンク作成")
 
             # ============================================
             # データベース更新
             # ============================================
             update_data = {
-                # doc_type と workspace は入力元の反映なので更新しない（破壊行為になる）
-                # 'doc_type': doc_type,
-                # 'workspace': workspace_to_use,
                 'summary': summary,
                 'metadata': metadata,
                 'processing_status': 'completed',
-                'processing_stage': 'stage1_and_stage2',
-                'stagea_classifier_model': 'gemini-2.5-flash',  # B1更新（小文字）
-                'stagec_extractor_model': 'claude-haiku-4-5-20251001',  # B1更新（小文字）
+                'processing_stage': 'stagec_and_stagea_complete',
+                'stagea_classifier_model': 'gemini-2.5-flash',
+                'stagec_extractor_model': 'claude-haiku-4-5-20251001',
                 'relevant_date': relevant_date
             }
+
+            if document_date:
+                update_data['document_date'] = document_date
+            if tags:
+                update_data['tags'] = tags
 
             response = self.db.client.table('source_documents').update(update_data).eq('id', document_id).execute()
 
             if response.data:
                 logger.success(f"✅ テキストのみドキュメント再処理成功: {file_name}")
-                logger.info(f"  Stage1: {stage1_doc_type}")
-                logger.info(f"  Stage2: {doc_type}")
+                logger.info(f"  チャンク数: {current_chunk_index}")
                 self._mark_task_completed(queue_id, success=True)
                 return True
             else:
@@ -503,6 +614,233 @@ class ClassroomReprocessorV2:
 
         except Exception as e:
             error_msg = f"テキストのみドキュメント処理エラー: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            logger.exception(e)
+            self._mark_task_failed(queue_id, error_msg, error_details={'exception': str(e)})
+            return False
+
+    async def _reprocess_classroom_document_with_attachment(
+        self,
+        queue_id: str,
+        document_id: str,
+        doc: Dict[str, Any],
+        preserve_workspace: bool = True
+    ) -> bool:
+        """
+        添付ファイル付きClassroomドキュメント（source_type='classroom'）を再処理
+
+        処理フロー:
+        1. Pre-processing: Drive URLからファイルダウンロード
+        2. Stage B: テキスト抽出 + Vision処理
+        3. Stage C: Claude構造化（メタデータ抽出）
+        4. Stage A: Gemini統合・要約（Stage Cの結果を活用）
+        5. チャンク化: subject + post_text + attachment_text
+        6. Supabase保存
+
+        Args:
+            queue_id: キューID
+            document_id: ドキュメントID
+            doc: ドキュメントデータ
+            preserve_workspace: workspaceを保持するか
+
+        Returns:
+            成功したかどうか
+        """
+        from D_stage_a_classifier.classifier import StageAClassifier
+        from F_stage_c_extractor.extractor import StageCExtractor
+        from A_common.config.yaml_loader import get_classification_yaml_string
+
+        file_name = doc.get('file_name', 'classroom_attachment')
+        display_subject = doc.get('display_subject', '')
+        display_post_text = doc.get('display_post_text', '')
+
+        # 動画ファイルはスキップ（トークン消費が多いため）
+        file_ext = '.' + file_name.lower().split('.')[-1] if '.' in file_name else ''
+
+        if file_ext in self.VIDEO_EXTENSIONS:
+            logger.info(f"🎬 動画ファイルを検出: {file_name}")
+            logger.info(f"  → トークン消費削減のためスキップします")
+            self._mark_task_completed(queue_id, success=True)
+            return True
+
+        # metadata から Google Drive URL を取得
+        metadata = doc.get('metadata')
+        if metadata is None:
+            metadata = {}
+        elif isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except:
+                metadata = {}
+
+        drive_url = metadata.get('drive_url')
+        if not drive_url:
+            error_msg = "metadata.drive_url が見つかりません"
+            logger.error(f"{error_msg}: {file_name}")
+            self._mark_task_failed(queue_id, error_msg)
+            return False
+
+        logger.info(f"📎 Classroom添付ファイルを検出")
+        logger.info(f"  件名: {display_subject[:50]}...")
+        logger.info(f"  Drive URL: {drive_url}")
+
+        try:
+            # ============================================
+            # Pre-processing: ファイルダウンロード
+            # ============================================
+            logger.info("[Pre-processing] ファイルダウンロード開始...")
+
+            # Drive URLからファイルIDを抽出
+            file_id = self._extract_file_id_from_url(drive_url)
+            if not file_id:
+                error_msg = "Drive URLからファイルIDを抽出できません"
+                logger.error(f"{error_msg}: {drive_url}")
+                self._mark_task_failed(queue_id, error_msg)
+                return False
+
+            logger.info(f"  ファイルID: {file_id}")
+
+            # ファイルメタデータを構築
+            file_meta = {
+                'id': file_id,
+                'name': file_name,
+                'mimeType': self._guess_mime_type(file_name),
+                'doc_type': doc.get('doc_type', 'classroom_document')
+            }
+
+            # workspaceを決定
+            workspace_to_use = doc.get('workspace', 'unknown') if preserve_workspace else 'unknown'
+            logger.info(f"  Workspace: {workspace_to_use} (preserve={preserve_workspace})")
+
+            # ============================================
+            # Stage B: テキスト抽出 + Vision処理
+            # ============================================
+            logger.info("[Stage B] テキスト抽出 + Vision処理開始...")
+
+            # パイプラインのprocess_fileメソッドを使用してファイルを処理
+            # これにより、Pre-processing、Stage B、Stage C、Stage Aが全て実行される
+            result = await self.pipeline.process_file(
+                file_meta=file_meta,
+                workspace=workspace_to_use,
+                force_reprocess=True
+            )
+
+            if not result or not result.get('success'):
+                error_msg = result.get('error', 'unknown error') if result else 'no result'
+                logger.error(f"❌ パイプライン処理失敗: {error_msg}")
+                self._mark_task_failed(queue_id, error_msg)
+                return False
+
+            # パイプラインが処理したドキュメントIDを取得
+            processed_doc_id = result.get('document_id')
+
+            # ============================================
+            # Classroomフィールドの追加更新
+            # ============================================
+            logger.info("[Classroom統合] display_subject と display_post_text を追加...")
+
+            # パイプラインで処理されたドキュメントにClassroomフィールドを追加
+            classroom_update = {}
+            if display_subject:
+                classroom_update['display_subject'] = display_subject
+            if display_post_text:
+                classroom_update['display_post_text'] = display_post_text
+
+            if classroom_update:
+                self.db.client.table('source_documents').update(classroom_update).eq(
+                    'id', processed_doc_id
+                ).execute()
+                logger.info(f"  Classroomフィールド追加完了")
+
+            # ============================================
+            # チャンク再生成（Classroomフィールドを含める）
+            # ============================================
+            logger.info("[チャンク再生成] Classroomフィールドを含めて再生成...")
+
+            # 更新されたドキュメントを取得
+            updated_doc = self.db.get_document_by_id(processed_doc_id)
+            if not updated_doc:
+                error_msg = "更新後のドキュメントが見つかりません"
+                logger.error(error_msg)
+                self._mark_task_failed(queue_id, error_msg)
+                return False
+
+            # 既存チャンクを削除
+            try:
+                delete_result = self.db.client.table('search_index').delete().eq(
+                    'document_id', processed_doc_id
+                ).execute()
+                deleted_count = len(delete_result.data) if delete_result.data else 0
+                logger.info(f"  既存チャンク削除: {deleted_count}個")
+            except Exception as e:
+                logger.warning(f"  既存チャンク削除エラー（継続）: {e}")
+
+            # チャンクデータ準備
+            document_data = {
+                'file_name': file_name,
+                'summary': updated_doc.get('summary', ''),
+                'document_date': updated_doc.get('document_date'),
+                'tags': updated_doc.get('tags', []),
+                'display_subject': display_subject,
+                'display_post_text': display_post_text,
+                'attachment_text': updated_doc.get('attachment_text', '')
+            }
+
+            # メタデータチャンク生成
+            from A_common.processing.metadata_chunker import MetadataChunker
+            metadata_chunker = MetadataChunker()
+            metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
+
+            current_chunk_index = 0
+            for meta_chunk in metadata_chunks:
+                meta_text = meta_chunk.get('chunk_text', '')
+                meta_type = meta_chunk.get('chunk_type', 'metadata')
+                meta_weight = meta_chunk.get('search_weight', 1.0)
+
+                if not meta_text:
+                    continue
+
+                # Embedding生成
+                meta_embedding = self.pipeline.llm_client.generate_embedding(meta_text)
+
+                # search_indexに保存
+                meta_doc = {
+                    'document_id': processed_doc_id,
+                    'chunk_index': current_chunk_index,
+                    'chunk_content': meta_text,
+                    'chunk_size': len(meta_text),
+                    'chunk_type': meta_type,
+                    'embedding': meta_embedding,
+                    'search_weight': meta_weight
+                }
+
+                try:
+                    self.db.client.table('search_index').insert(meta_doc).execute()
+                    current_chunk_index += 1
+                except Exception as e:
+                    logger.error(f"  チャンク保存エラー: {e}")
+
+            logger.info(f"[チャンク再生成] 完了: {current_chunk_index}個のチャンク作成")
+
+            # ============================================
+            # 元のドキュメントを削除し、新しいドキュメントIDを維持
+            # ============================================
+            if processed_doc_id != document_id:
+                logger.info(f"[ドキュメント統合] 元のID {document_id} → 新ID {processed_doc_id}")
+                # 古いドキュメントを削除
+                try:
+                    self.db.client.table('source_documents').delete().eq('id', document_id).execute()
+                    logger.info("  古いドキュメント削除完了")
+                except Exception as e:
+                    logger.warning(f"  古いドキュメント削除エラー（継続）: {e}")
+
+            logger.success(f"✅ Classroom添付ファイルドキュメント再処理成功: {file_name}")
+            logger.info(f"  チャンク数: {current_chunk_index}")
+            self._mark_task_completed(queue_id, success=True)
+            return True
+
+        except Exception as e:
+            error_msg = f"Classroom添付ファイルドキュメント処理エラー: {str(e)}"
             logger.error(f"❌ {error_msg}")
             logger.exception(e)
             self._mark_task_failed(queue_id, error_msg, error_details={'exception': str(e)})
@@ -529,6 +867,42 @@ class ClassroomReprocessorV2:
             return source_id
 
         return ''
+
+    def _extract_file_id_from_url(self, url: str) -> Optional[str]:
+        """
+        Google Drive URLからファイルIDを抽出
+
+        Args:
+            url: Google Drive URL
+
+        Returns:
+            ファイルID、またはNone
+
+        Examples:
+            https://drive.google.com/file/d/1ABC123/view -> 1ABC123
+            https://drive.google.com/open?id=1ABC123 -> 1ABC123
+        """
+        if not url:
+            return None
+
+        import re
+
+        # パターン1: /file/d/{file_id}/
+        match = re.search(r'/file/d/([a-zA-Z0-9_-]+)', url)
+        if match:
+            return match.group(1)
+
+        # パターン2: ?id={file_id}
+        match = re.search(r'[?&]id=([a-zA-Z0-9_-]+)', url)
+        if match:
+            return match.group(1)
+
+        # パターン3: /d/{file_id}/
+        match = re.search(r'/d/([a-zA-Z0-9_-]+)', url)
+        if match:
+            return match.group(1)
+
+        return None
 
     def _guess_mime_type(self, file_name: str) -> str:
         """ファイル名から MIME タイプを推測"""
