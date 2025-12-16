@@ -530,7 +530,8 @@ class DatabaseClient:
         limit: int = 100,
         search_query: Optional[str] = None,
         workspace: Optional[str] = None,
-        file_type: Optional[str] = None
+        file_type: Optional[str] = None,
+        review_status: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         レビュー対象のドキュメントを取得
@@ -543,6 +544,7 @@ class DatabaseClient:
             search_query: 検索クエリ（IDまたはファイル名で部分一致）
             workspace: ワークスペースフィルタ（'business', 'personal', またはNone）
             file_type: ファイルタイプフィルタ（'pdf', 'email', またはNone）
+            review_status: レビューステータスフィルタ（'reviewed', 'pending', 'all', またはNone）
 
         Returns:
             ドキュメントのリスト（更新日時降順）
@@ -557,6 +559,12 @@ class DatabaseClient:
             # Workspaceフィルタを適用
             if workspace:
                 query = query.eq('workspace', workspace)
+
+            # Review statusフィルタを適用
+            if review_status == 'reviewed':
+                query = query.eq('review_status', 'reviewed')
+            elif review_status == 'pending':
+                query = query.in_('review_status', ['pending', None])
 
             if search_query:
                 # 検索モード: レビュー状態に関係なく検索

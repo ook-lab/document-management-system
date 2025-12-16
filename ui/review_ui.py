@@ -178,9 +178,18 @@ def pdf_review_ui():
         help="ファイルタイプでフィルタリング"
     )
 
+    # レビューステータスフィルタ
+    review_status_options = ["全て", "未確認", "確認済み"]
+    review_status_filter = st.sidebar.selectbox(
+        "レビューステータス",
+        options=review_status_options,
+        index=0,
+        help="レビュー状態でフィルタリング"
+    )
+
     # 検索ボックス
     search_query = st.sidebar.text_input(
-        "IDやファイル名で検索",
+        "キーワード検索",
         placeholder="例: 学年通信, abc123...",
         help="検索ワードを入力すると、レビュー状態に関係なく全データから検索します"
     )
@@ -228,11 +237,20 @@ def pdf_review_ui():
         # ファイルタイプフィルタの値を変換（"全て"の場合はNone）
         file_type_value = file_type_filter if file_type_filter != "全て" else None
 
+        # レビューステータスフィルタの値を変換
+        if review_status_filter == "確認済み":
+            review_status_value = "reviewed"
+        elif review_status_filter == "未確認":
+            review_status_value = "pending"
+        else:  # "全て"
+            review_status_value = "all"
+
         documents = db_client.get_documents_for_review(
             limit=limit,
             search_query=search_query if search_query else None,
             workspace=workspace_value,
-            file_type=file_type_value  # 選択されたファイルタイプで絞り込み
+            file_type=file_type_value,
+            review_status=review_status_value
         )
 
     # デバッグログ: 取得後の確認
