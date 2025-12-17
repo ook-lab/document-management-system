@@ -18,7 +18,7 @@ from PIL import Image
 import io
 
 # 設定
-from K_kakeibo.config import SUPABASE_URL, SUPABASE_KEY, GOOGLE_DRIVE_CREDENTIALS
+from config import SUPABASE_URL, SUPABASE_KEY, GOOGLE_DRIVE_CREDENTIALS
 
 # Supabase接続
 db = create_client(SUPABASE_URL, SUPABASE_KEY)
@@ -125,7 +125,7 @@ def show_receipt_detail(log: dict):
             with st.spinner("画像を読み込み中..."):
                 image = get_receipt_image(log["drive_file_id"])
                 if image:
-                    st.image(image, use_container_width=True)
+                    st.image(image, use_column_width=True)
                 else:
                     st.warning("画像を取得できませんでした")
         else:
@@ -158,18 +158,16 @@ def show_receipt_detail(log: dict):
                 # DataFrameに変換
                 df_data = []
                 for t in transactions.data:
+                    tax_warning = "⚠️" if t.get("needs_tax_review") else ""
                     df_data.append({
                         "商品名": t["product_name"],
                         "数量": t["quantity"],
                         "単価": t['unit_price'],
                         "金額": t['total_amount'],
-                        "内税額": t.get('tax_included_amount') or t['total_amount'],
-                        "正式名": t.get("official_name") or "",
-                        "物品名": t.get("item_name") or "",
-                        "大分類": t.get("major_category") or "",
-                        "小分類": t.get("minor_category") or "",
-                        "人物": t.get("person") or "",
-                        "名目": t.get("purpose") or "",
+                        "税率": f"{t.get('tax_rate', '-')}%",
+                        "内税額": t.get('tax_amount', 0),
+                        "税要確認": tax_warning,
+                        "カテゴリ": t.get("money_categories", {}).get("name", "") if t.get("money_categories") else "",
                         "確認": "✅" if t["is_verified"] else "⏸️"
                     })
 
@@ -183,14 +181,57 @@ def show_receipt_detail(log: dict):
                 # データフレームを表示（横スクロール有効、高さ指定）
                 st.dataframe(
                     df,
-                    use_container_width=True,
                     hide_index=True,
                     height=400  # 高さを指定して見やすく
                 )
 
-                # 合計金額
+                # 合計金額・税額サマリー
                 total = sum(t["total_amount"] for t in transactions.data)
-                st.markdown(f"### 合計: ¥{total:,}")
+                total_tax_8 = sum(t.get("tax_amount", 0) for t in transactions.data if t.get("tax_rate") == 8)
+                total_tax_10 = sum(t.get("tax_amount", 0) for t in transactions.data if t.get("tax_rate") == 10)
+
+                col1, col2, col3 = st.columns(3)
+                with col1:
+                    st.markdown(f"### 合計: ¥{total:,}")
+                with col2:
+                    st.markdown(f"**8%税額: ¥{total_tax_8:,}**")
+                with col3:
+                    st.markdown(f"**10%税額: ¥{total_tax_10:,}**")
+
+                # 税額サマリー取得（レシート記載値との比較）
+                try:
+                    tax_summary = db.table("money_receipt_tax_summary") \
+                        .select("*") \
+                        .eq("processing_log_id", log["id"]) \
+                        .execute()
+                except Exception as e:
+                    # テーブルが存在しない場合はスキップ
+                    tax_summary = None
+
+                if tax_summary and tax_summary.data:
+                    summary = tax_summary.data[0]
+                    st.subheader("税額整合性チェック")
+
+                    match_icon = "✅" if summary["calculated_matches_actual"] else "⚠️"
+                    st.markdown(f"### {match_icon} 整合性: {'一致' if summary['calculated_matches_actual'] else '不一致'}")
+
+                    comparison_data = {
+                        "税率": ["8%", "10%"],
+                        "レシート記載": [
+                            f"¥{summary['tax_8_amount']:,}",
+                            f"¥{summary['tax_10_amount']:,}"
+                        ],
+                        "計算値": [
+                            f"¥{summary['calculated_tax_8_amount']:,}",
+                            f"¥{summary['calculated_tax_10_amount']:,}"
+                        ],
+                        "差分": [
+                            f"{summary['tax_8_diff']:+d}円",
+                            f"{summary['tax_10_diff']:+d}円"
+                        ]
+                    }
+
+                    st.table(pd.DataFrame(comparison_data))
 
                 # 店名・日付
                 if transactions.data:
@@ -212,7 +253,7 @@ def show_receipt_detail(log: dict):
                 col1, col2, col3 = st.columns(3)
 
                 with col1:
-                    if st.button("✅ 全て承認", key="approve_all", use_container_width=True):
+                    if st.button("✅ 全て承認", key="approve_all"):
                         for t in transactions.data:
                             db.table("money_transactions") \
                                 .update({"is_verified": True}) \
@@ -222,12 +263,12 @@ def show_receipt_detail(log: dict):
                         st.rerun()
 
                 with col2:
-                    if st.button("📝 個別編集", key="edit_mode", use_container_width=True):
+                    if st.button("📝 個別編集", key="edit_mode"):
                         st.session_state.edit_mode = True
                         st.rerun()
 
                 with col3:
-                    if st.button("🗑️ 全て削除", key="delete_all", use_container_width=True):
+                    if st.button("🗑️ 全て削除", key="delete_all"):
                         for t in transactions.data:
                             db.table("money_transactions") \
                                 .delete() \
