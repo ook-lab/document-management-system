@@ -672,6 +672,16 @@ def pdf_review_ui():
                 # その他のファイル
                 else:
                     st.info(f"このファイルタイプ（.{file_extension}）のプレビューには対応していません")
+
+                    # デバッグ情報を表示
+                    with st.expander("🔍 デバッグ情報"):
+                        st.code(f"""
+ファイルパス: {file_path}
+ファイル名（DB）: {selected_doc.get('file_name')}
+ファイル名（使用中）: {file_name}
+ファイル拡張子: '{file_extension}'
+Path.suffix: '{Path(file_path).suffix}'
+                        """.strip())
                     try:
                         with open(file_path, 'rb') as f:
                             file_bytes = f.read()
