@@ -174,16 +174,18 @@ def show_receipt_detail(log: dict):
                 # DataFrameに変換
                 df_data = []
                 for t in transactions.data:
-                    tax_warning = "⚠️" if t.get("needs_tax_review") else ""
                     df_data.append({
                         "商品名": t["product_name"],
                         "数量": t["quantity"],
                         "単価": t['unit_price'],
                         "金額": t['total_amount'],
-                        "税率": f"{t.get('tax_rate', '-')}%",
-                        "内税額": t.get('tax_amount', 0),
-                        "税要確認": tax_warning,
-                        "カテゴリ": t.get("money_categories", {}).get("name", "") if t.get("money_categories") else "",
+                        "内税額": t.get('tax_amount') or t.get('tax_included_amount') or t['total_amount'],
+                        "正式名": t.get("official_name") or "",
+                        "物品名": t.get("item_name") or "",
+                        "大分類": t.get("major_category") or "",
+                        "小分類": t.get("minor_category") or "",
+                        "人物": t.get("person") or "",
+                        "名目": t.get("purpose") or "",
                         "確認": "✅" if t["is_verified"] else "⏸️"
                     })
 
