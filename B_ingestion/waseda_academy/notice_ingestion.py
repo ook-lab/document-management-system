@@ -111,9 +111,9 @@ class WasedaNoticeIngestionPipeline:
             既に存在するお知らせIDのセット
         """
         try:
-            # source_documents テーブルで source_type='waseda_academy_notice' のドキュメントを取得
+            # source_documents テーブルで source_type='waseda_academy_online' のドキュメントを取得
             result = self.db.client.table('source_documents').select('metadata').eq(
-                'source_type', 'waseda_academy_notice'
+                'source_type', 'waseda_academy_online'
             ).execute()
 
             # metadata->notice_id を抽出
@@ -193,7 +193,7 @@ class WasedaNoticeIngestionPipeline:
         else:
             logger.error(f"PDFの保存に失敗: {file_name}")
 
-        return file_id
+        return file_id, file_name
 
     async def process_single_notice(
         self,
@@ -251,7 +251,7 @@ class WasedaNoticeIngestionPipeline:
                     continue
 
                 # 2. PDFをGoogle Driveに保存
-                file_id = self.save_pdf_to_drive(pdf_data, pdf_title, notice_id)
+                file_id, actual_file_name = self.save_pdf_to_drive(pdf_data, pdf_title, notice_id)
                 if not file_id:
                     logger.error(f"PDFの保存に失敗: {pdf_title}")
                     continue
@@ -288,13 +288,15 @@ class WasedaNoticeIngestionPipeline:
 
                 # 5. Supabaseに基本情報のみ保存
                 doc_data = {
-                    'source_type': 'waseda_academy_notice',
+                    'source_type': 'waseda_academy_online',
                     'source_id': file_id,
                     'source_url': f"https://drive.google.com/file/d/{file_id}/view",
-                    'file_name': pdf_title,
+                    'file_name': actual_file_name,  # 拡張子付きのファイル名を使用
                     'file_type': 'pdf',
                     'doc_type': '早稲アカオンライン',  # 固定値
                     'workspace': 'waseda_academy',
+                    'person': '育哉',  # 担当者
+                    'organization': '早稲田アカデミー',  # 組織
                     'attachment_text': '',  # 空（process_queued_documents.py で抽出）
                     'summary': '',  # 空（process_queued_documents.py で生成）
                     'tags': [category.get('label', 'その他')],

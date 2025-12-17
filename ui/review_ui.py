@@ -554,6 +554,30 @@ def pdf_review_ui():
                 if not file_extension and file_name and '.' in file_name:
                     file_extension = file_name.lower().split('.')[-1]
 
+                # 拡張子が取得できない場合、ファイルの内容から判定（マジックナンバー）
+                if not file_extension:
+                    logger.info("拡張子なし。ファイルの内容から判定します")
+                    try:
+                        with open(file_path, 'rb') as f:
+                            header = f.read(16)
+
+                        # PDFファイルの判定
+                        if header.startswith(b'%PDF-'):
+                            file_extension = 'pdf'
+                            logger.info("マジックナンバーからPDFと判定")
+                        # その他のファイルタイプも追加可能
+                        elif header.startswith(b'\x50\x4B\x03\x04'):  # ZIP/DOCX/XLSX等
+                            file_extension = 'zip'
+                            logger.info("マジックナンバーからZIPと判定")
+                        elif header.startswith(b'\xff\xd8\xff'):  # JPEG
+                            file_extension = 'jpg'
+                            logger.info("マジックナンバーからJPEGと判定")
+                        elif header.startswith(b'\x89PNG'):  # PNG
+                            file_extension = 'png'
+                            logger.info("マジックナンバーからPNGと判定")
+                    except Exception as e:
+                        logger.error(f"ファイルタイプ判定エラー: {e}")
+
                 logger.info(f"ファイル拡張子: {file_extension}")
 
                 # PDFの場合
