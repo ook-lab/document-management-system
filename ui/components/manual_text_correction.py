@@ -267,10 +267,10 @@ def execute_stage2_reprocessing(
     Returns:
         新しい構造化データ
     """
-    from ui.utils.stage2_reprocessor import reprocess_with_stageC
+    from ui.utils.stageC_reprocessor import reprocess_with_stageC
     from A_common.database.client import DatabaseClient
 
-    logger.warning("[Deprecated] execute_stage2_reprocessing() は非推奨です。ui.utils.stage2_reprocessor.reprocess_with_stageC() を使用してください。")
+    logger.warning("[Deprecated] execute_stage2_reprocessing() は非推奨です。ui.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。")
 
     # この関数は後方互換性のために残されていますが、新しいユーティリティを内部で使用します
     # 戻り値の形式を維持するため、ラッパーとして機能します
