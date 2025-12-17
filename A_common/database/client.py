@@ -870,15 +870,19 @@ class DatabaseClient:
         Returns:
             成功したかどうか
         """
+        from loguru import logger
+
         try:
             # Step 1: 現在のドキュメントを取得
             current_doc = self.get_document_by_id(doc_id)
             if not current_doc:
-                print(f"Error: Document not found: {doc_id}")
+                logger.error(f"[record_correction] Document not found: {doc_id}")
                 return False
 
             old_metadata = current_doc.get('metadata', {})
             old_doc_type = current_doc.get('doc_type')
+
+            logger.info(f"[record_correction] 現在のドキュメント取得成功: doc_id={doc_id}, doc_type={old_doc_type}")
 
             # Step 2: correction_history に修正履歴を記録
             correction_data = {
@@ -890,6 +894,8 @@ class DatabaseClient:
                 'notes': notes
             }
 
+            logger.info(f"[record_correction] correction_history へ挿入開始")
+
             correction_response = (
                 self.client.table('correction_history')
                 .insert(correction_data)
@@ -897,11 +903,12 @@ class DatabaseClient:
             )
 
             if not correction_response.data:
-                print("Error: Failed to insert correction history")
+                logger.error(f"[record_correction] Failed to insert correction history")
+                logger.error(f"[record_correction] Response: {correction_response}")
                 return False
 
             correction_id = correction_response.data[0]['id']
-            print(f"✅ 修正履歴を記録: correction_id={correction_id}")
+            logger.info(f"[record_correction] ✅ 修正履歴を記録: correction_id={correction_id}")
 
             # Step 3: documents テーブルを更新
             update_data = {
@@ -910,8 +917,11 @@ class DatabaseClient:
             }
             if new_doc_type and new_doc_type != old_doc_type:
                 update_data['doc_type'] = new_doc_type
+                logger.info(f"[record_correction] doc_type変更: {old_doc_type} → {new_doc_type}")
 
             # year, month のトップレベルカラムへの同期は削除（metadata 内で管理）
+
+            logger.info(f"[record_correction] source_documents 更新開始: doc_id={doc_id}")
 
             document_response = (
                 self.client.table('source_documents')
@@ -921,16 +931,15 @@ class DatabaseClient:
             )
 
             if not document_response.data:
-                print("Error: Failed to update document")
+                logger.error(f"[record_correction] Failed to update document")
+                logger.error(f"[record_correction] Response: {document_response}")
                 return False
 
-            print(f"✅ ドキュメント更新成功: doc_id={doc_id}")
+            logger.info(f"[record_correction] ✅ ドキュメント更新成功: doc_id={doc_id}")
             return True
 
         except Exception as e:
-            print(f"Error recording correction: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.error(f"[record_correction] Error recording correction: {e}", exc_info=True)
             return False
 
     def rollback_document(self, doc_id: str) -> bool:

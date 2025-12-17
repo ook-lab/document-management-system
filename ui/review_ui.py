@@ -771,6 +771,10 @@ Path.suffix: '{Path(file_path).suffix}'
                         new_metadata = reprocessed_result['metadata']
 
                         # データベースに保存
+                        logger.info(f"[Stage 2再実行] データベース保存開始: doc_id={doc_id}")
+                        logger.info(f"[Stage 2再実行] new_metadata keys: {list(new_metadata.keys())}")
+                        logger.info(f"[Stage 2再実行] new_doc_type: {doc_type}")
+
                         success = db_client.record_correction(
                             doc_id=doc_id,
                             new_metadata=new_metadata,
@@ -781,6 +785,7 @@ Path.suffix: '{Path(file_path).suffix}'
 
                         if success:
                             st.success("✅ Stage 2再実行が完了しました！構造化データが更新されました。")
+                            logger.info(f"[Stage 2再実行] データベース保存成功")
                             st.balloons()
 
                             # 補正前後の比較を表示
@@ -800,7 +805,10 @@ Path.suffix: '{Path(file_path).suffix}'
                             time.sleep(2)
                             st.rerun()
                         else:
-                            st.error("❌ データベースへの保存に失敗しました")
+                            logger.error(f"[Stage 2再実行] データベース保存失敗: doc_id={doc_id}")
+                            logger.error(f"[Stage 2再実行] metadata type: {type(new_metadata)}")
+                            logger.error(f"[Stage 2再実行] metadata sample: {str(new_metadata)[:500]}")
+                            st.error("❌ データベースへの保存に失敗しました。詳細はログを確認してください。")
 
                     except Exception as e:
                         logger.error(f"Stage 2再実行エラー: {e}", exc_info=True)
