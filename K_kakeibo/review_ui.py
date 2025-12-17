@@ -27,10 +27,26 @@ db = create_client(SUPABASE_URL, SUPABASE_KEY)
 @st.cache_resource
 def get_drive_service():
     """Google Drive APIサービスを取得"""
-    credentials = service_account.Credentials.from_service_account_file(
-        GOOGLE_DRIVE_CREDENTIALS,
-        scopes=["https://www.googleapis.com/auth/drive.readonly"]
-    )
+    import json
+    from pathlib import Path
+
+    # Streamlit Cloudの場合はSecretsから、ローカルの場合はファイルから
+    if "gcp_service_account" in st.secrets:
+        # Streamlit CloudのSecrets
+        credentials = service_account.Credentials.from_service_account_info(
+            st.secrets["gcp_service_account"],
+            scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        )
+    else:
+        # ローカル環境
+        cred_path = Path(GOOGLE_DRIVE_CREDENTIALS)
+        if not cred_path.exists():
+            st.error(f"サービスアカウントファイルが見つかりません: {GOOGLE_DRIVE_CREDENTIALS}")
+            st.stop()
+        credentials = service_account.Credentials.from_service_account_file(
+            GOOGLE_DRIVE_CREDENTIALS,
+            scopes=["https://www.googleapis.com/auth/drive.readonly"]
+        )
     return build("drive", "v3", credentials=credentials)
 
 
