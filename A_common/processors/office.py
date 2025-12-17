@@ -48,7 +48,15 @@ class OfficeProcessor:
 
             content = "\n".join(full_text)
 
-            return {"content": content, "metadata": {"file_type": "docx"}, "success": True}
+            return {
+                "content": content,
+                "metadata": {
+                    "file_type": "docx",
+                    "text_extraction_model": "python-docx",
+                    "vision_model": None
+                },
+                "success": True
+            }
 
         except Exception as e:
             # logger.error(f"DOCXテキスト抽出エラー ({file_path}): {e}")
@@ -81,7 +89,15 @@ class OfficeProcessor:
 
             content = "\n".join(full_text)
 
-            return {"content": content, "metadata": {"file_type": "xlsx"}, "success": True}
+            return {
+                "content": content,
+                "metadata": {
+                    "file_type": "xlsx",
+                    "text_extraction_model": "openpyxl",
+                    "vision_model": None
+                },
+                "success": True
+            }
 
         except Exception as e:
             # logger.error(f"XLSXテキスト抽出エラー ({file_path}): {e}")
@@ -106,7 +122,15 @@ class OfficeProcessor:
 
             content = "\n".join(full_text)
 
-            return {"content": content, "metadata": {"file_type": "pptx"}, "success": True}
+            return {
+                "content": content,
+                "metadata": {
+                    "file_type": "pptx",
+                    "text_extraction_model": "python-pptx",
+                    "vision_model": None
+                },
+                "success": True
+            }
 
         except Exception as e:
             # logger.error(f"PPTXテキスト抽出エラー ({file_path}): {e}")

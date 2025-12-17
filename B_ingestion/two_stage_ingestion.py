@@ -387,6 +387,7 @@ class TwoStageIngestionPipeline:
 
             # Vision処理に使用したモデル情報を取得
             vision_model = base_metadata.get('vision_model', None)  # Gemini Vision等
+            text_extraction_model = base_metadata.get('text_extraction_model', None)  # pdfplumber, python-docx等
 
             # イベント日付配列を取得（Stage Cで抽出されたもの）
             event_dates_array = event_dates if 'event_dates' in locals() and event_dates else []
@@ -443,6 +444,7 @@ class TwoStageIngestionPipeline:
                 "stagea_classifier_model": ModelTier.STAGE1_CLASSIFIER["model"],  # B1更新（小文字）
                 "stagec_extractor_model": stagec_model,  # Stage C抽出モデル
                 "stageb_vision_model": vision_model,  # B1更新（小文字）
+                "text_extraction_model": text_extraction_model,  # テキスト抽出モデル
                 "relevant_date": relevant_date,
             }
 

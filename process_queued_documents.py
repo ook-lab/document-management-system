@@ -82,15 +82,15 @@ class ClassroomReprocessorV2:
         """
         logger.info(f"キューへの追加を開始: workspace={workspace}")
 
-        # 対象ドキュメントを取得
+        # 対象ドキュメントを取得（processing_status='completed'は除外）
         if workspace == 'all':
             # 全ワークスペースを対象
-            result = self.db.client.table('source_documents').select('*').limit(limit).execute()
+            result = self.db.client.table('source_documents').select('*').neq('processing_status', 'completed').limit(limit).execute()
         else:
             # 特定のワークスペースのみ
             result = self.db.client.table('source_documents').select('*').eq(
                 'workspace', workspace
-            ).limit(limit).execute()
+            ).neq('processing_status', 'completed').limit(limit).execute()
 
         documents = result.data if result.data else []
         logger.info(f"対象ドキュメント: {len(documents)}件")
@@ -598,7 +598,9 @@ class ClassroomReprocessorV2:
                 'processing_status': 'completed',
                 'processing_stage': 'stagec_and_stagea_complete',
                 'stagea_classifier_model': 'gemini-2.5-flash',
+                'stageb_vision_model': None,  # テキストのみドキュメント（Stage B未使用）
                 'stagec_extractor_model': 'claude-haiku-4-5-20251001',
+                'text_extraction_model': None,  # テキストのみドキュメント（抽出不要）
                 'relevant_date': relevant_date
             }
 
@@ -990,7 +992,9 @@ class ClassroomReprocessorV2:
                 'processing_status': 'completed',
                 'processing_stage': 'stagec_and_stagea_complete',
                 'stagea_classifier_model': 'gemini-2.5-flash',
+                'stageb_vision_model': None,  # 動画スキップ（Stage B未使用）
                 'stagec_extractor_model': 'claude-haiku-4-5-20251001',
+                'text_extraction_model': None,  # 動画スキップ（抽出不要）
                 'relevant_date': relevant_date,
                 'attachment_text': f"【動画ファイル】{file_name}"  # 動画ファイル情報を記録
             }
@@ -1190,15 +1194,13 @@ class ClassroomReprocessorV2:
             else:
                 logger.info(f"\n⚙️  キューからの処理を開始...")
 
-                # 確認（auto_yesが有効な場合はスキップ）
+                # 確認（auto_yesが無効な場合のみ確認）
                 if not auto_yes:
                     print("\n処理を開始しますか？ (y/N): ", end='')
                     response = input().strip().lower()
                     if response != 'y':
                         logger.info("処理をキャンセルしました")
                         return
-                else:
-                    logger.info("自動承認モード (--yes): 処理を開始します")
 
                 # 処理実行
                 stats = await self.process_queue(limit=limit)
@@ -1223,7 +1225,7 @@ async def main():
     populate_only = '--populate-only' in sys.argv
     process_queue_only = '--process-queue' in sys.argv
     preserve_workspace = '--no-preserve-workspace' not in sys.argv
-    auto_yes = '--yes' in sys.argv or '-y' in sys.argv  # 自動承認オプション
+    auto_yes = '--no' not in sys.argv  # デフォルトで自動承認（--noで確認プロンプト表示）
     limit = 100
     workspace = 'all'  # デフォルト: 全ワークスペース
 

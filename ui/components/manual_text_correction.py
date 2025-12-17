@@ -203,6 +203,10 @@ def render_manual_text_correction(
     # 再実行ボタン
     col_btn1, col_btn2, col_btn3 = st.columns([2, 2, 6])
 
+    # 再実行フラグの初期化
+    if f'trigger_reprocess_{doc_id}' not in st.session_state:
+        st.session_state[f'trigger_reprocess_{doc_id}'] = False
+
     with col_btn1:
         if st.button(
             "🔄 Stage 2 再実行",
@@ -213,12 +217,14 @@ def render_manual_text_correction(
         ):
             current_text = st.session_state[f'corrected_text_{doc_id}']
             if current_text != extracted_text:
-                corrected_text = current_text
-                logger.info(f"[手動補正] テキスト補正完了: {len(extracted_text)} → {len(corrected_text)} 文字")
+                logger.info(f"[手動補正] テキスト補正完了: {len(extracted_text)} → {len(current_text)} 文字")
             else:
-                corrected_text = current_text
                 st.info("ℹ️ テキストは変更されていませんが、スキーマ変更を反映するため再実行します")
                 logger.info(f"[手動補正] テキスト未変更だがStage 2再実行を要求（スキーマ変更反映のため）")
+
+            # 再実行フラグを立てる
+            st.session_state[f'trigger_reprocess_{doc_id}'] = True
+            st.rerun()
 
     with col_btn2:
         if st.button(
@@ -230,7 +236,14 @@ def render_manual_text_correction(
             st.session_state[f'corrected_text_{doc_id}'] = extracted_text
             st.rerun()
 
-    return corrected_text
+    # 再実行フラグがセットされている場合、補正テキストを返す
+    if st.session_state.get(f'trigger_reprocess_{doc_id}', False):
+        corrected_text = st.session_state[f'corrected_text_{doc_id}']
+        # フラグをクリア
+        st.session_state[f'trigger_reprocess_{doc_id}'] = False
+        return corrected_text
+
+    return None
 
 
 def execute_stage2_reprocessing(

@@ -148,6 +148,14 @@ class PDFProcessor:
             metadata['vision_pages'] = len(vision_supplements)
             metadata['pdfplumber_tables'] = sum(len(t) for t in page_tables)
 
+            # モデル追跡情報を追加
+            metadata['text_extraction_model'] = 'pdfplumber'  # 基本的なテキスト抽出方法
+            if len(vision_supplements) > 0:
+                metadata['vision_model'] = 'gemini-2.5-pro'  # Vision補完に使用したモデル
+                metadata['text_extraction_model'] = 'pdfplumber+gemini-2.5-pro'  # 統合モデル
+            else:
+                metadata['vision_model'] = None  # Vision未使用
+
             return {
                 "content": final_content,
                 "metadata": metadata,
