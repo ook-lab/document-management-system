@@ -850,6 +850,27 @@ Path.suffix: '{Path(file_path).suffix}'
                 # 構造化データフィールドをフォームから除外
                 form_fields = [f for f in editable_fields if f["name"] not in structured_field_keys]
 
+                # デバッグ情報を表示
+                with st.expander("🔍 デバッグ情報（開発用）", expanded=False):
+                    st.code(f"""
+編集可能フィールド数: {len(editable_fields)}
+フォームフィールド数: {len(form_fields)}
+構造化フィールド数: {len(structured_fields)}
+
+メタデータのキー: {list(metadata.keys())}
+text_blocks の存在: {'text_blocks' in metadata}
+text_blocks の値: {metadata.get('text_blocks', 'なし')}
+
+editable_fields:
+{[f['name'] for f in editable_fields]}
+
+form_fields:
+{[f['name'] for f in form_fields]}
+
+structured_field_keys:
+{structured_field_keys}
+                    """.strip())
+
                 if form_fields:
                     edited_metadata = render_form_editor(metadata, form_fields, doc_id)
                 else:
