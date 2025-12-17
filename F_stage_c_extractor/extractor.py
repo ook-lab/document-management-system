@@ -321,9 +321,9 @@ class StageCExtractor:
     def _get_custom_fields(self, doc_type: str) -> str:
         """doc_typeに応じたカスタムフィールド定義"""
 
-        # 育哉-学校関連文書は ikuya_school スキーマを使用
-        ikuya_school_fields = """
-   【重要】育哉-学校関連文書は ikuya_school スキーマを使用します。
+        # 全てのドキュメントタイプに汎用スキーマを使用
+        generic_fields = """
+   【重要】全てのドキュメントタイプに汎用スキーマを使用します。
 
    ★★★ データ振り分けの基本原則 ★★★
    **文章は text_blocks へ、時間割は weekly_schedule へ振り分けてください。**
@@ -436,9 +436,13 @@ class StageCExtractor:
    - **その他の表（持ち物、価格表、献立など）→ structured_tables**
         """
 
-        fields_map = {
-            # 育哉-学校関連文書 - 全て ikuya_school に統合
-            "ikuya_school": ikuya_school_fields,
+        # 全てのdoc_typeに対して汎用スキーマを使用
+        return generic_fields
+
+        # 以下は旧定義（参考用に残す、実際には使用されない）
+        fields_map_legacy = {
+            # 汎用スキーマ - 全てのドキュメントタイプに適用
+            "generic": generic_fields,
             # 旧タイプ（後方互換性のため一時的にサポート）
             "timetable": ikuya_school_fields,
             "school_notice": ikuya_school_fields,

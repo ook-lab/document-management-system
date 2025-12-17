@@ -34,48 +34,18 @@ class SchemaDetector:
         """
         doc_typeとmetadataからスキーマを判定
 
+        現在は全てのドキュメントに汎用スキーマを適用
+
         Args:
-            doc_type: ドキュメントタイプ
-            metadata: メタデータ辞書
+            doc_type: ドキュメントタイプ（サンプル用、現在は使用しない）
+            metadata: メタデータ辞書（サンプル用、現在は使用しない）
 
         Returns:
-            スキーマ名（例: "timetable"）、判定できない場合はNone
+            スキーマ名（常に "generic"）
         """
-        # メタデータがNoneの場合、安全のために空の辞書に変換
-        if metadata is None:
-            metadata = {}
-
-        # doc_typeベースの直接マッピング
-        # 学校関連文書はすべて ikuya_school スキーマに統合
-        # 新タイプ: ikuya_school（推奨）
-        # 旧タイプ: timetable, school_notice等（互換性のため一時的にサポート）
-        school_related_types = [
-            "ikuya_school",  # 新統合型（推奨）
-            # 旧タイプ（後方互換性のため一時的にサポート）
-            "timetable", "school_notice", "class_newsletter",
-            "homework", "test_exam", "report_card",
-            "school_event", "parent_teacher_meeting",
-            "notice", "classroom_letter", "event_schedule"
-        ]
-
-        if doc_type in school_related_types:
-            # 全て ikuya_school スキーマに統合
-            if "ikuya_school" in self.schemas:
-                return "ikuya_school"
-
-        # メタデータの構造から推測
-        # 全ての学校関連構造は ikuya_school に統合
-        if self._is_ikuya_school_structure(metadata):
-            if "ikuya_school" in self.schemas:
-                return "ikuya_school"
-
-        if self._is_timetable_structure(metadata):
-            if "ikuya_school" in self.schemas:
-                return "ikuya_school"
-
-        if self._is_school_notice_structure(metadata):
-            if "ikuya_school" in self.schemas:
-                return "ikuya_school"
+        # 全てのドキュメントに汎用スキーマを適用
+        if "generic" in self.schemas:
+            return "generic"
 
         return None
 
