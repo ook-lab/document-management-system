@@ -216,7 +216,9 @@ def render_manual_text_correction(
                 corrected_text = current_text
                 logger.info(f"[手動補正] テキスト補正完了: {len(extracted_text)} → {len(corrected_text)} 文字")
             else:
-                st.warning("⚠️ テキストが変更されていません")
+                corrected_text = current_text
+                st.info("ℹ️ テキストは変更されていませんが、スキーマ変更を反映するため再実行します")
+                logger.info(f"[手動補正] テキスト未変更だがStage 2再実行を要求（スキーマ変更反映のため）")
 
     with col_btn2:
         if st.button(

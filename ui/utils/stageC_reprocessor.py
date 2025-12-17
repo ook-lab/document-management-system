@@ -144,8 +144,8 @@ def show_reprocess_button(
     text_changed = attachment_text != original_text
 
     if not text_changed:
-        st.info("💡 変更がありません。編集後に再実行ボタンが表示されます。")
-        return False
+        st.info("💡 テキストは変更されていませんが、スキーマ変更を反映するため再実行できます。")
+        # スキーマ変更を反映するため、テキスト未変更でも処理を続行
 
     # 変更があることを表示
     char_diff = len(attachment_text) - len(original_text)
