@@ -529,12 +529,19 @@ class TwoStageIngestionPipeline:
                             if value:
                                 classroom_fields[field] = value
 
+                        # メタデータからpersons, organizations, peopleを取得
+                        metadata_extracted = metadata if isinstance(metadata, dict) else {}
+
                         document_data = {
                             'file_name': file_name,
                             'summary': summary,
                             'document_date': document_date,
                             'tags': tags,
+                            'doc_type': workspace,  # 授業名/ドキュメント種別
                             'event_dates': event_dates if 'event_dates' in dir() else [],
+                            'persons': metadata_extracted.get('persons', []),
+                            'organizations': metadata_extracted.get('organizations', []),
+                            'people': metadata_extracted.get('people', []),
                             **classroom_fields  # Classroomフィールドを展開
                         }
                         metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
