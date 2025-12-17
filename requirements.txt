@@ -43,6 +43,9 @@ json_repair
 beautifulsoup4==4.12.3
 lxml>=5.1.0
 
+# Browser Automation
+playwright==1.41.0
+
 # Streamlit
 streamlit>=1.29.0,<2.0.0
 streamlit-pdf-viewer

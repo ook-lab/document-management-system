@@ -1,0 +1,627 @@
+<!doctype html><html lang="ja"><head><meta charset="utf-8"><title>お知らせ一覧｜早稲田アカデミー Online</title><meta http-equiv="Content-Type" content="text/html; charset=utf-8"><meta http-equiv="X-UA-Compatible" content="IE=edge,chrome=1"><meta name="viewport" content="width=device-width,initial-scale=1,minimum-scale=0.2,maximum-scale=1,user-scalable=yes"><meta name="description" content=""><meta name="robots" content="noindex"><link rel="shortcut icon" href="https://public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com/prod/images/favicon-b7c002eaae5b62cfe023.png"><link rel="stylesheet" href="https://public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com/prod/css/reset-093b2a5f552648dfdf32.css"><link rel="stylesheet" href="https://public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com/prod/css/common-4a955229ca52ba27d146.css"><script src="https://public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com/prod/js/browser_selector-15c5f905983f071b9e49.js"></script><script src="https://public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com/prod/js/jquery-3.6.0.min-a4f7dbc472489e305472.js"></script><script src="https://public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com/prod/js/script-5421321d178a419513d7.js"></script><script src="https://public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com/prod/js/event_selector-cf75da40a6ff5278c325.js"></script></head><body><div id="root"></div><script>// *** begin app props ***
+window.appProps = {
+  "deploymentEnvironment" : "prod",
+  "resourceBaseURL" : "https:\/\/public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com\/prod",
+  "recaptchaSiteKey" : "6LdGqt8ZAAAAAFVeaOkcnObLJ_4AEPxUdeCTe5kj",
+  "apiConfig" : {
+    "cmsMediaPrepareUpload" : "\/cms\/media\/prepareUpload",
+    "otpRedirectLaunch" : "\/redirect\/form",
+    "studentPhoneUpdate" : "\/student\/phone\/update",
+    "noticeRead" : "\/notice\/read",
+    "yonLinkBegin" : "\/yotsuyaotsuka\/begin",
+    "quickReplySubmit" : "\/quickReply\/submit"
+  },
+  "page" : {
+    "noticeList" : {
+      "_0" : {
+        "frame" : {
+          "recaptcha" : false,
+          "topURL" : "\/home",
+          "menu" : {
+            "mypageSites" : [
+
+            ],
+            "passwordLink" : {
+              "opensNewWindow" : false,
+              "url" : "\/password",
+              "label" : "パスワード変更"
+            },
+            "qnaLink" : {
+              "url" : "https:\/\/online-qa.waseda-ac.co.jp\/online.html",
+              "opensNewWindow" : true,
+              "label" : "Q&Aサイト"
+            },
+            "settingLink" : {
+              "opensNewWindow" : false,
+              "label" : "設定",
+              "url" : "\/setting"
+            },
+            "paymentLink" : {
+              "label" : "請求・支払",
+              "opensNewWindow" : true,
+              "url" : "\/chisoketsu\/open?student=FA7893E7-23A7-4D72-8D35-146307175C7D&chisoketsu%5Bpayment%5D%5B*%5D="
+            },
+            "agreementLink" : {
+              "url" : "\/agreement",
+              "opensNewWindow" : false,
+              "label" : "利用規約"
+            },
+            "recordSites" : [
+              {
+                "url" : "\/site\/open\/yotsuyaotsuka\/FA7893E7-23A7-4D72-8D35-146307175C7D",
+                "kind" : "yotsuyaotsuka",
+                "isEnabled" : true,
+                "settingURL" : "\/yotsuyaotsuka\/link\/23B09BDB-95A3-45E0-AE15-C5549FD6E369",
+                "infoText" : "四谷大塚への自動接続をご利用いただけます。ご利用方法については、校舎より配布される「早稲田アカデミーOnline と四谷大塚会員サイト連携のご案内」をご覧ください。",
+                "category" : "record",
+                "opensNewWindow" : true,
+                "label" : "四谷大塚 生徒用ログイン"
+              },
+              {
+                "label" : "四谷大塚 保護者用ログイン",
+                "kind" : "yotsuyaotsuka2",
+                "infoText" : "四谷大塚への自動接続をご利用いただけます。ご利用方法については、校舎より配布される「早稲田アカデミーOnline と四谷大塚会員サイト連携のご案内」をご覧ください。",
+                "opensNewWindow" : true,
+                "category" : "record",
+                "url" : "\/site\/open\/yotsuyaotsuka2\/FA7893E7-23A7-4D72-8D35-146307175C7D",
+                "isEnabled" : true,
+                "settingURL" : "\/yotsuyaotsuka\/link\/477B87E6-1C13-4E46-AFFC-9F9DF80D26CA"
+              },
+              {
+                "category" : "record",
+                "kind" : "lms",
+                "isEnabled" : true,
+                "opensNewWindow" : true,
+                "label" : "Web帳票 typeA",
+                "url" : "\/site\/open\/lms\/FA7893E7-23A7-4D72-8D35-146307175C7D"
+              }
+            ],
+            "ecLink" : {
+              "opensNewWindow" : true,
+              "url" : "\/ec\/open",
+              "label" : "教材・模試・講座申込"
+            },
+            "privacyLink" : {
+              "label" : "プライバシーポリシー",
+              "url" : "https:\/\/www.waseda-ac.co.jp\/policy\/",
+              "opensNewWindow" : true
+            },
+            "orderListLink" : {
+              "label" : "申込状況",
+              "url" : "\/chisoketsu\/open?student=FA7893E7-23A7-4D72-8D35-146307175C7D&chisoketsu%5BorderList%5D%5B*%5D=",
+              "opensNewWindow" : true
+            },
+            "tuitionNaviLink" : {
+              "label" : "学費ナビ (外部サイト)",
+              "opensNewWindow" : true,
+              "url" : "https:\/\/sch.gakuhi-navi.com\/"
+            },
+            "studySites" : [
+              {
+                "kind" : "coursebase",
+                "category" : "study",
+                "url" : "\/site\/open\/coursebase\/FA7893E7-23A7-4D72-8D35-146307175C7D",
+                "opensNewWindow" : true,
+                "isEnabled" : true,
+                "label" : "学習コンテンツ"
+              }
+            ],
+            "scheduleListLink" : {
+              "url" : "\/chisoketsu\/open?student=FA7893E7-23A7-4D72-8D35-146307175C7D&chisoketsu%5BscheduleList%5D%5B*%5D=",
+              "opensNewWindow" : true,
+              "label" : "スケジュール"
+            },
+            "manualLink" : {
+              "opensNewWindow" : true,
+              "url" : "https:\/\/public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com\/manual.pdf",
+              "label" : "マニュアル"
+            },
+            "orderHistoryLink" : {
+              "label" : "申込履歴",
+              "url" : "\/chisoketsu\/open?chisoketsu%5BorderHistory%5D%5B*%5D=&student=FA7893E7-23A7-4D72-8D35-146307175C7D",
+              "opensNewWindow" : true
+            },
+            "settingSites" : [
+              {
+                "isEnabled" : true,
+                "infoText" : "2025\/12\/16(火)24:00～26:00の間、HotConPassのサービスメンテナンスを実施いたします。\r\nメンテナンス中は、サービスをご利用いただけません。\r\nご不便をおかけいたしますが、ご理解のほど、何卒よろしくお願いいたします。",
+                "label" : "HotConPass",
+                "kind" : "jtbConpass",
+                "url" : "\/site\/open\/jtbConpass\/FA7893E7-23A7-4D72-8D35-146307175C7D",
+                "opensNewWindow" : true,
+                "category" : "setting"
+              }
+            ],
+            "noticeListLink" : {
+              "opensNewWindow" : false,
+              "url" : "\/notice",
+              "label" : "お知らせ一覧"
+            },
+            "copyright" : "Copyright © 2021 WASEDA ACADEMY CO., LTD. All Rights Reserved.",
+            "logoutLink" : {
+              "url" : "\/logout",
+              "opensNewWindow" : false,
+              "label" : "ログアウト"
+            },
+            "profileLink" : {
+              "opensNewWindow" : true,
+              "url" : "\/profile\/open\/FA7893E7-23A7-4D72-8D35-146307175C7D",
+              "label" : "プロフィール"
+            },
+            "accountLink" : {
+              "label" : "アカウント情報",
+              "opensNewWindow" : false,
+              "url" : "\/account"
+            },
+            "topLink" : {
+              "url" : "\/",
+              "opensNewWindow" : false,
+              "label" : "トップページ"
+            },
+            "syllabusLink" : {
+              "label" : "シラバス",
+              "opensNewWindow" : true,
+              "url" : "https:\/\/www.waseda-ac.co.jp\/syllabus\/?cid=ON_241206_syllabus"
+            }
+          },
+          "back" : {
+            "label" : "トップページに戻る",
+            "url" : "\/home"
+          },
+          "student" : {
+            "students" : [
+              {
+                "detailURL" : "\/student\/show\/1A4E37EB-E1BA-4B35-8B24-BF97BC2DC0F9",
+                "isSelected" : false,
+                "name" : "大久保　絵麻",
+                "selectURL" : "\/student\/select\/1A4E37EB-E1BA-4B35-8B24-BF97BC2DC0F9"
+              },
+              {
+                "detailURL" : "\/student\/show\/FA7893E7-23A7-4D72-8D35-146307175C7D",
+                "selectURL" : "\/student\/select\/FA7893E7-23A7-4D72-8D35-146307175C7D",
+                "isSelected" : true,
+                "name" : "大久保　育哉"
+              }
+            ],
+            "studentAddURL" : "\/student\/add",
+            "ecStudentAddURL" : "\/student\/addEC"
+          },
+          "studentMode" : false
+        },
+        "filter" : {
+          "isRead" : {
+            "errors" : [
+
+            ],
+            "name" : "filter[isRead]",
+            "hints" : [
+
+            ],
+            "fieldName" : "既読",
+            "usesSegmentedStyle" : false,
+            "isRequired" : false,
+            "value" : "all",
+            "isEditable" : true,
+            "options" : [
+              {
+                "value" : "unread",
+                "label" : "未読のみ"
+              },
+              {
+                "label" : "全て",
+                "value" : "all"
+              }
+            ]
+          },
+          "submitURL" : "\/notice",
+          "category" : {
+            "isEditable" : true,
+            "hints" : [
+
+            ],
+            "usesSegmentedStyle" : false,
+            "name" : "filter[category]",
+            "errors" : [
+
+            ],
+            "value" : "",
+            "isRequired" : false,
+            "fieldName" : "カテゴリ",
+            "options" : [
+              {
+                "label" : "全て",
+                "value" : ""
+              },
+              {
+                "value" : "4E938D3D-6B29-4CD8-A559-2150B13DA683",
+                "label" : "お知らせ"
+              },
+              {
+                "label" : "月のお知らせ",
+                "value" : "DCD98B2E-D437-47A4-8410-FAAD0425D479"
+              },
+              {
+                "label" : "早稲アカ通信",
+                "value" : "2829EB64-F7AC-4005-A10C-7FD7C8E732DD"
+              },
+              {
+                "label" : "時間割",
+                "value" : "0A38E91D-D830-49AF-B4AD-508364DB1F2A"
+              },
+              {
+                "label" : "テスト",
+                "value" : "50550F13-7F45-43C9-B609-67A505CD8E97"
+              },
+              {
+                "value" : "FF394468-42C0-4E52-8B87-5AC308989319",
+                "label" : "保護者会"
+              },
+              {
+                "value" : "61F193EE-0B56-4D88-8D7B-F53B11D2273E",
+                "label" : "面談"
+              },
+              {
+                "label" : "イベント",
+                "value" : "BA550113-F634-45C1-8B9E-E5D14CAE7B16"
+              },
+              {
+                "value" : "062ABEA2-02BC-4993-8800-451EEE811CE9",
+                "label" : "教材"
+              },
+              {
+                "label" : "合格実績速報",
+                "value" : "0890C20B-EA71-4461-91BB-110C08800229"
+              }
+            ]
+          },
+          "source" : {
+            "hints" : [
+
+            ],
+            "name" : "filter[source]",
+            "isRequired" : false,
+            "usesSegmentedStyle" : false,
+            "isEditable" : true,
+            "value" : "",
+            "errors" : [
+
+            ],
+            "fieldName" : "発信元",
+            "options" : [
+              {
+                "value" : "",
+                "label" : "全て"
+              },
+              {
+                "label" : "本社",
+                "value" : "headquarters"
+              },
+              {
+                "value" : "school_210",
+                "label" : "武蔵小杉校"
+              }
+            ]
+          }
+        },
+        "emergencies" : [
+
+        ],
+        "paginator" : {
+          "pageKey" : "p",
+          "itemWindowSize" : 5,
+          "totalCount" : 22,
+          "page" : 1,
+          "pageSize" : 10,
+          "baseURL" : "\/notice?filter%5BisRead%5D=all"
+        },
+        "editNoticeReadPermission" : true,
+        "studentID" : "FA7893E7-23A7-4D72-8D35-146307175C7D",
+        "notices" : [
+          {
+            "date" : "2025.12.16",
+            "monthDayDate" : "12\/16",
+            "isRead" : true,
+            "title" : "早稲アカ通信　冬期号（小学５年生Ｓコース）",
+            "canQuickReplySubmit" : true,
+            "isDayOff" : false,
+            "id" : "7486553B-0DBC-4421-B3F0-1C17F169BBA1",
+            "links" : [
+
+            ],
+            "source" : {
+              "label" : "本社",
+              "kind" : "headquarters"
+            },
+            "category" : {
+              "id" : "2829EB64-F7AC-4005-A10C-7FD7C8E732DD",
+              "label" : "早稲アカ通信"
+            },
+            "weekday" : "火",
+            "isNew" : false,
+            "message" : "早稲アカ通信　冬期号（小学５年生）を公開します。\r\n添付のＰＤＦファイルにてご覧ください。",
+            "pdfs" : [
+              {
+                "title" : "早稲アカ通信（冬期号：小５Ｓコース）",
+                "url" : "\/notice\/7486553B-0DBC-4421-B3F0-1C17F169BBA1\/pdf\/0?student=FA7893E7-23A7-4D72-8D35-146307175C7D"
+              }
+            ]
+          },
+          {
+            "monthDayDate" : "12\/16",
+            "pdfs" : [
+              {
+                "title" : "202601志望校判定テストのお知らせ-1216更新（新規申込の方向け）",
+                "url" : "\/notice\/9B0B1F9F-0BA0-4305-8F0E-89C0DE241EDC\/pdf\/0?student=FA7893E7-23A7-4D72-8D35-146307175C7D"
+              }
+            ],
+            "canQuickReplySubmit" : true,
+            "isRead" : false,
+            "message" : "2026年1月12日実施 志望校判定テストのお申込を早稲田アカデミーOnlineにて承ります。\r\n詳細は添付ファイルをご確認ください。\r\n\r\n既にお申込み済みの方におかれましては、再度のお申し込みは不要です。決定した受験会場につきましては、各校舎から配付される受験票をご確認ください。\r\n\r\n＊実施日時　\r\n2026年1月12日（月・祝）\r\n小学４年生【午後】　4教科→13:20～16:50　\/　2教科→13:20～15:20\r\n小学５年生【午前】　4教科→  8:40～12:10　\/　2教科→  8:40～10:40\r\n＊学年によって会場・実施時間帯が異なります。添付のご案内の「会場一覧」をご覧ください。\r\n＊受験料金　5,280円（税込）\r\n\r\n＊最終申込締切\r\n12月26日（金）19:00　\r\n\r\n＊申込方法　\r\n早稲田アカデミーOnlineのメニュー内にある「教材・模試・講座申込」よりお申し込みください。受験料金は「クレジット決済」での受領となります。\r\n＊お申込み後の会場変更をご希望の場合はお通いの校舎までお問い合わせください。",
+            "weekday" : "火",
+            "source" : {
+              "label" : "本社",
+              "kind" : "headquarters"
+            },
+            "isDayOff" : false,
+            "isNew" : true,
+            "date" : "2025.12.16",
+            "links" : [
+
+            ],
+            "category" : {
+              "label" : "お知らせ",
+              "id" : "4E938D3D-6B29-4CD8-A559-2150B13DA683"
+            },
+            "title" : "2026年1月実施 志望校判定テストの受付再開に関するお知らせ",
+            "id" : "9B0B1F9F-0BA0-4305-8F0E-89C0DE241EDC"
+          },
+          {
+            "date" : "2025.12.15",
+            "weekday" : "月",
+            "monthDayDate" : "12\/15",
+            "source" : {
+              "kind" : "headquarters",
+              "label" : "本社"
+            },
+            "isNew" : false,
+            "id" : "1885C35F-893A-40FF-8453-5445708373ED",
+            "isRead" : false,
+            "title" : "【早稲アカ個別 学習相談受付中】  冬の特別講習プランのご案内",
+            "message" : "早稲アカ集団校舎との連携が、学力・合格力をさらに伸ばす！\r\n早稲田アカデミー個別進学館は、一人ひとりの弱点や課題を明確にして、成績向上実現のためのオーダーメイドカリキュラムを作成します。冬休みで大切なのは、「いかに時間を有効活用できるか」です。どこを伸ばし、どこを補強するのか、あなたの目標達成に向けた最適プランをご提案します。\r\n\r\n早稲アカ集団校舎の塾生はいつでも入塾金　無料！\r\nぜひ、お気軽にお近くの校舎にお問い合わせ下さい。",
+            "canQuickReplySubmit" : true,
+            "pdfs" : [
+
+            ],
+            "category" : {
+              "label" : "お知らせ",
+              "id" : "4E938D3D-6B29-4CD8-A559-2150B13DA683"
+            },
+            "isDayOff" : false,
+            "links" : [
+              {
+                "url" : "https:\/\/www.waseaca-kobetsu.jp\/winter\/?cid=WK_ON_251215_el-jh_01",
+                "title" : "早稲アカ個別 冬期講習会のホームページはこちら"
+              },
+              {
+                "url" : "https:\/\/www.waseaca-kobetsu.jp\/learning\/?cid=WK_ON_251215_el-jh_02",
+                "title" : "学習相談はこちら"
+              }
+            ]
+          },
+          {
+            "date" : "2025.12.9",
+            "message" : "土曜・日曜講座を受講される予定の皆様に、授業前（欠席・遅刻・早退）のご連絡方法・当日の連絡先等につきましてお知らせいたします。\r\n添付のＰＤＦファイルをご確認いただきますようお願いいたします。\r\n\r\n※土曜・日曜講座をお申し込みされていない方にも公開しておりますこと、ご了承ください。",
+            "isNew" : false,
+            "category" : {
+              "id" : "4E938D3D-6B29-4CD8-A559-2150B13DA683",
+              "label" : "お知らせ"
+            },
+            "monthDayDate" : "12\/9",
+            "isDayOff" : false,
+            "pdfs" : [
+              {
+                "title" : "2025後期_実施会場へのご連絡についてのご案内",
+                "url" : "\/notice\/A6331350-B437-4590-8B26-B9E21C19EA19\/pdf\/0?student=FA7893E7-23A7-4D72-8D35-146307175C7D"
+              }
+            ],
+            "weekday" : "火",
+            "title" : "【再掲】土曜・日曜講座を受講される皆様へのご案内",
+            "isRead" : true,
+            "id" : "A6331350-B437-4590-8B26-B9E21C19EA19",
+            "source" : {
+              "label" : "本社",
+              "kind" : "headquarters"
+            },
+            "links" : [
+
+            ],
+            "canQuickReplySubmit" : true
+          },
+          {
+            "pdfs" : [
+              {
+                "url" : "\/notice\/1D14E5A3-22F5-4410-885D-0549EEF07D5E\/pdf\/0?student=FA7893E7-23A7-4D72-8D35-146307175C7D",
+                "title" : "正月特訓受講にあたり"
+              }
+            ],
+            "isNew" : false,
+            "monthDayDate" : "12\/8",
+            "isDayOff" : false,
+            "id" : "1D14E5A3-22F5-4410-885D-0549EEF07D5E",
+            "date" : "2025.12.8",
+            "links" : [
+
+            ],
+            "title" : "年末年始の校舎営業に関して",
+            "isRead" : false,
+            "weekday" : "月",
+            "source" : {
+              "kind" : "headquarters",
+              "label" : "本社"
+            },
+            "canQuickReplySubmit" : true,
+            "message" : "年末年始（12\/30～1\/3）の期間※、通常営業はお休みとさせていただきます。\r\nそれに伴い、以下の留意事項がございますので、ご確認の程よろしくお願いいたします。\r\nなお、上記期間中は正月特訓を実施いたします。受講予定の方は添付のお知らせも併せてご確認をお願いします。\r\n※早稲田アカデミー個別進学館は校舎により上記期間内の営業日時が異なります。詳細は各校舎までお問い合わせください。\r\n※お通いの校舎より同様のお知らせがされている場合がございます。重複しておりますことご容赦ください。\r\n\r\n１）通常営業ならびに自習室の利用・学習相談等の受付に関して\r\n期間中は各種申込受付等のお取り扱い・自習室の利用・学習のご相談等を承ることができません。ご不便をおかけいたしますが、1\/4（日）以降に各校舎にお問い合わせいただきますようお願いいたします。お通いの校舎が正月特訓の会場であっても、その校舎の職員が出勤しているとは限りませんのでご理解のほどお願い申し上げます。\r\n\r\n２）正月特訓期間中における緊急のご連絡先に関して\r\n正月特訓期間中の12\/30（火）～1\/3（土）については、正月特訓に伴うお問い合わせのみ受け付けております。緊急のご用件がある場合は、下記電話番号までご連絡ください。\r\n\r\nオンライン校　03-5391-7117\r\n受付期間　12\/30（火）～1\/3（土）　8：00～18：30\r\n\r\n３）正月特訓に参加される方の遅刻・早退・欠席のご連絡に関して\r\n正月特訓に参加される方の遅刻・早退・欠席のご連絡は「早稲田アカデミーOnline」に表示されるスケジュール欄の「校舎へ連絡」ボタンより、「１時間目の授業開始時刻の２０分前まで」にご登録ください。\r\n上記時刻を過ぎてから授業当日の遅刻・早退・欠席のご連絡をされる場合には、早稲田アカデミー校舎で受講される方は受講校舎へ、Zoom配信で受講される方はZoom配信校舎へ、外部会場で受講される方は上記「オンライン校」へご連絡ください。\r\n※どの会場の場合も日中はつながらない場合がございますので、その場合は上記「オンライン校」までご連絡ください。",
+            "category" : {
+              "id" : "4E938D3D-6B29-4CD8-A559-2150B13DA683",
+              "label" : "お知らせ"
+            }
+          },
+          {
+            "weekday" : "水",
+            "canQuickReplySubmit" : true,
+            "links" : [
+
+            ],
+            "isRead" : true,
+            "message" : "１１月実施の各種テスト結果を掲載した成績月報「WINJr」を公開させていただきます。 \r\n紙媒体での配布予定はございませんが、ご自宅でデータを印刷していただくことは可能です。 \r\n※次回のWINJr公開は、小4、小5　1\/10（土）を予定しております。 \r\n​\r\n【掲示期間：～1月31日】",
+            "date" : "2025.12.3",
+            "isDayOff" : false,
+            "monthDayDate" : "12\/3",
+            "isNew" : false,
+            "title" : "成績月報「WINJr」（１１月実施：各種テスト掲載号）の公開",
+            "category" : {
+              "id" : "4E938D3D-6B29-4CD8-A559-2150B13DA683",
+              "label" : "お知らせ"
+            },
+            "id" : "9F096DCA-91DF-4A37-95F5-80366821358A",
+            "source" : {
+              "kind" : "headquarters",
+              "label" : "本社"
+            },
+            "pdfs" : [
+              {
+                "title" : "小５WINJrvol10",
+                "url" : "\/notice\/9F096DCA-91DF-4A37-95F5-80366821358A\/pdf\/0?student=FA7893E7-23A7-4D72-8D35-146307175C7D"
+              }
+            ]
+          },
+          {
+            "id" : "C8318E39-A5D0-431B-A971-50CE3E681103",
+            "pdfs" : [
+
+            ],
+            "isRead" : false,
+            "canQuickReplySubmit" : true,
+            "isNew" : false,
+            "source" : {
+              "kind" : "headquarters",
+              "label" : "本社"
+            },
+            "message" : "早稲アカ集団校舎との連携が、学力・合格力をさらに伸ばす！\r\n早稲田アカデミー個別進学館は、一人ひとりの弱点や課題を明確にして、成績向上実現のためのオーダーメイドカリキュラムを作成します。冬休みで大切なのは、「いかに時間を有効活用できるか」です。どこを伸ばし、どこを補強するのか、あなたの目標達成に向けた最適プランをご提案します。\r\n\r\n早稲アカ集団校舎の塾生はいつでも入塾金　無料！\r\nぜひ、お気軽にお近くの校舎にお問い合わせ下さい。",
+            "links" : [
+              {
+                "url" : "https:\/\/www.waseaca-kobetsu.jp\/winter\/?cid=WK_ON_251201_el-jh_01",
+                "title" : "早稲アカ個別 冬期講習会のホームページはこちら"
+              },
+              {
+                "title" : "学習相談はこちら",
+                "url" : "https:\/\/www.waseaca-kobetsu.jp\/learning\/?cid=WK_ON_251201_el-jh_02"
+              }
+            ],
+            "isDayOff" : false,
+            "date" : "2025.12.1",
+            "title" : "【早稲アカ個別】 冬の特別講習プランのご案内",
+            "monthDayDate" : "12\/1",
+            "weekday" : "月",
+            "category" : {
+              "id" : "4E938D3D-6B29-4CD8-A559-2150B13DA683",
+              "label" : "お知らせ"
+            }
+          },
+          {
+            "message" : "早稲アカ通信　１２月号（小学５年生）を公開します。\r\n添付のＰＤＦファイルにてご覧ください。",
+            "pdfs" : [
+              {
+                "title" : "早稲アカ通信（１２月号：小５Ｓコース）",
+                "url" : "\/notice\/4AEBB284-A343-44FB-9B52-70B6513B1D43\/pdf\/0?student=FA7893E7-23A7-4D72-8D35-146307175C7D"
+              }
+            ],
+            "isDayOff" : false,
+            "isNew" : false,
+            "isRead" : false,
+            "canQuickReplySubmit" : true,
+            "links" : [
+
+            ],
+            "category" : {
+              "label" : "早稲アカ通信",
+              "id" : "2829EB64-F7AC-4005-A10C-7FD7C8E732DD"
+            },
+            "weekday" : "火",
+            "title" : "早稲アカ通信　１２月号（小学５年生Ｓコース）",
+            "source" : {
+              "label" : "本社",
+              "kind" : "headquarters"
+            },
+            "id" : "4AEBB284-A343-44FB-9B52-70B6513B1D43",
+            "monthDayDate" : "11\/25",
+            "date" : "2025.11.25"
+          },
+          {
+            "category" : {
+              "id" : "0A38E91D-D830-49AF-B4AD-508364DB1F2A",
+              "label" : "時間割"
+            },
+            "isDayOff" : false,
+            "message" : "12月の時間割を公開します。こちらはSKのクラス増設以外、9\/8以降の時間割と変更ございません。",
+            "source" : {
+              "schoolCode" : "210",
+              "kind" : "school",
+              "label" : "武蔵小杉校"
+            },
+            "id" : "B95C7D70-72FF-4424-99C3-0439C7A8534C",
+            "monthDayDate" : "11\/25",
+            "title" : "武蔵小杉校12月度  時間割",
+            "canQuickReplySubmit" : true,
+            "links" : [
+
+            ],
+            "pdfs" : [
+              {
+                "title" : "12月度  時間割",
+                "url" : "\/notice\/B95C7D70-72FF-4424-99C3-0439C7A8534C\/pdf\/0?student=FA7893E7-23A7-4D72-8D35-146307175C7D"
+              }
+            ],
+            "isRead" : false,
+            "isNew" : false,
+            "date" : "2025.11.25",
+            "weekday" : "火"
+          },
+          {
+            "links" : [
+
+            ],
+            "title" : "月のお知らせ12月号「武蔵小杉校通信」",
+            "isNew" : false,
+            "date" : "2025.11.25",
+            "isDayOff" : false,
+            "category" : {
+              "label" : "月のお知らせ",
+              "id" : "DCD98B2E-D437-47A4-8410-FAAD0425D479"
+            },
+            "canQuickReplySubmit" : true,
+            "source" : {
+              "schoolCode" : "210",
+              "label" : "武蔵小杉校",
+              "kind" : "school"
+            },
+            "weekday" : "火",
+            "pdfs" : [
+              {
+                "title" : "武蔵小杉校通信12月号",
+                "url" : "\/notice\/F2E9401B-4D23-474A-8A27-A843CF1458FA\/pdf\/0?student=FA7893E7-23A7-4D72-8D35-146307175C7D"
+              }
+            ],
+            "monthDayDate" : "11\/25",
+            "id" : "F2E9401B-4D23-474A-8A27-A843CF1458FA",
+            "message" : "2025年12月の武蔵小杉校通信を公開致します。添付ファイルをご確認ください。",
+            "isRead" : false
+          }
+        ],
+        "noticeUnreadCount" : 8
+      }
+    }
+  },
+  "site" : "main"
+};
+// *** end app props ***</script><script defer="defer" src="https://public-waseda-ac-online.s3.ap-northeast-1.amazonaws.com/prod/main-3660fff67f81cf74f585.js"></script></body></html>

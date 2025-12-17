@@ -534,15 +534,23 @@ class ClassroomReprocessorV2:
             except Exception as e:
                 logger.warning(f"  既存チャンク削除エラー（継続）: {e}")
 
-            # チャンクデータ準備
+            # チャンクデータ準備（すべてのメタデータを含める）
             document_data = {
                 'file_name': file_name,
                 'summary': summary,
                 'document_date': document_date,
                 'tags': tags,
+                'doc_type': doc.get('doc_type'),
                 'display_subject': display_subject,
                 'display_post_text': display_post_text,
-                'attachment_text': attachment_text  # classroom_textの場合はNone
+                'display_sender': doc.get('display_sender'),
+                'display_type': doc.get('display_type'),
+                'display_sent_at': doc.get('display_sent_at'),
+                'classroom_sender_email': doc.get('classroom_sender_email'),
+                'attachment_text': attachment_text,  # classroom_textの場合はNone
+                'persons': metadata.get('persons', []) if isinstance(metadata, dict) else [],
+                'organizations': metadata.get('organizations', []) if isinstance(metadata, dict) else [],
+                'people': metadata.get('people', []) if isinstance(metadata, dict) else []
             }
 
             # メタデータチャンク生成
@@ -655,13 +663,29 @@ class ClassroomReprocessorV2:
         display_post_text = doc.get('display_post_text', '')
 
         # 動画ファイルはスキップ（トークン消費が多いため）
+        # ただし、投稿本文がある場合はそれを検索インデックスに登録
         file_ext = '.' + file_name.lower().split('.')[-1] if '.' in file_name else ''
 
         if file_ext in self.VIDEO_EXTENSIONS:
             logger.info(f"🎬 動画ファイルを検出: {file_name}")
-            logger.info(f"  → トークン消費削減のためスキップします")
-            self._mark_task_completed(queue_id, success=True)
-            return True
+            logger.info(f"  → 動画ファイル自体はスキップしますが、投稿本文は処理します")
+
+            # 投稿本文がある場合は、テキストのみドキュメントとして処理
+            if display_subject or display_post_text:
+                logger.info(f"  📝 投稿本文を検出: 件名={len(display_subject)}文字, 本文={len(display_post_text)}文字")
+                return await self._process_video_post_text_only(
+                    queue_id=queue_id,
+                    document_id=document_id,
+                    doc=doc,
+                    file_name=file_name,
+                    display_subject=display_subject,
+                    display_post_text=display_post_text,
+                    preserve_workspace=preserve_workspace
+                )
+            else:
+                logger.info(f"  → 投稿本文もないため完全にスキップします")
+                self._mark_task_completed(queue_id, success=True)
+                return True
 
         # metadata から Google Drive ファイルID/URLを取得
         metadata = doc.get('metadata')
@@ -771,6 +795,226 @@ class ClassroomReprocessorV2:
 
         except Exception as e:
             error_msg = f"Classroom添付ファイルドキュメント処理エラー: {str(e)}"
+            logger.error(f"❌ {error_msg}")
+            logger.exception(e)
+            self._mark_task_failed(queue_id, error_msg, error_details={'exception': str(e)})
+            return False
+
+    async def _process_video_post_text_only(
+        self,
+        queue_id: str,
+        document_id: str,
+        doc: Dict[str, Any],
+        file_name: str,
+        display_subject: str,
+        display_post_text: str,
+        preserve_workspace: bool = True
+    ) -> bool:
+        """
+        動画ファイル付き投稿の本文のみを処理（動画自体はスキップ）
+
+        Args:
+            queue_id: キューID
+            document_id: ドキュメントID
+            doc: ドキュメントデータ
+            file_name: ファイル名
+            display_subject: 投稿件名
+            display_post_text: 投稿本文
+            preserve_workspace: workspaceを保持するか
+
+        Returns:
+            成功したかどうか
+        """
+        from D_stage_a_classifier.classifier import StageAClassifier
+        from F_stage_c_extractor.extractor import StageCExtractor
+        from A_common.config.yaml_loader import get_classification_yaml_string
+
+        logger.info(f"📝 動画投稿の本文処理開始: {file_name}")
+        logger.info(f"  件名: {display_subject[:50] if display_subject else '(なし)'}...")
+        logger.info(f"  本文: {display_post_text[:50] if display_post_text else '(なし)'}...")
+
+        try:
+            # Stage 1とStage 2のクライアントを初期化
+            stage1_classifier = StageAClassifier(llm_client=self.pipeline.llm_client)
+            stage2_extractor = StageCExtractor(llm_client=self.pipeline.llm_client)
+            yaml_string = get_classification_yaml_string()
+
+            # workspaceを決定
+            workspace_to_use = doc.get('workspace', 'unknown') if preserve_workspace else 'unknown'
+
+            # テキストを結合
+            text_parts = []
+            if display_subject:
+                text_parts.append(f"【件名】\n{display_subject}")
+            if display_post_text:
+                text_parts.append(f"【本文】\n{display_post_text}")
+            # 動画ファイルであることを明記
+            text_parts.append(f"【動画ファイル】\n{file_name}")
+            combined_text = '\n\n'.join(text_parts)
+
+            # ============================================
+            # Stage C: Claude構造化（メタデータ抽出）
+            # ============================================
+            logger.info("[Stage C] Claude構造化開始...")
+
+            stage1_result_for_stagec = {
+                'doc_type': doc.get('doc_type', 'unknown'),
+                'workspace': doc.get('workspace', 'unknown')
+            }
+
+            stagec_result = stage2_extractor.extract_metadata(
+                file_name=file_name,
+                stage1_result=stage1_result_for_stagec,
+                workspace=doc.get('workspace', 'unknown'),
+                attachment_text=None,  # 動画は処理しない
+                display_subject=display_subject if display_subject else None,
+                display_post_text=display_post_text if display_post_text else None,
+            )
+
+            # Stage Cの結果を取得
+            document_date = stagec_result.get('document_date')
+            tags = stagec_result.get('tags', [])
+            stagec_metadata = stagec_result.get('metadata', {})
+
+            logger.info(f"[Stage C] 完了: metadata_fields={len(stagec_metadata)}")
+
+            # ============================================
+            # Stage A: Gemini統合・要約（Stage Cの結果を活用）
+            # ============================================
+            logger.info("[Stage A] Gemini統合・要約開始...")
+
+            summary = ''
+            relevant_date = None
+
+            try:
+                from pathlib import Path as PathLib
+                stageA_result = await stage1_classifier.classify(
+                    file_path=PathLib("dummy"),
+                    doc_types_yaml=yaml_string,
+                    mime_type="text/plain",
+                    text_content=combined_text,
+                    stagec_result=stagec_result
+                )
+
+                summary = stageA_result.get('summary', '')
+                relevant_date = stageA_result.get('relevant_date')
+
+                logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
+
+            except Exception as e:
+                logger.error(f"[Stage A] 処理エラー: {e}")
+                summary = stagec_result.get('summary', '')
+                relevant_date = stagec_result.get('document_date')
+                logger.info("[Stage A] 失敗 → Stage Cのsummaryを使用")
+
+            # 結果の統合
+            doc_type = doc.get('doc_type', 'unknown')
+            metadata = stagec_metadata
+
+            logger.info(f"[処理完了] doc_type={doc_type}")
+
+            # ============================================
+            # チャンク化処理
+            # ============================================
+            logger.info("[チャンク化] 開始...")
+
+            # 既存チャンクを削除（再処理の場合）
+            try:
+                delete_result = self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
+                deleted_count = len(delete_result.data) if delete_result.data else 0
+                logger.info(f"  既存チャンク削除: {deleted_count}個")
+            except Exception as e:
+                logger.warning(f"  既存チャンク削除エラー（継続）: {e}")
+
+            # チャンクデータ準備（すべてのメタデータを含める）
+            document_data = {
+                'file_name': file_name,
+                'summary': summary,
+                'document_date': document_date,
+                'tags': tags,
+                'doc_type': doc.get('doc_type'),
+                'display_subject': display_subject,
+                'display_post_text': display_post_text,
+                'display_sender': doc.get('display_sender'),
+                'display_type': doc.get('display_type'),
+                'display_sent_at': doc.get('display_sent_at'),
+                'classroom_sender_email': doc.get('classroom_sender_email'),
+                'attachment_text': None,  # 動画ファイルは処理しない
+                'persons': metadata.get('persons', []) if isinstance(metadata, dict) else [],
+                'organizations': metadata.get('organizations', []) if isinstance(metadata, dict) else [],
+                'people': metadata.get('people', []) if isinstance(metadata, dict) else []
+            }
+
+            # メタデータチャンク生成
+            from A_common.processing.metadata_chunker import MetadataChunker
+            metadata_chunker = MetadataChunker()
+            metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
+
+            current_chunk_index = 0
+            for meta_chunk in metadata_chunks:
+                meta_text = meta_chunk.get('chunk_text', '')
+                meta_type = meta_chunk.get('chunk_type', 'metadata')
+                meta_weight = meta_chunk.get('search_weight', 1.0)
+
+                if not meta_text:
+                    continue
+
+                # Embedding生成
+                meta_embedding = self.pipeline.llm_client.generate_embedding(meta_text)
+
+                # search_indexに保存
+                meta_doc = {
+                    'document_id': document_id,
+                    'chunk_index': current_chunk_index,
+                    'chunk_content': meta_text,
+                    'chunk_size': len(meta_text),
+                    'chunk_type': meta_type,
+                    'embedding': meta_embedding,
+                    'search_weight': meta_weight
+                }
+
+                try:
+                    self.db.client.table('search_index').insert(meta_doc).execute()
+                    current_chunk_index += 1
+                except Exception as e:
+                    logger.error(f"  チャンク保存エラー: {e}")
+
+            logger.info(f"[チャンク化] 完了: {current_chunk_index}個のチャンク作成")
+
+            # ============================================
+            # データベース更新
+            # ============================================
+            update_data = {
+                'summary': summary,
+                'metadata': metadata,
+                'processing_status': 'completed',
+                'processing_stage': 'stagec_and_stagea_complete',
+                'stagea_classifier_model': 'gemini-2.5-flash',
+                'stagec_extractor_model': 'claude-haiku-4-5-20251001',
+                'relevant_date': relevant_date,
+                'attachment_text': f"【動画ファイル】{file_name}"  # 動画ファイル情報を記録
+            }
+
+            if document_date:
+                update_data['document_date'] = document_date
+            if tags:
+                update_data['tags'] = tags
+
+            response = self.db.client.table('source_documents').update(update_data).eq('id', document_id).execute()
+
+            if response.data:
+                logger.success(f"✅ 動画投稿本文処理成功: {file_name}")
+                logger.info(f"  チャンク数: {current_chunk_index}")
+                self._mark_task_completed(queue_id, success=True)
+                return True
+            else:
+                error_msg = "データベース更新失敗"
+                logger.error(error_msg)
+                self._mark_task_failed(queue_id, error_msg)
+                return False
+
+        except Exception as e:
+            error_msg = f"動画投稿本文処理エラー: {str(e)}"
             logger.error(f"❌ {error_msg}")
             logger.exception(e)
             self._mark_task_failed(queue_id, error_msg, error_details={'exception': str(e)})

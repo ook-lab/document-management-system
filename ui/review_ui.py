@@ -1012,9 +1012,14 @@ def main():
         pdf_review_ui()
 
     with tab2:
-        # メールUIをインポートして表示
-        from ui.email_inbox import email_inbox_ui
-        email_inbox_ui()
+        # メール受信トレイ機能（開発中）
+        st.info("📬 メール受信トレイ機能は現在開発中です。")
+        st.markdown("""
+        この機能では以下が可能になります：
+        - メールの一覧表示
+        - メールの内容プレビュー
+        - メールの分類と管理
+        """)
 
 
 if __name__ == "__main__":
