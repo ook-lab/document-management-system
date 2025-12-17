@@ -392,7 +392,7 @@ def pdf_review_ui():
     drive_file_id = selected_doc.get('drive_file_id')
     source_id = selected_doc.get('source_id')
     file_id = drive_file_id or source_id
-    file_name = selected_doc.get('file_name', 'unknown')
+    file_name = selected_doc.get('file_name') or 'unknown'
     doc_type = selected_doc.get('doc_type', '')
 
     # metadataをパース（JSON文字列の場合と辞書の場合の両方に対応）
@@ -540,8 +540,21 @@ def pdf_review_ui():
                     st.code(f"パス: {file_path}")
 
             if file_path and Path(file_path).exists():
+                # ダウンロードされたファイルから実際のファイル名を取得
+                actual_file_name = Path(file_path).name
+                if file_name == 'unknown' and actual_file_name:
+                    file_name = actual_file_name
+                    logger.info(f"実際のファイル名を取得: {file_name}")
+
                 # ファイルタイプに応じてプレビュー表示
-                file_extension = file_name.lower().split('.')[-1] if '.' in file_name else ''
+                # まず実際のファイルパスから拡張子を取得（より確実）
+                file_extension = Path(file_path).suffix.lstrip('.').lower()
+
+                # ファイルパスから取得できない場合、file_nameから取得
+                if not file_extension and file_name and '.' in file_name:
+                    file_extension = file_name.lower().split('.')[-1]
+
+                logger.info(f"ファイル拡張子: {file_extension}")
 
                 # PDFの場合
                 if file_extension == 'pdf' or file_name.lower().endswith('.pdf'):
