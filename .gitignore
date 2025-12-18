@@ -26,3 +26,9 @@ check_*.py
 debug_*.py
 apply_*.py
 collect_codebase2.py
+
+# 一時ファイル・デバッグファイル
+temp/
+nul
+*.backup
+*_debug.html
