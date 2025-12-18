@@ -1,0 +1,43 @@
+# ============================================
+# AIモデル定義
+# ============================================
+# 各ステージで使用するAIモデルを定義
+# キー: default, flyer, classroom など (doc_type や条件に対応)
+
+models:
+  # Stage F: Visual Analysis (視覚解析)
+  stage_f:
+    default: "gemini-2.5-flash"
+    flyer: "gemini-2.5-pro"
+    classroom: "gemini-2.5-pro"
+
+  # Stage G: Text Formatting (書式整形)
+  stage_g:
+    default: "gemini-2.5-flash"
+    flyer: "gemini-2.5-pro"
+    classroom: "gemini-2.5-flash"
+
+  # Stage H: Structuring (構造化)
+  stage_h:
+    default: "claude-haiku-4-5-20251001"
+    flyer: "claude-haiku-4-5-20251001"
+    classroom: "claude-haiku-4-5-20251001"
+
+  # Stage I: Synthesis (統合・要約)
+  stage_i:
+    default: "gemini-2.5-flash"
+    flyer: "gemini-2.5-flash"
+    classroom: "gemini-2.5-flash"
+
+  # Stage K: Embedding (ベクトル化)
+  stage_k:
+    default: "text-embedding-3-small"
+    flyer: "text-embedding-3-small"
+    classroom: "text-embedding-3-small"
+
+# ============================================
+# モデルのコスト情報（参考）
+# ============================================
+# gemini-2.5-flash: 高速、安価
+# claude-haiku-4-5: 構造化に最適
+# text-embedding-3-small: 1536次元ベクトル

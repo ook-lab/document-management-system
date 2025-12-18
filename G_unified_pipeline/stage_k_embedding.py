@@ -1,0 +1,98 @@
+"""
+Stage K: Embedding (ベクトル化)
+
+チャンクをベクトル化して search_index に保存
+- 役割: チャンクをベクトル化
+- モデル: OpenAI text-embedding-3-small (1536次元)
+"""
+from typing import Dict, Any, List
+from loguru import logger
+
+from C_ai_common.llm_client.llm_client import LLMClient
+from A_common.database.client import DatabaseClient
+
+
+class StageKEmbedding:
+    """Stage K: ベクトル化"""
+
+    def __init__(self, llm_client: LLMClient, db_client: DatabaseClient):
+        """
+        Args:
+            llm_client: LLMクライアント
+            db_client: データベースクライアント
+        """
+        self.llm_client = llm_client
+        self.db = db_client
+
+    def embed_and_save(
+        self,
+        document_id: str,
+        chunks: List[Dict[str, Any]],
+        delete_existing: bool = False
+    ) -> Dict[str, Any]:
+        """
+        チャンクをベクトル化して search_index に保存
+
+        Args:
+            document_id: ドキュメントID
+            chunks: チャンクリスト
+            delete_existing: 既存のチャンクを削除するか
+
+        Returns:
+            {
+                'success': bool,
+                'saved_count': int,
+                'failed_count': int
+            }
+        """
+        logger.info("[Stage K] ベクトル化 + search_index保存開始...")
+
+        # 既存ドキュメントの場合は、古いチャンクを削除
+        if delete_existing:
+            try:
+                logger.info(f"[Stage K] 既存チャンク削除: document_id={document_id}")
+                self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
+            except Exception as e:
+                logger.warning(f"[Stage K 警告] 既存チャンク削除エラー（継続）: {e}")
+
+        saved_count = 0
+        failed_count = 0
+
+        for chunk in chunks:
+            try:
+                # Embedding生成
+                embedding = self.llm_client.generate_embedding(chunk['chunk_text'])
+
+                # search_indexに保存
+                chunk_data = {
+                    'document_id': document_id,
+                    'chunk_content': chunk['chunk_text'],
+                    'chunk_type': chunk['chunk_type'],
+                    'embedding': embedding,
+                    'search_weight': chunk.get('search_weight', 1.0)
+                }
+
+                self.db.client.table('search_index').insert(chunk_data).execute()
+                saved_count += 1
+
+            except Exception as e:
+                logger.error(f"[Stage K エラー] チャンク保存失敗: {e}")
+                failed_count += 1
+
+        logger.info(f"[Stage K完了] {saved_count}/{len(chunks)}チャンクを保存 (失敗: {failed_count})")
+
+        return {
+            'success': saved_count > 0,
+            'saved_count': saved_count,
+            'failed_count': failed_count
+        }
+
+    def process(self, chunks: List[Dict[str, Any]], document_id: str) -> None:
+        """
+        チャンクをベクトル化して保存（process() エイリアス）
+
+        Args:
+            chunks: チャンクリスト
+            document_id: ドキュメントID
+        """
+        self.embed_and_save(chunks, document_id)

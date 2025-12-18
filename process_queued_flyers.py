@@ -40,11 +40,7 @@ sys.path.insert(0, str(root_dir))
 
 from A_common.database.client import DatabaseClient
 from A_common.connectors.google_drive import GoogleDriveConnector
-from C_ai_common.llm_client.llm_client import LLMClient
-from E_stage_b_vision.flyer_vision_processor import FlyerVisionProcessor
-from F_stage_c_extractor.extractor import StageCExtractor
-from D_stage_a_classifier.classifier import StageAClassifier
-from A_common.processing.metadata_chunker import MetadataChunker
+from G_unified_pipeline import UnifiedDocumentPipeline
 
 
 class FlyerProcessor:
@@ -57,16 +53,14 @@ class FlyerProcessor:
         """
         self.db = DatabaseClient()
         self.drive = GoogleDriveConnector()
-        self.llm_client = LLMClient()
 
-        self.vision_processor = FlyerVisionProcessor(llm_client=self.llm_client)
-        self.stagec_extractor = StageCExtractor(llm_client=self.llm_client)
-        self.stagea_classifier = StageAClassifier(llm_client=self.llm_client)
+        # 統合パイプラインを初期化
+        self.pipeline = UnifiedDocumentPipeline(db_client=self.db)
 
         self.temp_dir = Path(temp_dir)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
 
-        logger.info("FlyerProcessor初期化完了")
+        logger.info("FlyerProcessor初期化完了（G_unified_pipeline使用）")
 
     def get_pending_flyers(
         self,
@@ -108,7 +102,7 @@ class FlyerProcessor:
         flyer_doc: Dict[str, Any]
     ) -> Dict[str, Any]:
         """
-        1件のチラシを処理
+        1件のチラシを処理（G_unified_pipeline使用）
 
         Args:
             flyer_doc: チラシドキュメント情報
@@ -154,209 +148,70 @@ class FlyerProcessor:
             logger.info(f"  ダウンロード完了: {local_path}")
 
             # ============================================
-            # Stage B: Gemini Vision（2段階処理）
+            # G_unified_pipeline で処理
             # ============================================
-            logger.info("[Stage B] Gemini Vision処理開始...")
+            logger.info("[G_unified_pipeline] チラシ処理開始...")
 
-            flyer_metadata = {
-                'organization': organization,
-                'flyer_title': flyer_doc.get('flyer_title'),
-                'flyer_period': flyer_doc.get('flyer_period'),
-                'page_number': flyer_doc.get('page_number')
-            }
-
-            vision_result = await self.vision_processor.process_flyer_image(
-                image_path=Path(local_path),
-                flyer_metadata=flyer_metadata
-            )
-
-            if not vision_result.get('success'):
-                raise Exception(f"Vision処理失敗: {vision_result.get('error')}")
-
-            step1_result = vision_result['step1_result']
-            step2_result = vision_result['step2_result']
-
-            full_text = step1_result.get('full_text', '')
-            products = step2_result.get('products', [])
-
-            logger.info(f"[Stage B完了] テキスト: {len(full_text)}文字, 商品: {len(products)}件")
-
-            # ============================================
-            # Stage C: Haiku構造化
-            # ============================================
-            logger.info("[Stage C] Haiku構造化開始...")
-
-            stagec_result = self.stagec_extractor.extract_metadata(
+            # doc_type="flyer" で統合パイプラインを実行
+            # → config/prompts/stage_f/flyer.md
+            # → config/prompts/stage_g/flyer.md
+            # → config/prompts/stage_h/flyer.md
+            # → config/prompts/stage_i/flyer.md
+            pipeline_result = await self.pipeline.process_document(
+                file_path=Path(local_path),
                 file_name=file_name,
-                stage1_result={
-                    'doc_type': 'physical shop',
-                    'workspace': 'shopping'
-                },
+                doc_type='flyer',  # ← これで自動的にチラシ用プロンプト・モデルが選択される
                 workspace='shopping',
-                attachment_text=full_text
-            )
-
-            document_date = stagec_result.get('document_date')
-            tags = stagec_result.get('tags', [])
-            stagec_metadata = stagec_result.get('metadata', {})
-
-            logger.info(f"[Stage C完了] metadata_fields={len(stagec_metadata)}")
-
-            # ============================================
-            # 商品情報をflyer_productsテーブルに保存
-            # ============================================
-            logger.info("[商品保存] flyer_productsテーブルに保存中...")
-
-            saved_products = await self._save_products(
-                flyer_doc_id=flyer_doc_id,
-                products=products,
-                page_number=flyer_doc.get('page_number', 1)
-            )
-
-            result['products_count'] = saved_products
-            logger.info(f"  保存完了: {saved_products}件")
-
-            # ============================================
-            # Stage A: Gemini要約
-            # ============================================
-            logger.info("[Stage A] Gemini要約開始...")
-
-            summary = ''
-            try:
-                stageA_result = await self.stagea_classifier.classify(
-                    file_path=Path(local_path),
-                    doc_types_yaml="",  # チラシは分類不要
-                    mime_type="image/jpeg",
-                    text_content=full_text,
-                    stagec_result=stagec_result
-                )
-
-                summary = stageA_result.get('summary', '')
-                logger.info(f"[Stage A完了] summary={summary[:50] if summary else ''}...")
-
-            except Exception as e:
-                logger.error(f"[Stage A] エラー: {e}")
-                summary = stagec_result.get('summary', '')
-
-            # ============================================
-            # flyer_documentsテーブルを更新
-            # ============================================
-            logger.info("[更新] flyer_documentsテーブルを更新中...")
-
-            update_data = {
-                'attachment_text': full_text,
-                'summary': summary,
-                'metadata': {
-                    **stagec_metadata,
-                    'step1_ocr': step1_result,
-                    'extraction_notes': step2_result.get('extraction_notes')
-                },
-                'tags': tags,
-                'document_date': document_date,
-                'processing_status': 'completed',
-                'processing_stage': 'products_extracted',
-                'stageb_vision_model': 'gemini-2.0-flash-exp',
-                'stagec_extractor_model': 'claude-haiku-4-5-20251001',
-                'stagea_classifier_model': 'gemini-2.5-flash'
-            }
-
-            self.db.client.table('flyer_documents').update(update_data).eq(
-                'id', flyer_doc_id
-            ).execute()
-
-            # ============================================
-            # チャンク化・ベクトル化
-            # ============================================
-            logger.info("[チャンク化] search_indexに保存中...")
-
-            # 既存チャンク削除
-            try:
-                delete_result = self.db.client.table('search_index').delete().eq(
-                    'document_id', flyer_doc_id
-                ).execute()
-                deleted_count = len(delete_result.data) if delete_result.data else 0
-                logger.info(f"  既存チャンク削除: {deleted_count}個")
-            except Exception as e:
-                logger.warning(f"  既存チャンク削除エラー（継続）: {e}")
-
-            # メタデータチャンク生成
-            metadata_chunker = MetadataChunker()
-
-            document_data = {
-                'file_name': file_name,
-                'summary': summary,
-                'document_date': document_date,
-                'tags': tags,
-                'doc_type': 'physical shop',
-                'display_subject': flyer_doc.get('flyer_title'),
-                'display_sender': organization,
-                'display_sent_at': flyer_doc.get('created_at'),
-                'persons': stagec_metadata.get('persons', []),
-                'organizations': [organization],
-                'attachment_text': full_text
-            }
-
-            metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
-
-            current_chunk_index = 0
-            for meta_chunk in metadata_chunks:
-                meta_text = meta_chunk.get('chunk_text', '')
-                meta_type = meta_chunk.get('chunk_type', 'metadata')
-                meta_weight = meta_chunk.get('search_weight', 1.0)
-
-                if not meta_text:
-                    continue
-
-                # Embedding生成
-                meta_embedding = self.llm_client.generate_embedding(meta_text)
-
-                # search_indexに保存
-                meta_doc = {
-                    'document_id': flyer_doc_id,
-                    'chunk_index': current_chunk_index,
-                    'chunk_content': meta_text,
-                    'chunk_size': len(meta_text),
-                    'chunk_type': meta_type,
-                    'embedding': meta_embedding,
-                    'search_weight': meta_weight
+                mime_type='image/jpeg',  # チラシは通常JPEG
+                source_id=source_id,
+                extra_metadata={
+                    'organization': organization,
+                    'flyer_title': flyer_doc.get('flyer_title'),
+                    'flyer_period': flyer_doc.get('flyer_period'),
+                    'page_number': flyer_doc.get('page_number'),
+                    'flyer_doc_id': flyer_doc_id
                 }
+            )
 
-                try:
-                    await self.db.insert_document('search_index', meta_doc)
-                    current_chunk_index += 1
-                except Exception as e:
-                    logger.error(f"  チャンク保存エラー: {e}")
+            if not pipeline_result.get('success'):
+                raise Exception(f"パイプライン処理失敗: {pipeline_result.get('error')}")
 
-            result['chunks_count'] = current_chunk_index
-            logger.info(f"  チャンク保存完了: {current_chunk_index}個")
+            document_id = pipeline_result['document_id']
+            chunks_count = pipeline_result.get('chunks_count', 0)
 
-            # チャンク数を更新
-            self.db.client.table('flyer_documents').update({
-                'chunk_count': current_chunk_index
-            }).eq('id', flyer_doc_id).execute()
+            logger.info(f"[G_unified_pipeline完了] document_id={document_id}, chunks={chunks_count}")
 
-            result['success'] = True
-            logger.success(f"✅ チラシ処理完了: {file_name}")
-            logger.info(f"  商品: {saved_products}件, チャンク: {current_chunk_index}個")
+            # ============================================
+            # 成功
+            # ============================================
+            self._update_status(flyer_doc_id, 'completed')
+
+            result.update({
+                'success': True,
+                'document_id': document_id,
+                'chunks_count': chunks_count
+            })
+
+            logger.info(f"✅ チラシ処理成功: {file_name}")
+            return result
 
         except Exception as e:
             error_msg = str(e)
             logger.error(f"❌ チラシ処理エラー: {error_msg}", exc_info=True)
 
-            self._update_status(
-                flyer_doc_id,
-                'failed',
-                error=error_msg
-            )
+            self._update_status(flyer_doc_id, 'error', error_message=error_msg)
+
             result['error'] = error_msg
+            return result
 
         finally:
             # 一時ファイル削除
             if local_path and Path(local_path).exists():
-                Path(local_path).unlink()
-                logger.debug(f"一時ファイル削除: {local_path}")
-
-        return result
+                try:
+                    Path(local_path).unlink()
+                    logger.debug(f"一時ファイル削除: {local_path}")
+                except Exception as e:
+                    logger.warning(f"一時ファイル削除失敗: {e}")
 
     async def _save_products(
         self,
@@ -472,7 +327,7 @@ class FlyerProcessor:
 
         if not pending_flyers:
             logger.info("処理待ちのチラシはありません")
-            return {'total': 0, 'success': 0, 'failed': 0}
+            return {'total': 0, 'success': 0, 'failed': 0, 'total_products': 0, 'total_chunks': 0}
 
         logger.info(f"処理対象: {len(pending_flyers)}件")
 

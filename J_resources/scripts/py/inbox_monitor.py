@@ -23,10 +23,10 @@ import traceback
 # パス設定
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from core.connectors.google_drive import GoogleDriveConnector
-from core.database.client import DatabaseClient
-from pipelines.two_stage_ingestion import TwoStageIngestionPipeline
-from core.processors.pdf import calculate_content_hash
+from A_common.connectors.google_drive import GoogleDriveConnector
+from A_common.database.client import DatabaseClient
+from A_common.processors.pdf import calculate_content_hash
+from G_unified_pipeline import UnifiedDocumentPipeline
 
 # ログ設定
 log_dir = Path('logs')
@@ -43,7 +43,13 @@ class InBoxMonitor:
         """初期化"""
         self.drive = GoogleDriveConnector()
         self.db = DatabaseClient()
-        self.pipeline = TwoStageIngestionPipeline()
+
+        # 統合パイプラインを初期化
+        self.pipeline = UnifiedDocumentPipeline(db_client=self.db)
+
+        # 一時ディレクトリ
+        self.temp_dir = Path("./temp")
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
 
         # InBoxフォルダIDとArchiveフォルダIDを取得
         self.inbox_folder_id = self.drive.get_inbox_folder_id()
@@ -143,7 +149,7 @@ class InBoxMonitor:
 
     async def process_file(self, file_meta: Dict[str, Any]) -> bool:
         """
-        新規ファイルを2段階AIパイプラインで処理
+        新規ファイルを Stage E-K パイプラインで処理
 
         Args:
             file_meta: ファイルメタデータ
@@ -153,25 +159,45 @@ class InBoxMonitor:
         """
         file_name = file_meta['name']
         file_id = file_meta['id']
+        mime_type = file_meta.get('mimeType', 'application/octet-stream')
 
         logger.info(f"⚙️  ファイル処理開始: {file_name}")
 
+        local_path = None
         try:
-            # TwoStageIngestionPipelineで処理
-            # workspaceは'inbox'として扱う
-            result = await self.pipeline.process_file(file_meta, workspace='inbox')
+            # ファイルをダウンロード
+            local_path = self.drive.download_file(file_id, file_name, self.temp_dir)
+            logger.info(f"ダウンロード完了: {local_path}")
 
-            if result:
+            # Stage E-K で処理（inbox workspace）
+            # doc_type は'other'として扱う（inbox からの自動取り込み）
+            result = await self.pipeline.process_document(
+                file_path=Path(local_path),
+                file_name=file_name,
+                doc_type='other',
+                workspace='inbox',
+                mime_type=mime_type,
+                source_id=file_id
+            )
+
+            if result and result.get('success'):
                 logger.info(f"✅ ファイル処理成功: {file_name}")
                 return True
             else:
-                logger.error(f"❌ ファイル処理失敗: {file_name}")
+                error_msg = result.get('error', 'unknown error') if result else 'no result'
+                logger.error(f"❌ ファイル処理失敗: {error_msg}")
                 return False
 
         except Exception as e:
             logger.error(f"❌ ファイル処理中に致命的なエラーが発生: {file_name}")
             logger.error(traceback.format_exc())
             return False
+
+        finally:
+            # 一時ファイルを削除
+            if local_path and Path(local_path).exists():
+                Path(local_path).unlink()
+                logger.debug(f"一時ファイル削除: {local_path}")
 
     def move_to_archive(self, file_id: str, file_name: str) -> bool:
         """

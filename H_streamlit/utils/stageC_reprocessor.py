@@ -34,60 +34,65 @@ def reprocess_with_stageC(
     Returns:
         成功した場合True、失敗した場合False
     """
-    from F_stage_c_extractor.extractor import StageCExtractor
-    from C_ai_common.llm_client.llm_client import LLMClient
+    from G_unified_pipeline import UnifiedDocumentPipeline
+    from pathlib import Path
+    import tempfile
+    import asyncio
 
-    logger.info(f"[Stage C 再実行] 開始 - トリガー: {trigger_source}")
+    logger.info(f"[Stage H-K 再実行] 開始 - トリガー: {trigger_source}")
     logger.info(f"  ドキュメントID: {doc_id}")
     logger.info(f"  テキスト長: {len(attachment_text)} 文字")
     logger.info(f"  Workspace: {workspace}")
 
     try:
-        # Stage 1の結果を復元
-        stage1_result = {
-            "doc_type": metadata.get('doc_type', 'other'),
-            "summary": metadata.get('summary', ''),
-            "relevant_date": metadata.get('relevant_date'),
-            "confidence": metadata.get('stage1_confidence', 0.0)
-        }
+        # 統合パイプラインを初期化
+        pipeline = UnifiedDocumentPipeline(db_client=db_client)
 
-        # Stage 2 Extractorを初期化
-        llm_client = LLMClient()
-        extractor = StageCExtractor(llm_client=llm_client)
+        # 補正されたテキストを一時ファイルとして保存
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.txt', delete=False, encoding='utf-8') as tmp:
+            tmp.write(attachment_text)
+            temp_file_path = tmp.name
 
-        # Stage 2再実行
-        with st.spinner(f"🔄 Stage 2（構造化）を再実行中... ({trigger_source})"):
-            stage2_result = extractor.extract_metadata(
-                attachment_text=attachment_text,
-                file_name=file_name,
-                stage1_result=stage1_result,
-                workspace=workspace
-            )
+        temp_path = Path(temp_file_path)
 
-        logger.info(f"[Stage 2 再実行] 完了: 信頼度={stage2_result.get('extraction_confidence', 0):.2f}")
+        try:
+            # Stage H-K を再実行（テキストが既にあるので、Stage E-G はスキップ）
+            with st.spinner(f"🔄 Stage H-K（構造化〜埋め込み）を再実行中... ({trigger_source})"):
+                async def run_pipeline():
+                    return await pipeline.process_document(
+                        file_path=temp_path,
+                        file_name=file_name,
+                        doc_type=metadata.get('doc_type', 'other'),
+                        workspace=workspace,
+                        mime_type='text/plain',  # テキストファイルとして処理
+                        source_id=doc_id,
+                        existing_document_id=doc_id,  # 既存ドキュメントを更新
+                        extra_metadata={
+                            'manually_corrected': True,
+                            'correction_trigger': trigger_source,
+                            'correction_timestamp': __import__('datetime').datetime.now().isoformat(),
+                            'corrected_text_length': len(attachment_text)
+                        }
+                    )
 
-        # メタデータを更新
-        new_metadata = {
-            **metadata,
-            **stage2_result.get('metadata', {}),
-            'manually_corrected': True,
-            'correction_trigger': trigger_source,
-            'correction_timestamp': __import__('datetime').datetime.now().isoformat(),
-            'corrected_text_length': len(attachment_text)
-        }
+                # asyncioループで実行
+                if asyncio.get_event_loop().is_running():
+                    # 既にイベントループが動いている場合（Streamlit環境）
+                    import nest_asyncio
+                    nest_asyncio.apply()
+                    result = asyncio.get_event_loop().run_until_complete(run_pipeline())
+                else:
+                    result = asyncio.run(run_pipeline())
 
-        # データベースに保存
-        success = db_client.record_correction(
-            doc_id=doc_id,
-            new_metadata=new_metadata,
-            new_doc_type=stage2_result.get('doc_type', metadata.get('doc_type')),
-            corrector_email=None,
-            notes=f"{trigger_source}からのStage 2再実行"
-        )
+        finally:
+            # 一時ファイル削除
+            if temp_path.exists():
+                temp_path.unlink()
 
-        if success:
-            st.success(f"✅ Stage 2再実行が完了しました！（トリガー: {trigger_source}）")
-            logger.info(f"[Stage 2 再実行] データベース保存成功")
+        if result.get('success'):
+            st.success(f"✅ Stage H-K再実行が完了しました！（トリガー: {trigger_source}）")
+            logger.info(f"[Stage H-K 再実行] 成功")
+            logger.info(f"  チャンク数: {result.get('chunks_count', 0)}")
 
             # 補正前後の比較を表示
             with st.expander("📊 再実行結果の比較", expanded=True):
@@ -95,23 +100,21 @@ def reprocess_with_stageC(
 
                 with col_before:
                     st.markdown("**補正前**")
-                    st.metric("信頼度", f"{metadata.get('extraction_confidence', 0):.2%}")
-                    st.metric("メタデータフィールド数", len(metadata.get('metadata', {})))
+                    st.metric("メタデータフィールド数", len(metadata.keys()))
 
                 with col_after:
                     st.markdown("**補正後**")
-                    st.metric("信頼度", f"{stage2_result.get('extraction_confidence', 0):.2%}")
-                    st.metric("メタデータフィールド数", len(new_metadata.get('metadata', {})))
+                    st.metric("チャンク数", result.get('chunks_count', 0))
 
             return True
         else:
-            st.error("❌ データベースへの保存に失敗しました")
-            logger.error(f"[Stage 2 再実行] データベース保存失敗")
+            st.error(f"❌ 再実行に失敗しました: {result.get('error')}")
+            logger.error(f"[Stage H-K 再実行] 失敗: {result.get('error')}")
             return False
 
     except Exception as e:
-        logger.error(f"[Stage 2 再実行] エラー: {e}", exc_info=True)
-        st.error(f"❌ Stage 2再実行エラー: {e}")
+        logger.error(f"[Stage H-K 再実行] エラー: {e}", exc_info=True)
+        st.error(f"❌ Stage H-K再実行エラー: {e}")
         return False
 
 
@@ -147,8 +150,8 @@ def show_reprocess_button(
     text_changed = attachment_text != original_text
 
     if not text_changed:
-        st.info("💡 変更がありません。編集後に再実行ボタンが表示されます。")
-        return False
+        st.info("💡 テキストは変更されていませんが、スキーマ変更を反映するため再実行できます。")
+        # スキーマ変更を反映するため、テキスト未変更でも処理を続行
 
     # 変更があることを表示
     char_diff = len(attachment_text) - len(original_text)

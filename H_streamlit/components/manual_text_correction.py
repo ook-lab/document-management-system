@@ -256,55 +256,11 @@ def execute_stage2_reprocessing(
     Returns:
         新しい構造化データ
     """
-    from H_streamlit.utils.stage2_reprocessor import reprocess_with_stageC
-    from A_common.database.client import DatabaseClient
+    logger.warning("[Deprecated] execute_stage2_reprocessing() は非推奨です。H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。")
 
-    logger.warning("[Deprecated] execute_stage2_reprocessing() は非推奨です。ui.utils.stage2_reprocessor.reprocess_with_stageC() を使用してください。")
-
-    # この関数は後方互換性のために残されていますが、新しいユーティリティを内部で使用します
-    # 戻り値の形式を維持するため、ラッパーとして機能します
-    from F_stage_c_extractor.extractor import StageCExtractor
-    from C_ai_common.llm_client.llm_client import LLMClient
-
-    logger.info("[Stage 2 再実行] 開始...")
-    logger.info(f"  補正テキスト: {len(corrected_text)} 文字")
-    logger.info(f"  Workspace: {workspace}")
-
-    # Stage 1の結果を復元
-    stage1_result = {
-        "doc_type": metadata.get('doc_type', 'other'),
-        "summary": metadata.get('summary', ''),
-        "relevant_date": metadata.get('relevant_date'),
-        "confidence": metadata.get('stage1_confidence', 0.0)
-    }
-
-    # Stage 2 Extractorを初期化
-    llm_client = LLMClient()
-    extractor = StageCExtractor(llm_client=llm_client)
-
-    # Stage 2再実行
-    stage2_result = extractor.extract_metadata(
-        attachment_text=corrected_text,
-        file_name=file_name,
-        stage1_result=stage1_result,
-        workspace=workspace
+    # この関数は後方互換性のために残されていますが、実装は削除されました
+    # 新しいコードでは H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を直接使用してください
+    raise NotImplementedError(
+        "execute_stage2_reprocessing() は非推奨です。"
+        "H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。"
     )
-
-    logger.info(f"[Stage 2 再実行] 完了: 信頼度={stage2_result.get('extraction_confidence', 0):.2f}")
-
-    # メタデータを更新
-    new_metadata = {
-        **metadata,
-        **stage2_result.get('metadata', {}),
-        'manually_corrected': True,
-        'correction_timestamp': __import__('datetime').datetime.now().isoformat(),
-        'corrected_text_length': len(corrected_text)
-    }
-
-    return {
-        'summary': stage2_result.get('summary'),
-        'document_date': stage2_result.get('document_date'),
-        'tags': stage2_result.get('tags', []),
-        'metadata': new_metadata,
-        'confidence': stage2_result.get('extraction_confidence', 0.0)
-    }

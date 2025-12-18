@@ -47,19 +47,30 @@ import sys
 from datetime import datetime
 
 from A_common.database.client import DatabaseClient
-from B_ingestion.two_stage_ingestion import TwoStageIngestionPipeline
+from A_common.connectors.google_drive import GoogleDriveConnector
+from G_unified_pipeline import UnifiedDocumentPipeline
+from pathlib import Path
 
 
 class ClassroomReprocessorV2:
-    """Google Classroomドキュメントの再処理（処理状態管理テーブル対応版）"""
+    """Google Classroomドキュメントの再処理（統合パイプライン版）"""
 
     # 動画ファイル拡張子（トークン消費が多いためスキップ対象）
     VIDEO_EXTENSIONS = ['.mp4', '.mov', '.avi', '.mkv', '.webm', '.flv', '.wmv', '.m4v', '.mpeg', '.mpg']
 
     def __init__(self, worker_id: str = "reprocessor_v2"):
         self.db = DatabaseClient()
-        self.pipeline = TwoStageIngestionPipeline()
         self.worker_id = worker_id
+
+        # 統合パイプラインを初期化
+        self.pipeline = UnifiedDocumentPipeline(db_client=self.db)
+
+        # Google Drive connector
+        self.drive = GoogleDriveConnector()
+
+        # 一時ディレクトリ
+        self.temp_dir = Path("./temp")
+        self.temp_dir.mkdir(parents=True, exist_ok=True)
 
     def populate_queue_from_workspace(
         self,
@@ -219,6 +230,56 @@ class ClassroomReprocessorV2:
             logger.error(f"次タスク取得エラー: {e}")
             return None
 
+    async def _process_document_stages(
+        self,
+        file_path: Path,
+        file_name: str,
+        doc_type: str,
+        workspace: str,
+        mime_type: str,
+        source_id: str,
+        existing_document_id: Optional[str] = None,
+        display_subject: Optional[str] = None,
+        display_post_text: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Stage E-K の処理を実行（統合パイプライン使用）
+
+        Args:
+            file_path: ファイルパス
+            file_name: ファイル名
+            doc_type: ドキュメントタイプ
+            workspace: ワークスペース
+            mime_type: MIMEタイプ
+            source_id: ソースID
+            existing_document_id: 更新する既存ドキュメントID（Noneの場合は新規作成）
+            display_subject: Classroom件名（Classroomドキュメントの場合）
+            display_post_text: Classroom本文（Classroomドキュメントの場合）
+
+        Returns:
+            処理結果 {'success': bool, 'document_id': str, ...}
+        """
+        # Classroom固有フィールドをmetadataに追加
+        extra_metadata = {}
+        if display_subject:
+            extra_metadata['display_subject'] = display_subject
+        if display_post_text:
+            extra_metadata['display_post_text'] = display_post_text
+
+        # 統合パイプラインで処理
+        result = await self.pipeline.process_document(
+            file_path=file_path,
+            file_name=file_name,
+            doc_type=doc_type,
+            workspace=workspace,
+            mime_type=mime_type,
+            source_id=source_id,
+            existing_document_id=existing_document_id,
+            extra_metadata=extra_metadata if extra_metadata else None
+        )
+
+        return result
+
     async def _reprocess_document(
         self,
         queue_id: str,
@@ -308,44 +369,37 @@ class ClassroomReprocessorV2:
             workspace_to_use = doc.get('workspace', 'unknown') if preserve_workspace else 'unknown'
             logger.info(f"Workspace: {workspace_to_use} (preserve={preserve_workspace})")
 
-            # パイプラインで処理
-            result = await self.pipeline.process_file(
-                file_meta=file_meta,
-                workspace=workspace_to_use,
-                force_reprocess=True
-            )
+            # ファイルをダウンロード
+            local_path = None
+            try:
+                local_path = self.drive.download_file(file_id, file_name, self.temp_dir)
+                logger.info(f"ダウンロード完了: {local_path}")
 
-            if result and result.get('success'):
-                logger.success(f"✅ 再処理成功: {file_name}")
-                self._mark_task_completed(queue_id, success=True)
-                return True
-
-            elif result and result.get('error') and 'duplicate key' in str(result.get('error')):
-                # 重複エラーの場合、古いレコードを削除して再試行
-                logger.warning(f"重複検出、古いレコードを削除して再試行")
-                self.db.client.table('source_documents').delete().eq('id', document_id).execute()
-
-                # 再試行
-                result = await self.pipeline.process_file(
-                    file_meta=file_meta,
+                # Stage E-K で処理
+                result = await self._process_document_stages(
+                    file_path=Path(local_path),
+                    file_name=file_name,
+                    doc_type=file_meta.get('doc_type', 'other'),
                     workspace=workspace_to_use,
-                    force_reprocess=True
+                    mime_type=file_meta.get('mimeType', 'application/octet-stream'),
+                    source_id=file_id
                 )
 
                 if result and result.get('success'):
-                    logger.success(f"✅ 再処理成功（再試行）: {file_name}")
+                    logger.success(f"✅ 再処理成功: {file_name}")
                     self._mark_task_completed(queue_id, success=True)
                     return True
                 else:
-                    error_msg = f"再試行も失敗: {result.get('error', 'unknown')}"
-                    logger.error(f"❌ {error_msg}")
+                    error_msg = result.get('error', 'unknown error') if result else 'no result'
+                    logger.error(f"❌ 再処理失敗: {error_msg}")
                     self._mark_task_failed(queue_id, error_msg)
                     return False
-            else:
-                error_msg = result.get('error', 'unknown error') if result else 'no result'
-                logger.error(f"❌ 再処理失敗: {error_msg}")
-                self._mark_task_failed(queue_id, error_msg)
-                return False
+
+            finally:
+                # 一時ファイルを削除
+                if local_path and Path(local_path).exists():
+                    Path(local_path).unlink()
+                    logger.debug(f"一時ファイル削除: {local_path}")
 
         except Exception as e:
             error_msg = f"処理中にエラー: {str(e)}"
@@ -406,8 +460,6 @@ class ClassroomReprocessorV2:
         Returns:
             成功したかどうか
         """
-        from D_stage_a_classifier.classifier import StageAClassifier
-        from F_stage_c_extractor.extractor import StageCExtractor
         from A_common.config.yaml_loader import get_classification_yaml_string
 
         file_name = doc.get('file_name', 'text_only')
@@ -440,9 +492,9 @@ class ClassroomReprocessorV2:
         logger.info(f"テキスト総量: {total_length}文字")
 
         try:
-            # Stage 1とStage 2のクライアントを初期化
-            stage1_classifier = StageAClassifier(llm_client=self.pipeline.llm_client)
-            stage2_extractor = StageCExtractor(llm_client=self.pipeline.llm_client)
+            # Stage H (構造化) と Stage I (要約) を使用
+            stageH_extractor = self.stageH_extractor
+            stageI_synthesizer = self.stageI_synthesizer
             yaml_string = get_classification_yaml_string()
 
             # workspaceを決定
@@ -568,7 +620,7 @@ class ClassroomReprocessorV2:
                     continue
 
                 # Embedding生成
-                meta_embedding = self.pipeline.llm_client.generate_embedding(meta_text)
+                meta_embedding = self.llm_client.generate_embedding(meta_text)
 
                 # search_indexに保存
                 meta_doc = {
@@ -656,8 +708,6 @@ class ClassroomReprocessorV2:
         Returns:
             成功したかどうか
         """
-        from D_stage_a_classifier.classifier import StageAClassifier
-        from F_stage_c_extractor.extractor import StageCExtractor
         from A_common.config.yaml_loader import get_classification_yaml_string
 
         file_name = doc.get('file_name', 'classroom_attachment')
@@ -735,65 +785,40 @@ class ClassroomReprocessorV2:
         logger.info(f"  ファイルソース: {source_description}")
         logger.info(f"  ファイルID: {file_id}")
 
+        # ファイルをダウンロード
+        local_path = None
         try:
-            # ============================================
-            # Pre-processing: ファイルダウンロード
-            # ============================================
-            logger.info("[Pre-processing] ファイルダウンロード開始...")
-
-            # ファイルメタデータを構築（Classroomフィールドを含める）
-            file_meta = {
-                'id': file_id,
-                'name': file_name,
-                'mimeType': self._guess_mime_type(file_name),
-                'doc_type': doc.get('doc_type', 'classroom_document'),
-                'display_subject': display_subject,
-                'display_post_text': display_post_text
-            }
-
             # workspaceを決定
             workspace_to_use = doc.get('workspace', 'unknown') if preserve_workspace else 'unknown'
             logger.info(f"  Workspace: {workspace_to_use} (preserve={preserve_workspace})")
 
-            # ============================================
-            # Stage B: テキスト抽出 + Vision処理
-            # ============================================
-            logger.info("[Stage B] テキスト抽出 + Vision処理開始...")
+            # ファイルをダウンロード
+            local_path = self.drive.download_file(file_id, file_name, self.temp_dir)
+            logger.info(f"ダウンロード完了: {local_path}")
 
-            # パイプラインのprocess_fileメソッドを使用してファイルを処理
-            # これにより、Pre-processing、Stage B、Stage C、Stage Aが全て実行される
-            result = await self.pipeline.process_file(
-                file_meta=file_meta,
+            # Stage E-K で処理（既存ドキュメントを更新）
+            result = await self._process_document_stages(
+                file_path=Path(local_path),
+                file_name=file_name,
+                doc_type=doc.get('doc_type', 'classroom_document'),
                 workspace=workspace_to_use,
-                force_reprocess=True
+                mime_type=self._guess_mime_type(file_name),
+                source_id=file_id,
+                existing_document_id=document_id,  # 既存ドキュメントを更新
+                display_subject=display_subject,
+                display_post_text=display_post_text
             )
 
-            if not result or not result.get('success'):
+            if result and result.get('success'):
+                logger.success(f"✅ Classroom添付ファイルドキュメント再処理成功: {file_name}")
+                logger.info(f"  チャンク数: {result.get('chunks_count', 0)}")
+                self._mark_task_completed(queue_id, success=True)
+                return True
+            else:
                 error_msg = result.get('error', 'unknown error') if result else 'no result'
-                logger.error(f"❌ パイプライン処理失敗: {error_msg}")
+                logger.error(f"❌ 再処理失敗: {error_msg}")
                 self._mark_task_failed(queue_id, error_msg)
                 return False
-
-            # パイプラインが処理したドキュメントIDを取得
-            processed_doc_id = result.get('document_id')
-
-            # ============================================
-            # 元のドキュメントを削除し、新しいドキュメントIDを維持
-            # （file_metaにClassroomフィールドを含めたので、チャンク再生成は不要）
-            # ============================================
-            if processed_doc_id != document_id:
-                logger.info(f"[ドキュメント統合] 元のID {document_id} → 新ID {processed_doc_id}")
-                # 古いドキュメントを削除
-                try:
-                    self.db.client.table('source_documents').delete().eq('id', document_id).execute()
-                    logger.info("  古いドキュメント削除完了")
-                except Exception as e:
-                    logger.warning(f"  古いドキュメント削除エラー（継続）: {e}")
-
-            logger.success(f"✅ Classroom添付ファイルドキュメント再処理成功: {file_name}")
-            # チャンク数はパイプライン処理で自動的に記録されます
-            self._mark_task_completed(queue_id, success=True)
-            return True
 
         except Exception as e:
             error_msg = f"Classroom添付ファイルドキュメント処理エラー: {str(e)}"
@@ -801,6 +826,12 @@ class ClassroomReprocessorV2:
             logger.exception(e)
             self._mark_task_failed(queue_id, error_msg, error_details={'exception': str(e)})
             return False
+
+        finally:
+            # 一時ファイルを削除
+            if local_path and Path(local_path).exists():
+                Path(local_path).unlink()
+                logger.debug(f"一時ファイル削除: {local_path}")
 
     async def _process_video_post_text_only(
         self,
@@ -827,8 +858,6 @@ class ClassroomReprocessorV2:
         Returns:
             成功したかどうか
         """
-        from D_stage_a_classifier.classifier import StageAClassifier
-        from F_stage_c_extractor.extractor import StageCExtractor
         from A_common.config.yaml_loader import get_classification_yaml_string
 
         logger.info(f"📝 動画投稿の本文処理開始: {file_name}")
@@ -836,9 +865,9 @@ class ClassroomReprocessorV2:
         logger.info(f"  本文: {display_post_text[:50] if display_post_text else '(なし)'}...")
 
         try:
-            # Stage 1とStage 2のクライアントを初期化
-            stage1_classifier = StageAClassifier(llm_client=self.pipeline.llm_client)
-            stage2_extractor = StageCExtractor(llm_client=self.pipeline.llm_client)
+            # Stage H (構造化) と Stage I (要約) を使用
+            stageH_extractor = self.stageH_extractor
+            stageI_synthesizer = self.stageI_synthesizer
             yaml_string = get_classification_yaml_string()
 
             # workspaceを決定
@@ -962,7 +991,7 @@ class ClassroomReprocessorV2:
                     continue
 
                 # Embedding生成
-                meta_embedding = self.pipeline.llm_client.generate_embedding(meta_text)
+                meta_embedding = self.llm_client.generate_embedding(meta_text)
 
                 # search_indexに保存
                 meta_doc = {

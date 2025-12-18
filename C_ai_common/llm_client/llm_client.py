@@ -225,12 +225,20 @@ class LLMClient:
                 {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
             ]
 
+            # 生成設定
+            generation_config = genai.GenerationConfig(
+                max_output_tokens=config.get("max_tokens", 65536),
+                temperature=config.get("temperature", 0.1)
+            )
+
+            # response_format が kwargs に含まれている場合
+            response_format = kwargs.get('response_format')
+            if response_format in ["json", "json_object"]:
+                generation_config.response_mime_type = "application/json"
+
             response = model.generate_content(
                 content_parts,
-                generation_config=genai.GenerationConfig(
-                    max_output_tokens=config.get("max_tokens", 65536),
-                    temperature=config.get("temperature", 0.1)
-                ),
+                generation_config=generation_config,
                 safety_settings=safety_settings
             )
 
@@ -412,6 +420,112 @@ class LLMClient:
         )
 
         return response.data[0].embedding
+
+    def generate_with_vision(
+        self,
+        prompt: str,
+        image_path: str,
+        model: str = "gemini-2.0-flash-exp",
+        temperature: float = 0.0,
+        max_tokens: int = 65536,
+        response_format: Optional[str] = None
+    ) -> str:
+        """
+        画像ファイルを使ってGemini Vision APIを呼び出し
+
+        Args:
+            prompt: プロンプト
+            image_path: 画像ファイルのパス（PNG, JPEG等）
+            model: モデル名
+            temperature: 温度パラメータ
+            max_tokens: 最大トークン数
+            response_format: レスポンスフォーマット（"json", "json_object" など）
+
+        Returns:
+            生成されたテキスト
+
+        Raises:
+            ValueError: APIキーがない、またはレスポンスが不正な場合
+            Exception: その他のエラー
+        """
+        if not self.gemini_api_key:
+            raise ValueError("Gemini API key is missing")
+
+        try:
+            model_obj = genai.GenerativeModel(model)
+
+            # ファイルをアップロード
+            mime_type, _ = mimetypes.guess_type(image_path)
+            if not mime_type:
+                mime_type = "image/jpeg"  # デフォルト
+
+            uploaded_file = genai.upload_file(path=image_path, mime_type=mime_type)
+
+            # コンテンツパーツを構築
+            content_parts = [prompt, uploaded_file]
+
+            # 安全フィルター設定
+            safety_settings = [
+                {"category": "HARM_CATEGORY_HARASSMENT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_HATE_SPEECH", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_SEXUALLY_EXPLICIT", "threshold": "BLOCK_NONE"},
+                {"category": "HARM_CATEGORY_DANGEROUS_CONTENT", "threshold": "BLOCK_NONE"},
+            ]
+
+            # 生成設定
+            generation_config = genai.GenerationConfig(
+                max_output_tokens=max_tokens,
+                temperature=temperature
+            )
+
+            # response_format が指定されている場合
+            if response_format in ["json", "json_object"]:
+                generation_config.response_mime_type = "application/json"
+
+            # APIを呼び出し
+            response = model_obj.generate_content(
+                content_parts,
+                generation_config=generation_config,
+                safety_settings=safety_settings
+            )
+
+            # アップロードファイルを削除
+            try:
+                genai.delete_file(name=uploaded_file.name)
+            except Exception:
+                pass
+
+            # レスポンスの検証
+            if not response.candidates:
+                raise ValueError("Gemini returned no candidates")
+
+            candidate = response.candidates[0]
+
+            # finish_reason をチェック
+            if candidate.finish_reason != 1:  # 1 = STOP (正常終了)
+                finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
+                error_details = {
+                    "finish_reason": candidate.finish_reason,
+                    "finish_reason_name": finish_reason_name
+                }
+                if hasattr(candidate, 'safety_ratings') and candidate.safety_ratings:
+                    error_details["safety_ratings"] = [
+                        {
+                            "category": rating.category.name if hasattr(rating.category, 'name') else str(rating.category),
+                            "probability": rating.probability.name if hasattr(rating.probability, 'name') else str(rating.probability)
+                        }
+                        for rating in candidate.safety_ratings
+                    ]
+                logger.error(f"Gemini Vision失敗: {error_details}")
+                raise ValueError(f"Gemini finish_reason: {finish_reason_name} ({candidate.finish_reason})")
+
+            # テキストを取得
+            text_content = candidate.content.parts[0].text if candidate.content.parts else ""
+            return text_content
+
+        except Exception as e:
+            logger.error(f"Gemini Vision API エラー: {e}")
+            raise
 
     def transcribe_image(
         self,
