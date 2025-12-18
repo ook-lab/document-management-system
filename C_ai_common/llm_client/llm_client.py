@@ -228,7 +228,7 @@ class LLMClient:
             response = model.generate_content(
                 content_parts,
                 generation_config=genai.GenerationConfig(
-                    max_output_tokens=config.get("max_tokens", 8000),
+                    max_output_tokens=config.get("max_tokens", 65536),
                     temperature=config.get("temperature", 0.1)
                 ),
                 safety_settings=safety_settings
@@ -437,7 +437,7 @@ class LLMClient:
             prompt=prompt,
             file_path=image_path,
             config={
-                "max_tokens": 8192,  # トークン数を増やして長い出力に対応
+                "max_tokens": 65536,  # Gemini 2.5の最大出力トークン数（65,536）
                 "temperature": 0.0
             }
         )

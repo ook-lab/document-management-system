@@ -897,9 +897,9 @@ structured_field_keys:
                 st.markdown("表形式で編集できます")
                 st.markdown("---")
 
-                # 表エディタでレンダリング
+                # 表エディタでレンダリング（ドキュメントごとにユニークなキーを使用）
                 edited_value = _render_array_table(
-                    field["key"],
+                    f"{field['key']}_{doc_id}",
                     field["data"],
                     field["label"]
                 )
