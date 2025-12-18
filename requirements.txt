@@ -42,6 +42,7 @@ pyyaml>=6.0
 json_repair
 beautifulsoup4==4.12.3
 lxml>=5.1.0
+requests>=2.31.0
 
 # Browser Automation
 playwright==1.41.0
