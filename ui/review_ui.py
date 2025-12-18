@@ -743,8 +743,18 @@ Path.suffix: '{Path(file_path).suffix}'
             )
 
             # テキストコンテンツを取得
-            # source_documentsテーブルの実際のカラムを使用
-            extracted_text = selected_doc.get('summary', '') or selected_doc.get('display_post_text', '')
+            # 必ずこの順で結合: 1. display_post_text (投稿本文) → 2. attachment_text (添付ファイル)
+            display_text = selected_doc.get('display_post_text', '') or ''
+            attachment_text = selected_doc.get('attachment_text', '') or ''
+
+            # 両方を結合（空の場合も含む）
+            parts = []
+            if display_text:
+                parts.append(display_text)
+            if attachment_text:
+                parts.append(attachment_text)
+
+            extracted_text = '\n\n'.join(parts) if parts else ''
 
             # 手動補正UIを表示
             corrected_text = render_manual_text_correction(
