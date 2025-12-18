@@ -55,8 +55,10 @@ def render_manual_text_correction(
     file_name: str,
     extracted_text: str,
     metadata: Dict[str, Any],
-    doc_type: str
-) -> Optional[str]:
+    doc_type: str,
+    display_post_text: str = "",
+    attachment_text: str = ""
+) -> Optional[Dict[str, str]]:
     """
     手動テキスト補正UIをレンダリング
 
@@ -69,12 +71,15 @@ def render_manual_text_correction(
     Args:
         doc_id: ドキュメントID
         file_name: ファイル名
-        extracted_text: Gemini Visionが抽出したテキスト
+        extracted_text: 結合されたテキスト（表示用、下位互換性）
         metadata: 既存のメタデータ（Stage 1の結果を含む）
         doc_type: ドキュメントタイプ
+        display_post_text: Classroom投稿本文
+        attachment_text: 添付ファイルのテキスト
 
     Returns:
-        補正されたテキスト（再実行が要求された場合）、またはNone
+        補正されたテキストの辞書（再実行が要求された場合）、またはNone
+        {"display_post_text": str, "attachment_text": str}
     """
     st.markdown("---")
     st.markdown("### 🛠️ テキスト抽出の手動補正（Human-in-the-loop）")
@@ -118,85 +123,100 @@ def render_manual_text_correction(
     st.markdown("---")
 
     # タブで編集方法を選択
-    tab1, tab2, tab3 = st.tabs(["📝 全文編集", "✏️ 行単位編集", "📊 差分プレビュー"])
+    tab1, tab2 = st.tabs(["📝 全文編集", "📊 差分プレビュー"])
 
-    # セッション状態でテキストを管理
-    if f'corrected_text_{doc_id}' not in st.session_state:
-        st.session_state[f'corrected_text_{doc_id}'] = extracted_text
+    # セッション状態でテキストを管理（2つのフィールドを別々に管理）
+    if f'corrected_display_text_{doc_id}' not in st.session_state:
+        st.session_state[f'corrected_display_text_{doc_id}'] = display_post_text
+    if f'corrected_attachment_text_{doc_id}' not in st.session_state:
+        st.session_state[f'corrected_attachment_text_{doc_id}'] = attachment_text
 
-    corrected_text = None
+    corrected_texts = None
 
     with tab1:
         st.markdown("#### 全文を編集")
-        st.info("💡 取りこぼされた文字を追加するか、テキスト全体を書き直してください")
+        st.info("💡 投稿本文と添付ファイルのテキストを別々に編集できます")
 
-        user_input = st.text_area(
-            "テキストの手動入力・補正",
-            value=st.session_state[f'corrected_text_{doc_id}'],
-            height=400,
-            key=f"manual_text_full_{doc_id}",
-            help="Gemini Visionが取りこぼした文字を追加してください"
+        # 投稿本文の編集
+        st.markdown("**📧 投稿本文 (display_post_text)**")
+        st.caption("Classroomの投稿本文、メールの件名・本文など")
+        display_input = st.text_area(
+            "投稿本文",
+            value=st.session_state[f'corrected_display_text_{doc_id}'],
+            height=200,
+            key=f"manual_display_text_{doc_id}",
+            help="Classroom投稿本文やメールの件名・本文を編集",
+            label_visibility="collapsed"
         )
+        st.session_state[f'corrected_display_text_{doc_id}'] = display_input
 
-        # リアルタイム文字数表示
-        char_diff = len(user_input) - len(extracted_text)
-        if char_diff > 0:
-            st.success(f"✅ {char_diff} 文字追加されました（合計: {len(user_input)} 文字）")
-        elif char_diff < 0:
-            st.warning(f"⚠️ {abs(char_diff)} 文字削除されました（合計: {len(user_input)} 文字）")
+        # 文字数表示
+        display_diff = len(display_input) - len(display_post_text)
+        if display_diff > 0:
+            st.success(f"✅ {display_diff} 文字追加（合計: {len(display_input)} 文字）")
+        elif display_diff < 0:
+            st.warning(f"⚠️ {abs(display_diff)} 文字削除（合計: {len(display_input)} 文字）")
         else:
             st.info("変更なし")
 
-        st.session_state[f'corrected_text_{doc_id}'] = user_input
+        st.markdown("---")
+
+        # 添付ファイルテキストの編集
+        st.markdown("**📎 添付ファイル (attachment_text)**")
+        st.caption("PDFやOffice文書からGemini Visionが抽出したテキスト")
+        attachment_input = st.text_area(
+            "添付ファイルのテキスト",
+            value=st.session_state[f'corrected_attachment_text_{doc_id}'],
+            height=200,
+            key=f"manual_attachment_text_{doc_id}",
+            help="Gemini Visionが抽出したテキストを補正",
+            label_visibility="collapsed"
+        )
+        st.session_state[f'corrected_attachment_text_{doc_id}'] = attachment_input
+
+        # 文字数表示
+        attachment_diff = len(attachment_input) - len(attachment_text)
+        if attachment_diff > 0:
+            st.success(f"✅ {attachment_diff} 文字追加（合計: {len(attachment_input)} 文字）")
+        elif attachment_diff < 0:
+            st.warning(f"⚠️ {abs(attachment_diff)} 文字削除（合計: {len(attachment_input)} 文字）")
+        else:
+            st.info("変更なし")
 
     with tab2:
-        st.markdown("#### 行単位で編集")
-        st.info("💡 各行を個別に編集できます。間違っている行だけを修正してください")
-
-        lines = extracted_text.split('\n')
-        edited_lines = []
-
-        for i, line in enumerate(lines):
-            col1, col2 = st.columns([1, 20])
-            with col1:
-                st.markdown(f"`{i+1:02d}`")
-            with col2:
-                edited_line = st.text_input(
-                    f"行 {i+1}",
-                    value=line,
-                    key=f"line_{doc_id}_{i}",
-                    label_visibility="collapsed"
-                )
-                edited_lines.append(edited_line)
-
-        # 行編集の結果を反映
-        line_edited_text = "\n".join(edited_lines)
-        st.session_state[f'corrected_text_{doc_id}'] = line_edited_text
-
-        # 変更行数をカウント
-        changed_lines = sum(1 for orig, edit in zip(lines, edited_lines) if orig != edit)
-        if changed_lines > 0:
-            st.success(f"✅ {changed_lines} 行が変更されました")
-
-    with tab3:
         st.markdown("#### 変更内容のプレビュー")
         st.info("💡 元のテキストと補正後のテキストの差分を確認できます")
 
-        current_text = st.session_state[f'corrected_text_{doc_id}']
+        current_display_text = st.session_state[f'corrected_display_text_{doc_id}']
+        current_attachment_text = st.session_state[f'corrected_attachment_text_{doc_id}']
 
-        if current_text != extracted_text:
-            st.markdown("**差分:**")
-            diff_markdown = _highlight_diff(extracted_text, current_text)
+        # 投稿本文の差分
+        st.markdown("**📧 投稿本文の変更:**")
+        if current_display_text != display_post_text:
+            diff_markdown = _highlight_diff(display_post_text, current_display_text)
             st.markdown(diff_markdown)
-
-            # 統計情報
             col_stat1, col_stat2 = st.columns(2)
             with col_stat1:
-                st.metric("元の文字数", len(extracted_text))
+                st.metric("元の文字数", len(display_post_text))
             with col_stat2:
-                st.metric("補正後の文字数", len(current_text))
+                st.metric("補正後の文字数", len(current_display_text))
         else:
-            st.info("変更がありません")
+            st.info("変更なし")
+
+        st.markdown("---")
+
+        # 添付ファイルの差分
+        st.markdown("**📎 添付ファイルの変更:**")
+        if current_attachment_text != attachment_text:
+            diff_markdown = _highlight_diff(attachment_text, current_attachment_text)
+            st.markdown(diff_markdown)
+            col_stat1, col_stat2 = st.columns(2)
+            with col_stat1:
+                st.metric("元の文字数", len(attachment_text))
+            with col_stat2:
+                st.metric("補正後の文字数", len(current_attachment_text))
+        else:
+            st.info("変更なし")
 
     st.markdown("---")
 
@@ -213,11 +233,18 @@ def render_manual_text_correction(
             type="primary",
             use_container_width=True,
             key=f"reprocess_{doc_id}",
-            help="補正されたテキストでClaude 4.5 Haikuによる構造化を再実行します"
+            help="補正されたテキストでClaude 4.5 Haikuによる構造化 + 全チャンク再生成を実行します"
         ):
-            current_text = st.session_state[f'corrected_text_{doc_id}']
-            if current_text != extracted_text:
-                logger.info(f"[手動補正] テキスト補正完了: {len(extracted_text)} → {len(current_text)} 文字")
+            current_display_text = st.session_state[f'corrected_display_text_{doc_id}']
+            current_attachment_text = st.session_state[f'corrected_attachment_text_{doc_id}']
+
+            display_changed = current_display_text != display_post_text
+            attachment_changed = current_attachment_text != attachment_text
+
+            if display_changed or attachment_changed:
+                logger.info(f"[手動補正] テキスト補正完了:")
+                logger.info(f"  投稿本文: {len(display_post_text)} → {len(current_display_text)} 文字")
+                logger.info(f"  添付ファイル: {len(attachment_text)} → {len(current_attachment_text)} 文字")
             else:
                 st.info("ℹ️ テキストは変更されていませんが、スキーマ変更を反映するため再実行します")
                 logger.info(f"[手動補正] テキスト未変更だがStage 2再実行を要求（スキーマ変更反映のため）")
@@ -233,15 +260,19 @@ def render_manual_text_correction(
             key=f"reset_{doc_id}",
             help="元のテキストに戻します"
         ):
-            st.session_state[f'corrected_text_{doc_id}'] = extracted_text
+            st.session_state[f'corrected_display_text_{doc_id}'] = display_post_text
+            st.session_state[f'corrected_attachment_text_{doc_id}'] = attachment_text
             st.rerun()
 
     # 再実行フラグがセットされている場合、補正テキストを返す
     if st.session_state.get(f'trigger_reprocess_{doc_id}', False):
-        corrected_text = st.session_state[f'corrected_text_{doc_id}']
+        corrected_texts = {
+            "display_post_text": st.session_state[f'corrected_display_text_{doc_id}'],
+            "attachment_text": st.session_state[f'corrected_attachment_text_{doc_id}']
+        }
         # フラグをクリア
         st.session_state[f'trigger_reprocess_{doc_id}'] = False
-        return corrected_text
+        return corrected_texts
 
     return None
 

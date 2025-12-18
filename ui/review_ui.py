@@ -757,21 +757,29 @@ Path.suffix: '{Path(file_path).suffix}'
             extracted_text = '\n\n'.join(parts) if parts else ''
 
             # 手動補正UIを表示
-            corrected_text = render_manual_text_correction(
+            corrected_texts = render_manual_text_correction(
                 doc_id=doc_id,
                 file_name=file_name,
                 extracted_text=extracted_text,
                 metadata=metadata,
-                doc_type=doc_type
+                doc_type=doc_type,
+                display_post_text=display_text,
+                attachment_text=attachment_text
             )
 
             # Stage 2再実行が要求された場合
-            if corrected_text:
-                with st.spinner("🔄 補正されたテキストでStage 2（構造化）を再実行中..."):
+            if corrected_texts:
+                with st.spinner("🔄 補正されたテキストでStage 2（構造化）+ 全チャンク再生成中..."):
                     try:
+                        # 結合されたテキスト（Stage C用）
+                        corrected_combined_text = '\n\n'.join([
+                            corrected_texts.get('display_post_text', ''),
+                            corrected_texts.get('attachment_text', '')
+                        ]).strip()
+
                         # Stage 2再実行
                         reprocessed_result = execute_stage2_reprocessing(
-                            corrected_text=corrected_text,
+                            corrected_text=corrected_combined_text,
                             file_name=file_name,
                             metadata=metadata,
                             workspace=selected_doc.get('workspace', 'personal')
@@ -785,13 +793,122 @@ Path.suffix: '{Path(file_path).suffix}'
                         logger.info(f"[Stage 2再実行] new_metadata keys: {list(new_metadata.keys())}")
                         logger.info(f"[Stage 2再実行] new_doc_type: {doc_type}")
 
-                        success = db_client.record_correction(
-                            doc_id=doc_id,
-                            new_metadata=new_metadata,
-                            new_doc_type=doc_type,
-                            corrector_email=None,
-                            notes="手動テキスト補正によるStage 2再実行"
-                        )
+                        # display_post_text と attachment_text を更新
+                        update_fields = {
+                            'metadata': new_metadata,
+                            'doc_type': doc_type,
+                            'display_post_text': corrected_texts.get('display_post_text', ''),
+                            'attachment_text': corrected_texts.get('attachment_text', '')
+                        }
+
+                        success = db_client.update_document(doc_id, update_fields)
+
+                        # 補正履歴を記録
+                        if success:
+                            db_client.record_correction(
+                                doc_id=doc_id,
+                                new_metadata=new_metadata,
+                                new_doc_type=doc_type,
+                                corrector_email=None,
+                                notes="手動テキスト補正によるStage 2再実行 + 全チャンク再生成"
+                            )
+
+                            # search_indexの全チャンクを削除して再生成
+                            try:
+                                logger.info(f"[チャンク再生成] 開始: doc_id={doc_id}")
+
+                                # 1. 既存チャンクを削除
+                                delete_result = db_client.supabase.table('search_index').delete().eq('document_id', doc_id).execute()
+                                logger.info(f"[チャンク再生成] 既存チャンク削除完了")
+
+                                # 2. チャンク化対象テキストを準備
+                                chunk_target_text = corrected_combined_text
+
+                                # 3. メタデータチャンク生成
+                                from A_common.processing.metadata_chunker import MetadataChunker
+                                from C_ai_common.llm_client.llm_client import LLMClient
+
+                                llm_client = LLMClient()
+                                metadata_chunker = MetadataChunker()
+
+                                document_data = {
+                                    'file_name': file_name,
+                                    'summary': reprocessed_result.get('summary', ''),
+                                    'document_date': reprocessed_result.get('document_date'),
+                                    'tags': reprocessed_result.get('tags', []),
+                                    'doc_type': doc_type,
+                                    'display_post_text': corrected_texts.get('display_post_text', ''),
+                                    'display_subject': selected_doc.get('display_subject', '')
+                                }
+                                metadata_chunks = metadata_chunker.create_metadata_chunks(document_data)
+
+                                current_chunk_index = 0
+                                for meta_chunk in metadata_chunks:
+                                    meta_text = meta_chunk.get('chunk_text', '')
+                                    if not meta_text:
+                                        continue
+                                    meta_embedding = llm_client.generate_embedding(meta_text)
+                                    meta_doc = {
+                                        'document_id': doc_id,
+                                        'chunk_index': current_chunk_index,
+                                        'chunk_content': meta_text,
+                                        'chunk_size': len(meta_text),
+                                        'chunk_type': meta_chunk.get('chunk_type', 'metadata'),
+                                        'search_weight': meta_chunk.get('search_weight', 1.0),
+                                        'embedding': meta_embedding
+                                    }
+                                    db_client.supabase.table('search_index').insert(meta_doc).execute()
+                                    current_chunk_index += 1
+
+                                # 4. 小チャンク生成
+                                from A_common.utils.chunking import TextChunker
+                                chunker = TextChunker(chunk_size=150, chunk_overlap=30)
+                                small_chunks = chunker.split_text(chunk_target_text)
+
+                                for small_chunk in small_chunks:
+                                    small_text = small_chunk.get('chunk_text', '')
+                                    if not small_text:
+                                        continue
+                                    small_embedding = llm_client.generate_embedding(small_text)
+                                    small_doc = {
+                                        'document_id': doc_id,
+                                        'chunk_index': current_chunk_index,
+                                        'chunk_content': small_text,
+                                        'chunk_size': len(small_text),
+                                        'chunk_type': 'content_small',
+                                        'search_weight': 1.0,
+                                        'embedding': small_embedding
+                                    }
+                                    db_client.supabase.table('search_index').insert(small_doc).execute()
+                                    current_chunk_index += 1
+
+                                # 5. 合成チャンク生成
+                                from A_common.utils.synthetic_chunks import create_all_synthetic_chunks
+                                synthetic_chunks = create_all_synthetic_chunks(new_metadata, file_name)
+
+                                for synthetic in synthetic_chunks:
+                                    synthetic_text = synthetic.get('content', '')
+                                    if not synthetic_text:
+                                        continue
+                                    synthetic_embedding = llm_client.generate_embedding(synthetic_text)
+                                    synthetic_doc = {
+                                        'document_id': doc_id,
+                                        'chunk_index': current_chunk_index,
+                                        'chunk_content': synthetic_text,
+                                        'chunk_size': len(synthetic_text),
+                                        'chunk_type': 'synthetic',
+                                        'search_weight': 1.0,
+                                        'embedding': synthetic_embedding,
+                                        'section_title': f'[合成チャンク: {synthetic.get("type", "unknown")}]'
+                                    }
+                                    db_client.supabase.table('search_index').insert(synthetic_doc).execute()
+                                    current_chunk_index += 1
+
+                                logger.info(f"[チャンク再生成] 完了: {current_chunk_index}個のチャンク生成")
+
+                            except Exception as chunk_error:
+                                logger.error(f"[チャンク再生成] エラー: {chunk_error}", exc_info=True)
+                                st.warning(f"⚠️ チャンク再生成中にエラーが発生しました: {chunk_error}")
 
                         if success:
                             st.success("✅ Stage 2再実行が完了しました！構造化データが更新されました。")
@@ -804,11 +921,15 @@ Path.suffix: '{Path(file_path).suffix}'
 
                                 with col_before:
                                     st.markdown("**補正前**")
-                                    st.metric("文字数", len(extracted_text))
+                                    st.metric("投稿本文", f"{len(display_text)} 文字")
+                                    st.metric("添付ファイル", f"{len(attachment_text)} 文字")
+                                    st.metric("合計", f"{len(extracted_text)} 文字")
 
                                 with col_after:
                                     st.markdown("**補正後**")
-                                    st.metric("文字数", len(corrected_text))
+                                    st.metric("投稿本文", f"{len(corrected_texts.get('display_post_text', ''))} 文字")
+                                    st.metric("添付ファイル", f"{len(corrected_texts.get('attachment_text', ''))} 文字")
+                                    st.metric("合計", f"{len(corrected_combined_text)} 文字")
 
                             # ページをリロード
                             import time
