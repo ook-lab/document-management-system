@@ -13,6 +13,7 @@
 import os
 import sys
 import hashlib
+import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 from datetime import datetime
@@ -37,15 +38,18 @@ class TokubaiFlyerIngestionPipeline:
     def __init__(
         self,
         store_url: Optional[str] = None,
-        flyer_folder_id: Optional[str] = None
+        flyer_folder_id: Optional[str] = None,
+        store_name: Optional[str] = None
     ):
         """
         Args:
             store_url: トクバイの店舗URL（Noneの場合は環境変数から取得）
             flyer_folder_id: チラシ保存先のDriveフォルダID（Noneの場合は環境変数から取得）
+            store_name: 店舗名（Noneの場合は環境変数から取得）
         """
         self.store_url = store_url or os.getenv("TOKUBAI_STORE_URL")
         self.flyer_folder_id = flyer_folder_id or os.getenv("TOKUBAI_FLYER_FOLDER_ID")
+        self.store_name = store_name or os.getenv("TOKUBAI_STORE_NAME", "トクバイ")
 
         if not self.store_url:
             raise ValueError("店舗URLが指定されていません。環境変数 TOKUBAI_STORE_URL を設定してください。")
@@ -59,6 +63,7 @@ class TokubaiFlyerIngestionPipeline:
         self.db = DatabaseClient()
 
         logger.info(f"TokubaiFlyerIngestionPipeline初期化完了")
+        logger.info(f"  - Store name: {self.store_name}")
         logger.info(f"  - Store URL: {self.store_url}")
         logger.info(f"  - Flyer folder: {self.flyer_folder_id}")
 
@@ -73,20 +78,18 @@ class TokubaiFlyerIngestionPipeline:
             既に存在するチラシIDのセット
         """
         try:
-            # source_documents テーブルで source_type='tokubai_flyer' のドキュメントを取得
-            result = self.db.client.table('source_documents').select('metadata').eq(
-                'source_type', 'tokubai_flyer'
+            # flyer_documents テーブルで既存のチラシIDを取得
+            result = self.db.client.table('flyer_documents').select('flyer_id').in_(
+                'flyer_id', flyer_ids
             ).execute()
 
-            # metadata->flyer_id を抽出
+            # flyer_id を抽出
             existing_ids = set()
             if result.data:
                 for doc in result.data:
-                    metadata = doc.get('metadata', {})
-                    if isinstance(metadata, dict):
-                        flyer_id = metadata.get('flyer_id')
-                        if flyer_id:
-                            existing_ids.add(flyer_id)
+                    flyer_id = doc.get('flyer_id')
+                    if flyer_id:
+                        existing_ids.add(flyer_id)
 
             logger.info(f"既存のチラシ: {len(existing_ids)}件")
             return existing_ids
@@ -215,45 +218,62 @@ class TokubaiFlyerIngestionPipeline:
                 # 3. メタデータ準備
                 full_flyer_url = f"https://tokubai.co.jp{flyer_url}" if flyer_url.startswith('/') else flyer_url
 
-                metadata = {
-                    'flyer_id': flyer_id,
+                # 4. Supabaseに基本情報のみ保存（flyer_documentsテーブル）
+                doc_data = {
+                    # 基本情報
+                    'source_type': 'flyer',
+                    'workspace': 'shopping',
+                    'doc_type': 'physical shop',
+                    'organization': self.store_name,  # 店舗名
+
+                    # チラシ固有情報
+                    'flyer_id': f"{flyer_id}_p{page_num}",  # ページごとにユニークなID
                     'flyer_title': title,
                     'flyer_period': period,
                     'flyer_url': full_flyer_url,
-                    'image_url': img_url,
                     'page_number': page_num,
-                    'store_url': self.store_url
-                }
 
-                # 4. Supabaseに基本情報のみ保存
-                doc_data = {
-                    'source_type': 'tokubai_flyer',
+                    # ファイル情報
                     'source_id': file_id,
                     'source_url': f"https://drive.google.com/file/d/{file_id}/view",
                     'file_name': actual_file_name,
                     'file_type': 'image',
-                    'doc_type': 'トクバイチラシ',
-                    'workspace': 'household',  # 家計管理用
-                    'person': '共有',  # 家族全員で共有
-                    'organization': 'フーディアム',  # 店舗名（環境変数で変更可能にすることも検討）
-                    'attachment_text': '',  # 空（process_queued_documents.py で抽出）
-                    'summary': '',  # 空（process_queued_documents.py で生成）
-                    'tags': ['チラシ', '買い物'],
-                    'document_date': datetime.now().strftime('%Y.%m.%d'),
-                    'metadata': metadata,
                     'content_hash': hashlib.sha256(image_data).hexdigest(),
+
+                    # OCR・テキスト情報（後で処理）
+                    'attachment_text': '',
+                    'summary': '',
+
+                    # 分類・タグ
+                    'tags': ['チラシ', '買い物'],
+
+                    # 日付
+                    'document_date': datetime.now().date().isoformat(),
+
+                    # 処理ステータス
                     'processing_status': 'pending',  # 画像処理待ち
                     'processing_stage': 'tokubai_flyer_downloaded',
+
                     # 表示用フィールド
                     'display_subject': f"{title} (ページ {page_num})",
                     'display_sent_at': datetime.now().isoformat(),
                     'display_sender': 'トクバイ',
-                    'display_post_text': period
+                    'display_post_text': period,
+
+                    # メタデータ
+                    'metadata': {
+                        'image_url': img_url,
+                        'store_url': self.store_url,
+                        'original_flyer_id': flyer_id
+                    },
+
+                    # その他
+                    'person': '共有'
                 }
 
                 try:
                     # Supabaseに保存
-                    doc_result = await self.db.insert_document('source_documents', doc_data)
+                    doc_result = await self.db.insert_document('flyer_documents', doc_data)
                     if doc_result:
                         doc_id = doc_result.get('id')
                         result['document_ids'].append(doc_id)
@@ -273,21 +293,62 @@ class TokubaiFlyerIngestionPipeline:
         return result
 
 
-async def main():
-    """メインエントリーポイント"""
+def load_stores_config(config_path: Optional[Path] = None) -> Dict[str, Any]:
+    """
+    店舗設定ファイルを読み込む
+
+    Args:
+        config_path: 設定ファイルのパス（Noneの場合はデフォルトパス）
+
+    Returns:
+        設定データ
+    """
+    if config_path is None:
+        config_path = Path(__file__).parent / "stores_config.json"
+
+    try:
+        with open(config_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        logger.info(f"店舗設定ファイルを読み込みました: {config_path}")
+        return config
+    except Exception as e:
+        logger.error(f"店舗設定ファイルの読み込みエラー: {e}")
+        return {"stores": [], "default_folder_id": None}
+
+
+async def process_store(store_config: Dict[str, str], folder_id: str) -> Dict[str, Any]:
+    """
+    1店舗のチラシを処理
+
+    Args:
+        store_config: 店舗設定 {'name': '店舗名', 'url': 'URL', 'enabled': True}
+        folder_id: Google DriveフォルダID
+
+    Returns:
+        処理結果のサマリー
+    """
+    store_name = store_config['name']
+    store_url = store_config['url']
+
     logger.info("=" * 60)
-    logger.info("トクバイチラシ取得パイプライン開始")
+    logger.info(f"店舗処理開始: {store_name}")
     logger.info("=" * 60)
 
     # パイプラインの初期化
     try:
-        pipeline = TokubaiFlyerIngestionPipeline()
+        pipeline = TokubaiFlyerIngestionPipeline(
+            store_url=store_url,
+            flyer_folder_id=folder_id,
+            store_name=store_name
+        )
     except ValueError as e:
-        logger.error(f"初期化エラー: {e}")
-        logger.info("ヒント: .envファイルに以下の環境変数を設定してください")
-        logger.info("  TOKUBAI_STORE_URL=https://tokubai.co.jp/フーディアム/7978")
-        logger.info("  TOKUBAI_FLYER_FOLDER_ID=1uQEJbV94mBC2y0D0FQztDGrzy6UNgEhv")
-        return
+        logger.error(f"初期化エラー ({store_name}): {e}")
+        return {
+            'store_name': store_name,
+            'success': False,
+            'error': str(e),
+            'results': []
+        }
 
     # 1. 店舗ページから全チラシ情報を取得
     logger.info("店舗ページからチラシ一覧を取得中...")
@@ -295,7 +356,12 @@ async def main():
 
     if not all_flyers:
         logger.warning("チラシが取得できませんでした")
-        return
+        return {
+            'store_name': store_name,
+            'success': True,
+            'new_flyers': 0,
+            'results': []
+        }
 
     logger.info(f"チラシを{len(all_flyers)}件取得しました")
 
@@ -312,7 +378,12 @@ async def main():
 
     if not new_flyers:
         logger.info("新着チラシはありません")
-        return
+        return {
+            'store_name': store_name,
+            'success': True,
+            'new_flyers': 0,
+            'results': []
+        }
 
     # 4. 新着チラシを処理
     results = []
@@ -327,34 +398,89 @@ async def main():
     total_docs = sum(len(r['document_ids']) for r in results)
 
     logger.info("=" * 60)
-    logger.info("処理完了")
+    logger.info(f"{store_name} の処理完了")
     logger.info(f"  成功: {success_count}/{len(results)}")
     logger.info(f"  失敗: {len(results) - success_count}/{len(results)}")
     logger.info(f"  処理した画像: {total_images}件")
     logger.info(f"  登録したドキュメント: {total_docs}件（pending状態）")
     logger.info("=" * 60)
-    logger.info("")
-    logger.info("次のステップ:")
-    logger.info("  python process_queued_documents.py --workspace=household")
+
+    return {
+        'store_name': store_name,
+        'success': True,
+        'new_flyers': len(new_flyers),
+        'success_count': success_count,
+        'total_images': total_images,
+        'total_docs': total_docs,
+        'results': results
+    }
+
+
+async def main():
+    """メインエントリーポイント"""
+    logger.info("=" * 60)
+    logger.info("トクバイチラシ取得パイプライン開始（複数店舗対応）")
+    logger.info("=" * 60)
+
+    # 設定ファイルを読み込む
+    config = load_stores_config()
+
+    if not config.get('stores'):
+        logger.error("店舗設定が見つかりません")
+        logger.info("stores_config.json を確認してください")
+        return
+
+    # 有効な店舗のみを処理
+    enabled_stores = [s for s in config['stores'] if s.get('enabled', True)]
+    logger.info(f"処理対象店舗: {len(enabled_stores)}件")
+
+    # フォルダIDを取得（環境変数または設定ファイルから）
+    folder_id = os.getenv("TOKUBAI_FLYER_FOLDER_ID") or config.get('default_folder_id')
+
+    if not folder_id:
+        logger.error("フォルダIDが設定されていません")
+        logger.info("環境変数 TOKUBAI_FLYER_FOLDER_ID または stores_config.json で設定してください")
+        return
+
+    # 各店舗を処理
+    all_store_results = []
+    for i, store in enumerate(enabled_stores, 1):
+        logger.info(f"\n[{i}/{len(enabled_stores)}] 店舗処理開始: {store['name']}")
+        store_result = await process_store(store, folder_id)
+        all_store_results.append(store_result)
+
+    # 全体のサマリー
+    logger.info("\n" + "=" * 60)
+    logger.info("全店舗の処理完了")
+    logger.info("=" * 60)
+
+    total_new_flyers = sum(r.get('new_flyers', 0) for r in all_store_results)
+    total_images = sum(r.get('total_images', 0) for r in all_store_results)
+    total_docs = sum(r.get('total_docs', 0) for r in all_store_results)
+
+    logger.info(f"  処理した店舗: {len(all_store_results)}件")
+    logger.info(f"  新着チラシ: {total_new_flyers}件")
+    logger.info(f"  処理した画像: {total_images}件")
+    logger.info(f"  登録したドキュメント: {total_docs}件（pending状態）")
     logger.info("=" * 60)
 
     # 結果を表示
     print("\n" + "=" * 80)
-    print("🛒 トクバイチラシ取得結果")
+    print("🛒 トクバイチラシ取得結果（複数店舗）")
     print("=" * 80)
 
-    for result in results:
-        print(f"\nFlyer ID: {result['flyer_id']}")
-        print(f"  Success: {result['success']}")
-        print(f"  Images: {len(result['image_file_ids'])}")
-        for file_id in result['image_file_ids']:
-            print(f"    - https://drive.google.com/file/d/{file_id}/view")
-        print(f"  Documents: {len(result['document_ids'])} (pending)")
-        if result['error']:
-            print(f"  ❌ Error: {result['error']}")
+    for store_result in all_store_results:
+        print(f"\n店舗: {store_result['store_name']}")
+        print(f"  新着チラシ: {store_result.get('new_flyers', 0)}件")
+        if store_result.get('results'):
+            print(f"  成功: {store_result.get('success_count', 0)}")
+            print(f"  画像: {store_result.get('total_images', 0)}件")
+            print(f"  ドキュメント: {store_result.get('total_docs', 0)}件")
 
     print("\n" + "=" * 80)
-    print("次のステップ:")
+    print(f"合計: 新着チラシ {total_new_flyers}件、画像 {total_images}件、ドキュメント {total_docs}件")
+    print("=" * 80)
+    print("\n次のステップ:")
     print("  python process_queued_documents.py --workspace=household")
     print("=" * 80)
 

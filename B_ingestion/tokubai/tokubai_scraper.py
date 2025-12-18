@@ -9,6 +9,8 @@ from typing import List, Dict, Any, Optional
 from loguru import logger
 import requests
 from bs4 import BeautifulSoup
+from io import BytesIO
+from PIL import Image
 
 
 class TokubaiScraper:
@@ -58,11 +60,11 @@ class TokubaiScraper:
             soup = BeautifulSoup(html_content, 'html.parser')
             flyer_links = []
 
-            # チラシへのリンクを抽出（aタグのhref="/店舗名/数字"のパターン）
+            # チラシへのリンクを抽出（aタグのhref="/店舗名/数字/leaflets/数字"のパターン）
             for link in soup.find_all('a', href=True):
                 href = link['href']
-                # チラシページのURLパターンをマッチ（例: /フーディアム/7978/1234567）
-                match = re.match(r'^/[^/]+/\d+/(\d+)$', href)
+                # チラシページのURLパターンをマッチ（例: /フーディアム/7978/leaflets/96703723）
+                match = re.match(r'^/[^/]+/\d+/leaflets/(\d+)$', href)
                 if match:
                     flyer_id = match.group(1)
 
@@ -168,9 +170,19 @@ class TokubaiScraper:
                 if not img_url.startswith('http'):
                     continue
 
-                # アイコンやロゴを除外（サイズやファイル名でフィルタ）
-                if any(keyword in img_url.lower() for keyword in ['logo', 'icon', 'banner', 'ad']):
+                # アイコンやロゴ、サムネイルを除外（URLのキーワードでフィルタ）
+                if any(keyword in img_url.lower() for keyword in ['logo', 'icon', 'banner', 'ad', 'thumb', 'thumbnail']):
                     continue
+
+                # URLに小さいサイズの寸法が含まれている場合は除外
+                # 例: "100x100", "150x150", "200x200" など
+                size_pattern = re.search(r'(\d+)x(\d+)', img_url)
+                if size_pattern:
+                    width = int(size_pattern.group(1))
+                    height = int(size_pattern.group(2))
+                    if width < 400 or height < 400:
+                        logger.debug(f"URLにサムネイルサイズが含まれているため除外: {width}x{height} ({img_url})")
+                        continue
 
                 images.append({
                     'url': img_url,
@@ -187,12 +199,14 @@ class TokubaiScraper:
             logger.error(f"画像URL抽出エラー: {e}", exc_info=True)
             return []
 
-    def download_image(self, image_url: str) -> Optional[bytes]:
+    def download_image(self, image_url: str, min_width: int = 400, min_height: int = 400) -> Optional[bytes]:
         """
-        画像をダウンロード
+        画像をダウンロード（サムネイルサイズは除外）
 
         Args:
             image_url: 画像のURL
+            min_width: 最小幅（ピクセル）。これ以下はサムネイルとして除外
+            min_height: 最小高さ（ピクセル）。これ以下はサムネイルとして除外
 
         Returns:
             画像データ（バイト列）、失敗時はNone
@@ -208,8 +222,24 @@ class TokubaiScraper:
                 logger.warning(f"画像ではないコンテンツ: {content_type}")
                 return None
 
-            logger.debug(f"画像ダウンロード成功 ({len(response.content)} bytes)")
-            return response.content
+            image_data = response.content
+
+            # 画像サイズをチェック（サムネイルを除外）
+            try:
+                img = Image.open(BytesIO(image_data))
+                width, height = img.size
+                logger.debug(f"画像サイズ: {width}x{height}")
+
+                if width < min_width or height < min_height:
+                    logger.info(f"サムネイルサイズのため除外: {width}x{height} (URL: {image_url})")
+                    return None
+
+            except Exception as img_error:
+                logger.warning(f"画像サイズチェックエラー: {img_error}")
+                # サイズチェックに失敗した場合は、画像データをそのまま返す
+
+            logger.debug(f"画像ダウンロード成功 ({len(image_data)} bytes, {width}x{height})")
+            return image_data
 
         except Exception as e:
             logger.error(f"画像ダウンロードエラー: {e}")
