@@ -1,9 +1,9 @@
 """
-Stage B: Vision処理プロセッサ (Gemini 2.5 Flash/Pro)
+Stage B: Vision処理プロセッサ (ルートタイプ別2段階処理)
 
 HTMLメールやPDFをVision APIで解析
-- メールルート: Gemini 2.5 Flash-Lite
-- Classroom/ファイルルート: Gemini 2.5 Pro
+- ルートタイプごとに最適なモデルとプロンプトを使用
+- email/file/premium などのルートタイプに対応
 旧名: Email Vision Processor
 """
 import base64
@@ -20,16 +20,220 @@ from A_common.config.model_tiers import ModelTier
 class StageBVisionProcessor:
     """Stage B: Vision APIで視覚的コンテンツを解析するプロセッサ"""
 
-    def __init__(self):
-        """初期化"""
+    # ルートタイプ別のモデル設定
+    ROUTE_CONFIGS = {
+        "email": {
+            "description": "メールルート（高速・低コスト）",
+            "step1": {
+                "model": "gemini-2.5-flash-lite",
+                "temperature": 0.1,
+                "max_tokens": 16384,
+                "prompt_key": "email_step1"
+            },
+            "step2": {
+                "model": "gemini-2.5-flash",
+                "temperature": 0.0,
+                "max_tokens": 8192,
+                "prompt_key": "email_step2"
+            }
+        },
+        "file": {
+            "description": "ファイルルート（高精度）",
+            "step1": {
+                "model": "gemini-2.5-pro",
+                "temperature": 0.1,
+                "max_tokens": 16384,
+                "prompt_key": "file_step1"
+            },
+            "step2": {
+                "model": "gemini-2.5-flash",
+                "temperature": 0.0,
+                "max_tokens": 8192,
+                "prompt_key": "file_step2"
+            }
+        },
+        "premium": {
+            "description": "プレミアムルート（最高精度）",
+            "step1": {
+                "model": "gemini-2.5-pro",
+                "temperature": 0.1,
+                "max_tokens": 16384,
+                "prompt_key": "premium_step1"
+            },
+            "step2": {
+                "model": "gemini-2.5-pro",
+                "temperature": 0.0,
+                "max_tokens": 8192,
+                "prompt_key": "premium_step2"
+            }
+        }
+    }
+
+    # プロンプトテンプレート定義
+    PROMPTS = {
+        # ========================================
+        # メールルート用プロンプト
+        # ========================================
+        "email_step1": """この画像を確認し、読み取れるすべてのテキストを書き出してください。
+
+{metadata_info}
+
+【指示】
+- 上から下、左から右の順で、見えるテキストを書き出してください
+- 小さな文字も含めてください
+- 画像や図がある場合、その説明も含めてください
+- JSON形式は不要です。自然なテキストで出力してください
+
+出力形式:
+---
+[画像内の全テキスト]
+---""",
+
+        "email_step2": """以下の【生テキストデータ】を元に、メール情報を抽出してJSON形式で整理してください。
+
+【生テキストデータ】
+{raw_text}
+
+【出力形式】
+以下のJSON形式で出力してください:
+{{
+  "extracted_text": "抽出されたテキスト全文",
+  "summary": "メールの要約（2-3文）",
+  "key_information": ["重要な情報1", "重要な情報2"],
+  "has_images": true/false,
+  "image_descriptions": ["画像の説明"],
+  "tables": ["テーブルの内容"],
+  "links": ["リンクURL"]
+}}
+
+【注意】
+- 生データに含まれていない情報は推測しないでください
+- extracted_textには生データをそのまま入れてください""",
+
+        # ========================================
+        # ファイルルート用プロンプト（チラシ・フライヤー特化）
+        # ========================================
+        "file_step1": """あなたはプロのOCRスペシャリストです。この画像を隅々までスキャンし、読み取れるすべてのテキストを1文字も漏らさず書き出してください。
+
+{metadata_info}
+
+【重要な指示】
+- 上から下、左から右の順で、見えるすべての文字を書き出してください
+- フォントサイズや色に関わらず、小さな注釈、住所、メールアドレス、電話番号もすべて含めてください
+- 画像や図表がある場合、その説明も含めてください
+- テーブルやリストがある場合、その構造を維持してください
+- チラシの隅にある小さな文字（お問い合わせ先、注意事項、アクセス情報など）は特に注意深く読み取ってください
+- 解釈や要約は不要です。見えたままを出力してください
+- JSON形式は不要です。自然なテキストで出力してください
+
+出力形式:
+---
+[画像内の全テキストをここに書き出す]
+---""",
+
+        "file_step2": """以下の【生テキストデータ】は、画像から抽出されたすべての文字情報です。
+このデータを元に、正確な情報を抽出してJSON形式で整理してください。
+
+【生テキストデータ】
+{raw_text}
+
+【出力形式】
+以下のJSON形式で出力してください:
+{{
+  "extracted_text": "抽出されたテキスト全文（生データそのままでOK）",
+  "summary": "内容の要約（2-3文）",
+  "key_information": [
+    "重要な情報1（日付、金額、リンク、アクションアイテムなど）",
+    "重要な情報2"
+  ],
+  "has_images": true/false,
+  "image_descriptions": ["画像の説明（生データから判断）"],
+  "tables": ["テーブルの内容"],
+  "links": ["リンクURL"]
+}}
+
+【注意】
+- 生データに含まれていない情報は推測しないでください
+- extracted_textには生データをそのまま入れてください
+- 小さな文字で書かれた注釈やお問い合わせ先も key_information に含めてください""",
+
+        # ========================================
+        # プレミアムルート用プロンプト（最高精度）
+        # ========================================
+        "premium_step1": """あなたは最高レベルのOCRスペシャリストであり、プロの校正者です。この画像を極めて注意深くスキャンし、読み取れるすべてのテキストを完璧に書き出してください。
+
+{metadata_info}
+
+【最重要指示】
+- 上から下、左から右の順で、見えるすべての文字を書き出してください
+- フォントサイズや色に関わらず、極小文字、注釈、住所、メールアドレス、電話番号もすべて含めてください
+- 画像や図表がある場合、その詳細な説明も含めてください
+- テーブルやリストがある場合、その構造を正確に維持してください
+- 特殊なフォント、デザイン文字、装飾文字も文脈から正しく判断してください
+- 文字が重なっている、かすれている、背景と同化している場合でも、文脈から推測して書き出してください
+- 解釈や要約は不要です。見えたまま、かつ推測も含めて完璧に出力してください
+- JSON形式は不要です。自然なテキストで出力してください
+
+出力形式:
+---
+[画像内の全テキストを完璧に書き出す]
+---""",
+
+        "premium_step2": """以下の【生テキストデータ】は、最高精度で抽出されたすべての文字情報です。
+このデータを元に、極めて正確な情報を抽出してJSON形式で整理してください。
+
+【生テキストデータ】
+{raw_text}
+
+【出力形式】
+以下のJSON形式で出力してください:
+{{
+  "extracted_text": "抽出されたテキスト全文（生データそのままでOK）",
+  "summary": "内容の詳細な要約（3-5文）",
+  "key_information": [
+    "重要な情報1（日付、金額、リンク、アクションアイテムなど、極めて詳細に）",
+    "重要な情報2"
+  ],
+  "has_images": true/false,
+  "image_descriptions": ["画像の詳細な説明（生データから判断）"],
+  "tables": ["テーブルの内容（完全な形で）"],
+  "links": ["リンクURL"]
+}}
+
+【注意】
+- 生データに含まれていない情報は推測しないでください
+- extracted_textには生データをそのまま入れてください
+- すべての情報を漏らさず key_information に含めてください
+- 最高レベルの精度で構造化してください"""
+    }
+
+    def __init__(self, route_type: str = "email"):
+        """
+        初期化
+
+        Args:
+            route_type: 処理ルートタイプ ("email", "file", "premium")
+        """
         self.screenshot_generator = HTMLScreenshotGenerator(
-            viewport_width=1200,
-            viewport_height=800
+            viewport_width=1600,  # 解像度を上げる（細かい文字に対応）
+            viewport_height=2400  # A4/B5チラシの縦長比率に対応
         )
         self.llm_client = LLMClient()
         self.model_config = ModelTier.EMAIL_VISION
 
-        logger.info(f"StageBVisionProcessor初期化: {self.model_config['model']}")
+        # ルートタイプを設定
+        self.route_type = route_type
+        if route_type not in self.ROUTE_CONFIGS:
+            logger.warning(f"未知のルートタイプ: {route_type}. デフォルト'email'を使用します")
+            self.route_type = "email"
+
+        self.route_config = self.ROUTE_CONFIGS[self.route_type]
+
+        logger.info(f"StageBVisionProcessor初期化完了")
+        logger.info(f"  - ルート: {self.route_type} ({self.route_config['description']})")
+        logger.info(f"  - Step 1: {self.route_config['step1']['model']}")
+        logger.info(f"  - Step 2: {self.route_config['step2']['model']}")
+        logger.info(f"  - 解像度: 1600x2400px")
 
     def _extract_html_text(self, html_content: str) -> Dict[str, Any]:
         """
@@ -209,44 +413,69 @@ class StageBVisionProcessor:
 - 日時: {email_metadata.get('date', 'Unknown')}
 """
 
-            # Gemini Vision APIで解析
-            prompt = f"""このメールのスクリーンショットを解析して、以下の情報を抽出してください。
+            # ===================================================================
+            # Step 1: 生データ抽出（すべてのテキストを漏れなく書き出し）
+            # ===================================================================
+            # ルート設定からプロンプトを取得
+            step1_config = self.route_config['step1']
+            prompt_template = self.PROMPTS[step1_config['prompt_key']]
+            prompt_step1 = prompt_template.format(metadata_info=metadata_info)
 
-{metadata_info}
+            logger.info(f"Step 1: 生データ抽出開始（{step1_config['model']}使用）...")
 
-抽出する情報:
-1. メール本文の全文（可能な限り正確に）
-2. メールの要約（2-3文）
-3. 重要な情報（日付、金額、リンク、アクションアイテムなど）
-4. 画像がある場合、その説明
-5. テーブルやリストがある場合、その内容
-
-以下のJSON形式で出力してください:
-{{
-  "extracted_text": "メール本文の全文",
-  "summary": "メールの要約",
-  "key_information": [
-    "重要な情報1",
-    "重要な情報2"
-  ],
-  "has_images": true/false,
-  "image_descriptions": ["画像の説明"],
-  "tables": ["テーブルの内容"],
-  "links": ["リンクURL"]
-}}"""
-
-            logger.info("Gemini 2.0 Flash-Lite でVision解析中...")
-
-            # Gemini APIを呼び出し
+            # Gemini APIを呼び出し（Step 1）
             try:
-                response = self.llm_client.generate_with_images(
-                    prompt=prompt,
+                raw_text = self.llm_client.generate_with_images(
+                    prompt=prompt_step1,
                     image_data=screenshot_base64,
-                    model=self.model_config['model'],
-                    temperature=self.model_config['temperature'],
-                    max_tokens=self.model_config['max_tokens']
+                    model=step1_config['model'],
+                    temperature=step1_config['temperature'],
+                    max_tokens=step1_config['max_tokens']
                 )
-                logger.info("Vision解析完了")
+                logger.info(f"Step 1完了（{step1_config['model']}）: {len(raw_text)}文字の生データを抽出")
+                logger.debug(f"抽出された生データ（最初の500文字）: {raw_text[:500]}")
+            except Exception as step1_error:
+                # MAX_TOKENSエラーの場合はHTML抽出のみにフォールバック
+                error_str = str(step1_error)
+                if 'MAX_TOKENS' in error_str or 'max_tokens' in error_str:
+                    logger.warning(f"⚠️ Step 1でMAX_TOKENSエラー。HTML抽出のみにフォールバックします: {error_str}")
+                    html_extract = self._extract_html_text(html_content)
+                    fallback_result = {
+                        'extracted_text': html_extract.get('text', ''),
+                        'summary': html_extract.get('text', '')[:200] + '...' if len(html_extract.get('text', '')) > 200 else html_extract.get('text', ''),
+                        'key_information': ['⚠️ ドキュメントが長すぎるため、Vision解析をスキップしました'],
+                        'has_images': False,
+                        'image_descriptions': [],
+                        'tables': [],
+                        'links': html_extract.get('links', []),
+                        'has_tables': html_extract.get('has_tables', False),
+                        'has_lists': html_extract.get('has_lists', False),
+                        'metadata': email_metadata or {}
+                    }
+                    logger.info(f"HTMLフォールバック完了: テキスト={len(fallback_result['extracted_text'])}文字")
+                    return fallback_result
+                else:
+                    raise
+
+            # ===================================================================
+            # Step 2: 構造化（生データをJSON形式に整形）
+            # ===================================================================
+            # ルート設定からプロンプトを取得
+            step2_config = self.route_config['step2']
+            prompt_template = self.PROMPTS[step2_config['prompt_key']]
+            prompt_step2 = prompt_template.format(raw_text=raw_text)
+
+            logger.info(f"Step 2: 構造化開始（{step2_config['model']}使用）...")
+
+            # Gemini APIを呼び出し（Step 2）
+            try:
+                response = self.llm_client.generate(
+                    prompt=prompt_step2,
+                    model=step2_config['model'],
+                    temperature=step2_config['temperature'],
+                    max_tokens=step2_config['max_tokens']
+                )
+                logger.info(f"Step 2完了（{step2_config['model']}）: JSON構造化完了")
             except Exception as vision_error:
                 # MAX_TOKENSエラーの場合はHTML抽出のみにフォールバック
                 error_str = str(vision_error)
