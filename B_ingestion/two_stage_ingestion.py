@@ -244,6 +244,21 @@ class TwoStageIngestionPipeline:
 
             base_metadata = extraction_result.get("metadata", {})
 
+            # Classroom由来の既存メタデータを保持（post_id, course_id, sender_name等）
+            if existing and existing.get('metadata'):
+                existing_metadata = existing['metadata']
+                # JSON文字列の場合はパース
+                if isinstance(existing_metadata, str):
+                    try:
+                        existing_metadata = json.loads(existing_metadata)
+                    except:
+                        existing_metadata = {}
+
+                # 既存のClassroomメタデータをbase_metadataにマージ（上書きしない）
+                if isinstance(existing_metadata, dict):
+                    base_metadata = {**existing_metadata, **base_metadata}
+                    logger.debug(f"既存メタデータをマージ: {len(existing_metadata)}個のキー")
+
             # ============================================
             # Stage C: Claude構造化（メタデータ抽出）
             # ============================================
