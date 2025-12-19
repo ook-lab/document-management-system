@@ -492,9 +492,8 @@ class ClassroomReprocessorV2:
         logger.info(f"テキスト総量: {total_length}文字")
 
         try:
-            # Stage H (構造化) と Stage I (要約) を使用
-            stageH_extractor = self.stageH_extractor
-            stageI_synthesizer = self.stageI_synthesizer
+            # Stage H (構造化) を使用（統合パイプラインから取得）
+            stageH_extractor = self.pipeline.stage_h
             yaml_string = get_classification_yaml_string()
 
             # workspaceを決定
@@ -538,34 +537,19 @@ class ClassroomReprocessorV2:
             logger.info(f"[Stage H] 完了: metadata_fields={len(stageh_metadata)}")
 
             # ============================================
-            # Stage I: Gemini統合・要約（Stage Hの結果を活用）
+            # Stage I: 統合・要約（現在はStage Hの結果のみ使用）
             # ============================================
-            logger.info("[Stage I] Gemini統合・要約開始...")
+            logger.info("[Stage I] Stage Hの結果を使用...")
 
             summary = ''
             relevant_date = None
 
-            try:
-                from pathlib import Path as PathLib
-                stagei_result = await stagea_classifier.classify(
-                    file_path=PathLib("dummy"),  # ダミーパス（使用されない）
-                    doc_types_yaml=yaml_string,
-                    mime_type="text/plain",
-                    text_content=combined_text,
-                    stagec_result=stageh_result  # Stage Hの結果を渡す
-                )
+            # Note: 統合パイプラインへの完全移行のため、Stage Hの結果を直接使用
+            # 将来的にはpipeline.stage_i.processを使用する予定
+            summary = stageh_result.get('summary', '')
+            relevant_date = stageh_result.get('document_date')
 
-                summary = stagei_result.get('summary', '')
-                relevant_date = stagei_result.get('relevant_date')
-
-                logger.info(f"[Stage I] 完了: summary={summary[:50] if summary else ''}...")
-
-            except Exception as e:
-                logger.error(f"[Stage I] 処理エラー: {e}")
-                # Stage Hのsummaryをフォールバックとして使用
-                summary = stageh_result.get('summary', '')
-                relevant_date = stageh_result.get('document_date')
-                logger.info("[Stage I] 失敗 → Stage Hのsummaryを使用")
+            logger.info(f"[Stage I] 完了: summary={summary[:50] if summary else ''}...")
 
             # 結果の統合
             doc_type = doc.get('doc_type', 'unknown')  # 元のdoc_typeを保持（変更しない）
@@ -620,7 +604,7 @@ class ClassroomReprocessorV2:
                     continue
 
                 # Embedding生成
-                meta_embedding = self.llm_client.generate_embedding(meta_text)
+                meta_embedding = self.pipeline.llm_client.generate_embedding(meta_text)
 
                 # search_indexに保存
                 meta_doc = {
@@ -865,9 +849,8 @@ class ClassroomReprocessorV2:
         logger.info(f"  本文: {display_post_text[:50] if display_post_text else '(なし)'}...")
 
         try:
-            # Stage H (構造化) と Stage I (要約) を使用
-            stageH_extractor = self.stageH_extractor
-            stageI_synthesizer = self.stageI_synthesizer
+            # Stage H (構造化) を使用（統合パイプラインから取得）
+            stageH_extractor = self.pipeline.stage_h
             yaml_string = get_classification_yaml_string()
 
             # workspaceを決定
@@ -910,33 +893,19 @@ class ClassroomReprocessorV2:
             logger.info(f"[Stage H] 完了: metadata_fields={len(stagec_metadata)}")
 
             # ============================================
-            # Stage A: Gemini統合・要約（Stage Hの結果を活用）
+            # Stage I: 統合・要約（現在はStage Hの結果のみ使用）
             # ============================================
-            logger.info("[Stage A] Gemini統合・要約開始...")
+            logger.info("[Stage I] Stage Hの結果を使用...")
 
             summary = ''
             relevant_date = None
 
-            try:
-                from pathlib import Path as PathLib
-                stagea_result = await stagea_classifier.classify(
-                    file_path=PathLib("dummy"),
-                    doc_types_yaml=yaml_string,
-                    mime_type="text/plain",
-                    text_content=combined_text,
-                    stagec_result=stagec_result
-                )
+            # Note: 統合パイプラインへの完全移行のため、Stage Hの結果を直接使用
+            # 将来的にはpipeline.stage_i.processを使用する予定
+            summary = stagec_result.get('summary', '')
+            relevant_date = stagec_result.get('document_date')
 
-                summary = stagea_result.get('summary', '')
-                relevant_date = stagea_result.get('relevant_date')
-
-                logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
-
-            except Exception as e:
-                logger.error(f"[Stage A] 処理エラー: {e}")
-                summary = stagec_result.get('summary', '')
-                relevant_date = stagec_result.get('document_date')
-                logger.info("[Stage A] 失敗 → Stage Hのsummaryを使用")
+            logger.info(f"[Stage I] 完了: summary={summary[:50] if summary else ''}...")
 
             # 結果の統合
             doc_type = doc.get('doc_type', 'unknown')
@@ -991,7 +960,7 @@ class ClassroomReprocessorV2:
                     continue
 
                 # Embedding生成
-                meta_embedding = self.llm_client.generate_embedding(meta_text)
+                meta_embedding = self.pipeline.llm_client.generate_embedding(meta_text)
 
                 # search_indexに保存
                 meta_doc = {
