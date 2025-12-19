@@ -515,15 +515,15 @@ class ClassroomReprocessorV2:
             # ============================================
             logger.info("[Stage H] Claude構造化開始...")
 
-            # stagea_resultにはdoc_typeとworkspaceのみを渡す
-            stagea_result_for_stagec = {
+            # Stage Iに渡すdoc_typeとworkspaceの情報を準備
+            stagei_result_for_stageh = {
                 'doc_type': doc.get('doc_type', 'unknown'),
                 'workspace': doc.get('workspace', 'unknown')
             }
 
-            stagec_result = stageh_extractor.extract_metadata(
+            stageh_result = stageh_extractor.extract_metadata(
                 file_name=file_name,
-                stagea_result=stagea_result_for_stagec,  # doc_typeとworkspaceのみ
+                stagea_result=stagei_result_for_stageh,  # doc_typeとworkspaceのみ
                 workspace=doc.get('workspace', 'unknown'),
                 attachment_text=attachment_text if attachment_text else None,
                 display_subject=display_subject if display_subject else None,
@@ -531,45 +531,45 @@ class ClassroomReprocessorV2:
             )
 
             # Stage Hの結果を取得
-            document_date = stagec_result.get('document_date')
-            tags = stagec_result.get('tags', [])
-            stagec_metadata = stagec_result.get('metadata', {})
+            document_date = stageh_result.get('document_date')
+            tags = stageh_result.get('tags', [])
+            stageh_metadata = stageh_result.get('metadata', {})
 
-            logger.info(f"[Stage H] 完了: metadata_fields={len(stagec_metadata)}")
+            logger.info(f"[Stage H] 完了: metadata_fields={len(stageh_metadata)}")
 
             # ============================================
-            # Stage A: Gemini統合・要約（Stage Hの結果を活用）
+            # Stage I: Gemini統合・要約（Stage Hの結果を活用）
             # ============================================
-            logger.info("[Stage A] Gemini統合・要約開始...")
+            logger.info("[Stage I] Gemini統合・要約開始...")
 
             summary = ''
             relevant_date = None
 
             try:
                 from pathlib import Path as PathLib
-                stagea_result = await stagea_classifier.classify(
+                stagei_result = await stagea_classifier.classify(
                     file_path=PathLib("dummy"),  # ダミーパス（使用されない）
                     doc_types_yaml=yaml_string,
                     mime_type="text/plain",
                     text_content=combined_text,
-                    stagec_result=stagec_result  # Stage Hの結果を渡す
+                    stagec_result=stageh_result  # Stage Hの結果を渡す
                 )
 
-                summary = stagea_result.get('summary', '')
-                relevant_date = stagea_result.get('relevant_date')
+                summary = stagei_result.get('summary', '')
+                relevant_date = stagei_result.get('relevant_date')
 
-                logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
+                logger.info(f"[Stage I] 完了: summary={summary[:50] if summary else ''}...")
 
             except Exception as e:
-                logger.error(f"[Stage A] 処理エラー: {e}")
+                logger.error(f"[Stage I] 処理エラー: {e}")
                 # Stage Hのsummaryをフォールバックとして使用
-                summary = stagec_result.get('summary', '')
-                relevant_date = stagec_result.get('document_date')
-                logger.info("[Stage A] 失敗 → Stage Hのsummaryを使用")
+                summary = stageh_result.get('summary', '')
+                relevant_date = stageh_result.get('document_date')
+                logger.info("[Stage I] 失敗 → Stage Hのsummaryを使用")
 
             # 結果の統合
             doc_type = doc.get('doc_type', 'unknown')  # 元のdoc_typeを保持（変更しない）
-            metadata = stagec_metadata
+            metadata = stageh_metadata
 
             logger.info(f"[処理完了] doc_type={doc_type}")
 

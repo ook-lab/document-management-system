@@ -70,7 +70,7 @@ def render_manual_text_correction(
         doc_id: ドキュメントID
         file_name: ファイル名
         extracted_text: Gemini Visionが抽出したテキスト
-        metadata: 既存のメタデータ（Stage Aの結果を含む）
+        metadata: 既存のメタデータ（Stage I統合の結果を含む）
         doc_type: ドキュメントタイプ
 
     Returns:
@@ -110,13 +110,13 @@ def render_manual_text_correction(
     with col_info3:
         st.metric("ファイル名", file_name[:20] + "..." if len(file_name) > 20 else file_name)
 
-    # Stage Aの情報を表示
+    # Vision解析の情報を表示
     with st.expander("🔍 Gemini Visionの解析情報（保持されるレイアウト情報）"):
         st.json({
             "doc_type": doc_type,
             "summary": metadata.get('summary', '')[:200] + "...",
             "relevant_date": metadata.get('relevant_date'),
-            "confidence": metadata.get('stagea_confidence', 0)
+            "confidence": metadata.get('stagea_confidence', 0)  # DBカラム名は保持
         })
 
     st.markdown("---")
@@ -256,11 +256,11 @@ def execute_stageh_reprocessing(
     Returns:
         新しい構造化データ
     """
-    logger.warning("[Deprecated] execute_stageh_reprocessing() は非推奨です。H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。")
+    logger.warning("[Deprecated] execute_stageh_reprocessing() は非推奨です。H_streamlit.utils.stage_h_reprocessor.reprocess_with_stageh() を使用してください。")
 
     # この関数は後方互換性のために残されていますが、実装は削除されました
-    # 新しいコードでは H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を直接使用してください
+    # 新しいコードでは H_streamlit.utils.stage_h_reprocessor.reprocess_with_stageh() を直接使用してください
     raise NotImplementedError(
         "execute_stageh_reprocessing() は非推奨です。"
-        "H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。"
+        "H_streamlit.utils.stage_h_reprocessor.reprocess_with_stageh() を使用してください。"
     )

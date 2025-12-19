@@ -72,7 +72,7 @@ def render_manual_text_correction(
         doc_id: ドキュメントID
         file_name: ファイル名
         extracted_text: 結合されたテキスト（表示用、下位互換性）
-        metadata: 既存のメタデータ（Stage Aの結果を含む）
+        metadata: 既存のメタデータ（Stage I統合の結果を含む）
         doc_type: ドキュメントタイプ
         display_post_text: Classroom投稿本文
         attachment_text: 添付ファイルのテキスト
@@ -112,7 +112,7 @@ def render_manual_text_correction(
     with col_info2:
         st.metric("ファイル名", file_name[:20] + "..." if len(file_name) > 20 else file_name)
 
-    # Stage Aの情報を表示
+    # Vision解析の情報を表示
     with st.expander("🔍 Gemini Visionの解析情報（保持されるレイアウト情報）"):
         st.json({
             "doc_type": doc_type,
@@ -292,17 +292,17 @@ def execute_stageh_reprocessing(
     Args:
         corrected_text: 人間が補正したテキスト
         file_name: ファイル名
-        metadata: Stage Aの結果を含むメタデータ
+        metadata: Stage I統合の結果を含むメタデータ
         workspace: ワークスペース
 
     Returns:
         新しい構造化データ
     """
-    logger.warning("[Deprecated] execute_stageh_reprocessing() は非推奨です。ui.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。")
+    logger.warning("[Deprecated] execute_stageh_reprocessing() は非推奨です。ui.utils.stage_h_reprocessor.reprocess_with_stageh() を使用してください。")
 
     # この関数は後方互換性のために残されていますが、実装は削除されました
-    # 新しいコードでは ui.utils.stageC_reprocessor.reprocess_with_stageC() を直接使用してください
+    # 新しいコードでは ui.utils.stage_h_reprocessor.reprocess_with_stageh() を直接使用してください
     raise NotImplementedError(
         "execute_stageh_reprocessing() は非推奨です。"
-        "ui.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。"
+        "ui.utils.stage_h_reprocessor.reprocess_with_stageh() を使用してください。"
     )

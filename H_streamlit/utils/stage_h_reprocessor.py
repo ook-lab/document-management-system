@@ -1,16 +1,15 @@
 """
-統合Stage C再実行ユーティリティ
+統合Stage H再実行ユーティリティ
 
 全ての編集箇所（全文編集、行単位編集、フォーム編集、表形式編集）から
-Stage C（構造化）を再実行できる共通機能を提供します。
-旧名: Stage H Reprocessor
+Stage H（構造化）を再実行できる共通機能を提供します。
 """
 import streamlit as st
 from typing import Dict, Any, Optional
 from loguru import logger
 
 
-def reprocess_with_stageC(
+def reprocess_with_stageh(
     doc_id: str,
     attachment_text: str,
     file_name: str,
@@ -20,7 +19,7 @@ def reprocess_with_stageC(
     trigger_source: str = "manual_edit"
 ) -> bool:
     """
-    Stage C（構造化）を再実行し、データベースに保存
+    Stage H（構造化）を再実行し、データベースに保存
 
     Args:
         doc_id: ドキュメントID
@@ -170,7 +169,7 @@ def show_reprocess_button(
             use_container_width=True,
             key=f"reprocess_{trigger_source}_{doc_id}"
         ):
-            success = reprocess_with_stageC(
+            success = reprocess_with_stageh(
                 doc_id=doc_id,
                 attachment_text=attachment_text,
                 file_name=file_name,

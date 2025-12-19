@@ -295,16 +295,15 @@ document-management-system/
 │   ├── embeddings/                   # ベクトル埋め込み生成
 │   └── prompts/                      # 共通プロンプト
 │
-├── D_stage_a_classifier/             # Stage A: 文書分類
-│   └── classifier.py                # Gemini 2.5 Flashによる分類
-│
-├── E_stage_b_vision/                 # Stage B: ビジョン・OCR
-│   └── vision.py                    # Gemini 2.5 Flashによる画像処理
-│
-├── F_stage_c_extractor/              # Stage C: 構造化抽出
-│   ├── extractor.py                 # Claude Haiku 4.5による情報抽出
-│   ├── prompts/                     # 抽出用プロンプト
-│   └── schemas/                     # JSONスキーマ
+├── G_unified_pipeline/               # 統合処理パイプライン（Stage E-K）
+│   ├── stage_e_preprocessing.py    # Stage E: 前処理
+│   ├── stage_f_visual.py           # Stage F: Vision解析
+│   ├── stage_g_formatting.py       # Stage G: フォーマット整形
+│   ├── stage_h_structuring.py      # Stage H: 構造化
+│   ├── stage_i_synthesis.py        # Stage I: 統合・要約
+│   ├── stage_j_chunking.py         # Stage J: チャンキング
+│   ├── stage_k_embedding.py        # Stage K: ベクトル埋め込み
+│   └── config/                     # パイプライン設定
 │
 ├── G_cloud_run/                       # Cloud Run（Flask API）
 │   ├── app.py                       # メインFlaskアプリケーション

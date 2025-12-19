@@ -10,9 +10,6 @@ venv/
 
 # Directories not needed in Cloud Run
 B_ingestion/
-D_stage_a_classifier/
-E_stage_b_vision/
-F_stage_c_extractor/
 H_streamlit/
 I_frontend/
 J_resources/
