@@ -85,13 +85,47 @@ class StageGTextFormatter:
                 'error': str(e)
             }
 
-    def process(self, vision_raw: str, prompt_template: str, model: str) -> str:
+    def process(
+        self,
+        vision_raw: str = "",
+        extracted_text: str = "",
+        prompt_template: str = "",
+        model: str = "gemini-2.0-flash-exp",
+        mode: str = "format"
+    ) -> str:
         """
-        Stage F の生テキストを整形（設定ベース版）
+        Stage F の生テキストを整形 + テキスト統合（設定ベース版）
 
         Args:
             vision_raw: Stage F のOCR結果
+            extracted_text: Stage E で抽出したテキスト（mode="integrate" の場合に使用）
             prompt_template: プロンプトテンプレート（{vision_raw} を含む）
+            model: モデル名
+            mode: "format" (整形のみ) または "integrate" (整形 + 統合)
+
+        Returns:
+            formatted_text: 整形されたテキスト（または統合されたテキスト）
+        """
+        if mode == "format":
+            # 従来通り: Vision整形のみ
+            return self._format_vision(vision_raw, prompt_template, model)
+
+        elif mode == "integrate":
+            # 新機能: Vision整形 + テキスト統合
+            vision_formatted = self._format_vision(vision_raw, prompt_template, model)
+            return self._integrate_texts(extracted_text, vision_formatted, model)
+
+        else:
+            logger.error(f"[Stage G エラー] 無効なモード: {mode}")
+            return ""
+
+    def _format_vision(self, vision_raw: str, prompt_template: str, model: str) -> str:
+        """
+        Vision結果を整形
+
+        Args:
+            vision_raw: Stage F のOCR結果
+            prompt_template: プロンプトテンプレート
             model: モデル名
 
         Returns:
@@ -123,3 +157,72 @@ class StageGTextFormatter:
         except Exception as e:
             logger.error(f"[Stage G エラー] テキスト整形失敗: {e}", exc_info=True)
             return ""
+
+    def _integrate_texts(self, extracted: str, vision: str, model: str) -> str:
+        """
+        2つのテキストをLLMで統合
+
+        Args:
+            extracted: Stage E で抽出したテキスト
+            vision: Stage G で整形したVisionテキスト
+            model: モデル名
+
+        Returns:
+            integrated_text: 統合されたテキスト
+        """
+        logger.info(f"[Stage G] Text Integration開始... (model={model})")
+
+        # 両方が空の場合
+        if not extracted and not vision:
+            return ""
+
+        # 片方だけの場合はそのまま返す
+        if not vision:
+            logger.info("[Stage G] Vision結果なし → 抽出テキストのみ")
+            return extracted
+        if not extracted:
+            logger.info("[Stage G] 抽出テキストなし → Vision結果のみ")
+            return vision
+
+        # 両方ある場合はLLMで統合
+        try:
+            integration_prompt = f"""以下の2つのテキストを統合してください。
+
+【ライブラリで抽出したテキスト】
+{extracted}
+
+【Vision OCRで抽出したテキスト】
+{vision}
+
+統合ルール:
+1. 重複する内容は1つにまとめる
+2. 補完的な情報はすべて含める（特にヘッダー、年号、日付などの重要情報）
+3. Vision OCRで得られたヘッダー情報や年号は優先的に冒頭に配置
+4. 表組みはVision OCRの結果を優先（より正確な構造を保持）
+5. 自然な順序で配置（ヘッダー → 本文 → 表 → フッター）
+6. OCRエラーやノイズは除去
+7. セクション見出しや余計な注釈は不要
+
+統合されたテキストのみを出力してください。
+"""
+
+            response = self.llm_client.call_model(
+                tier="default",
+                prompt=integration_prompt,
+                model_name=model
+            )
+
+            if response.get('success'):
+                integrated_text = response.get('content', response.get('response', ''))
+                logger.info(f"[Stage G完了] 統合テキスト: {len(integrated_text)}文字")
+                return integrated_text
+            else:
+                logger.error(f"[Stage G 統合エラー] LLM呼び出し失敗: {response.get('error')}")
+                # 統合失敗時はフォールバック: シンプルな連結
+                logger.warning("[Stage G] 統合失敗 → フォールバック（シンプル連結）")
+                return f"{vision}\n\n{extracted}".strip()
+
+        except Exception as e:
+            logger.error(f"[Stage G 統合エラー] {e}", exc_info=True)
+            # 統合失敗時はフォールバック: シンプルな連結
+            return f"{vision}\n\n{extracted}".strip()

@@ -95,45 +95,38 @@ class UnifiedDocumentPipeline:
             logger.info(f"[Stage E完了] 抽出テキスト長: {len(extracted_text)}文字")
 
             # ============================================
-            # Stage F: Visual Analysis (条件付き)
+            # Stage F: Visual Analysis (全件実行)
             # ============================================
-            vision_raw = ""
-            needs_vision = self._should_run_vision(mime_type, extracted_text)
+            # 設定から Stage F のプロンプトとモデルを取得
+            stage_f_config = self.config.get_stage_config('stage_f', doc_type, workspace)
+            prompt_f = stage_f_config['prompt']
+            model_f = stage_f_config['model']
 
-            if needs_vision and file_path.exists():
-                # 設定から Stage F のプロンプトとモデルを取得
-                stage_f_config = self.config.get_stage_config('stage_f', doc_type, workspace)
-                prompt_f = stage_f_config['prompt']
-                model_f = stage_f_config['model']
-
-                logger.info(f"[Stage F] Visual Analysis開始... (model={model_f})")
-                vision_raw = self.stage_f.process(
-                    file_path=file_path,
-                    prompt=prompt_f,
-                    model=model_f
-                )
-                logger.info(f"[Stage F完了] Vision結果: {len(vision_raw)}文字")
+            logger.info(f"[Stage F] Visual Analysis開始... (model={model_f})")
+            vision_raw = self.stage_f.process(
+                file_path=file_path,
+                prompt=prompt_f,
+                model=model_f
+            )
+            logger.info(f"[Stage F完了] Vision結果: {len(vision_raw)}文字")
 
             # ============================================
-            # Stage G: Text Formatting (条件付き)
+            # Stage G: Text Formatting + Integration (全件実行)
             # ============================================
-            vision_formatted = ""
-            if vision_raw:
-                # 設定から Stage G のプロンプトとモデルを取得
-                stage_g_config = self.config.get_stage_config('stage_g', doc_type, workspace)
-                prompt_g = stage_g_config['prompt']
-                model_g = stage_g_config['model']
+            # 設定から Stage G のプロンプトとモデルを取得
+            stage_g_config = self.config.get_stage_config('stage_g', doc_type, workspace)
+            prompt_g = stage_g_config['prompt']
+            model_g = stage_g_config['model']
 
-                logger.info(f"[Stage G] Text Formatting開始... (model={model_g})")
-                vision_formatted = self.stage_g.process(
-                    vision_raw=vision_raw,
-                    prompt_template=prompt_g,
-                    model=model_g
-                )
-                logger.info(f"[Stage G完了] 整形テキスト: {len(vision_formatted)}文字")
-
-            # 統合テキスト
-            combined_text = f"{extracted_text}\n\n{vision_formatted}".strip()
+            logger.info(f"[Stage G] Text Formatting + Integration開始... (model={model_g})")
+            combined_text = self.stage_g.process(
+                vision_raw=vision_raw,
+                extracted_text=extracted_text,
+                prompt_template=prompt_g,
+                model=model_g,
+                mode="integrate"  # 統合モード
+            )
+            logger.info(f"[Stage G完了] 統合テキスト: {len(combined_text)}文字")
 
             # ============================================
             # Stage H: Structuring
@@ -266,15 +259,3 @@ class UnifiedDocumentPipeline:
         except Exception as e:
             logger.error(f"[パイプラインエラー] {e}", exc_info=True)
             return {'success': False, 'error': str(e)}
-
-    def _should_run_vision(self, mime_type: str, extracted_text: str) -> bool:
-        """Stage F (Vision) を実行すべきか判定"""
-        # 条件1: 画像ファイル
-        if mime_type and mime_type.startswith('image/'):
-            return True
-
-        # 条件2: Pre-processingでテキストがほとんど抽出できなかった（100文字未満）
-        if len(extracted_text.strip()) < 100:
-            return True
-
-        return False

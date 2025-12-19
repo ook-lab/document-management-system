@@ -50,7 +50,7 @@ class StageEPreprocessor:
         try:
             # PDF処理
             if mime_type == 'application/pdf':
-                result = self.pdf_processor.extract_text_from_pdf(str(file_path))
+                result = self.pdf_processor.extract_text(str(file_path))
                 if result.get('success'):
                     extracted_text = result.get('content', '')
                     method = 'pdf'
@@ -103,4 +103,4 @@ class StageEPreprocessor:
             extracted_text: 抽出されたテキスト
         """
         result = self.extract_text(file_path, mime_type)
-        return result.get('content', '') if result.get('success') else ''
+        return result.get('text', '') if result.get('success') else ''
