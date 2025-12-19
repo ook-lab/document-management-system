@@ -7,7 +7,7 @@
 処理内容:
 1. すべてのワークスペース（デフォルト）または指定されたワークスペースのドキュメントをキューに登録
 2. キューから順次タスクを取得して処理
-3. 完全なパイプライン（Pre-processing → Stage B → Stage C → Stage A → Chunking）で処理
+3. 完全なパイプライン（Pre-processing → Stage B → Stage H → Stage A → Chunking）で処理
 4. attachment_text、構造化metadata、search_indexを生成
 5. 処理状態をデータベースで管理（pending → processing → completed/failed）
 
@@ -511,34 +511,34 @@ class ClassroomReprocessorV2:
             combined_text = '\n\n'.join(text_parts)
 
             # ============================================
-            # Stage C: Claude構造化（メタデータ抽出）
+            # Stage H: Claude構造化（メタデータ抽出）
             # ============================================
-            logger.info("[Stage C] Claude構造化開始...")
+            logger.info("[Stage H] Claude構造化開始...")
 
-            # stage1_resultにはdoc_typeとworkspaceのみを渡す
-            stage1_result_for_stagec = {
+            # stagea_resultにはdoc_typeとworkspaceのみを渡す
+            stagea_result_for_stagec = {
                 'doc_type': doc.get('doc_type', 'unknown'),
                 'workspace': doc.get('workspace', 'unknown')
             }
 
-            stagec_result = stage2_extractor.extract_metadata(
+            stagec_result = stageh_extractor.extract_metadata(
                 file_name=file_name,
-                stage1_result=stage1_result_for_stagec,  # doc_typeとworkspaceのみ
+                stagea_result=stagea_result_for_stagec,  # doc_typeとworkspaceのみ
                 workspace=doc.get('workspace', 'unknown'),
                 attachment_text=attachment_text if attachment_text else None,
                 display_subject=display_subject if display_subject else None,
                 display_post_text=display_post_text if display_post_text else None,
             )
 
-            # Stage Cの結果を取得
+            # Stage Hの結果を取得
             document_date = stagec_result.get('document_date')
             tags = stagec_result.get('tags', [])
             stagec_metadata = stagec_result.get('metadata', {})
 
-            logger.info(f"[Stage C] 完了: metadata_fields={len(stagec_metadata)}")
+            logger.info(f"[Stage H] 完了: metadata_fields={len(stagec_metadata)}")
 
             # ============================================
-            # Stage A: Gemini統合・要約（Stage Cの結果を活用）
+            # Stage A: Gemini統合・要約（Stage Hの結果を活用）
             # ============================================
             logger.info("[Stage A] Gemini統合・要約開始...")
 
@@ -547,25 +547,25 @@ class ClassroomReprocessorV2:
 
             try:
                 from pathlib import Path as PathLib
-                stageA_result = await stage1_classifier.classify(
+                stagea_result = await stagea_classifier.classify(
                     file_path=PathLib("dummy"),  # ダミーパス（使用されない）
                     doc_types_yaml=yaml_string,
                     mime_type="text/plain",
                     text_content=combined_text,
-                    stagec_result=stagec_result  # Stage Cの結果を渡す
+                    stagec_result=stagec_result  # Stage Hの結果を渡す
                 )
 
-                summary = stageA_result.get('summary', '')
-                relevant_date = stageA_result.get('relevant_date')
+                summary = stagea_result.get('summary', '')
+                relevant_date = stagea_result.get('relevant_date')
 
                 logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
 
             except Exception as e:
                 logger.error(f"[Stage A] 処理エラー: {e}")
-                # Stage Cのsummaryをフォールバックとして使用
+                # Stage Hのsummaryをフォールバックとして使用
                 summary = stagec_result.get('summary', '')
                 relevant_date = stagec_result.get('document_date')
-                logger.info("[Stage A] 失敗 → Stage Cのsummaryを使用")
+                logger.info("[Stage A] 失敗 → Stage Hのsummaryを使用")
 
             # 結果の統合
             doc_type = doc.get('doc_type', 'unknown')  # 元のdoc_typeを保持（変更しない）
@@ -694,8 +694,8 @@ class ClassroomReprocessorV2:
         処理フロー:
         1. Pre-processing: Drive URLからファイルダウンロード
         2. Stage B: テキスト抽出 + Vision処理
-        3. Stage C: Claude構造化（メタデータ抽出）
-        4. Stage A: Gemini統合・要約（Stage Cの結果を活用）
+        3. Stage H: Claude構造化（メタデータ抽出）
+        4. Stage A: Gemini統合・要約（Stage Hの結果を活用）
         5. チャンク化: subject + post_text + attachment_text
         6. Supabase保存
 
@@ -884,33 +884,33 @@ class ClassroomReprocessorV2:
             combined_text = '\n\n'.join(text_parts)
 
             # ============================================
-            # Stage C: Claude構造化（メタデータ抽出）
+            # Stage H: Claude構造化（メタデータ抽出）
             # ============================================
-            logger.info("[Stage C] Claude構造化開始...")
+            logger.info("[Stage H] Claude構造化開始...")
 
-            stage1_result_for_stagec = {
+            stagea_result_for_stagec = {
                 'doc_type': doc.get('doc_type', 'unknown'),
                 'workspace': doc.get('workspace', 'unknown')
             }
 
-            stagec_result = stage2_extractor.extract_metadata(
+            stagec_result = stageh_extractor.extract_metadata(
                 file_name=file_name,
-                stage1_result=stage1_result_for_stagec,
+                stagea_result=stagea_result_for_stagec,
                 workspace=doc.get('workspace', 'unknown'),
                 attachment_text=None,  # 動画は処理しない
                 display_subject=display_subject if display_subject else None,
                 display_post_text=display_post_text if display_post_text else None,
             )
 
-            # Stage Cの結果を取得
+            # Stage Hの結果を取得
             document_date = stagec_result.get('document_date')
             tags = stagec_result.get('tags', [])
             stagec_metadata = stagec_result.get('metadata', {})
 
-            logger.info(f"[Stage C] 完了: metadata_fields={len(stagec_metadata)}")
+            logger.info(f"[Stage H] 完了: metadata_fields={len(stagec_metadata)}")
 
             # ============================================
-            # Stage A: Gemini統合・要約（Stage Cの結果を活用）
+            # Stage A: Gemini統合・要約（Stage Hの結果を活用）
             # ============================================
             logger.info("[Stage A] Gemini統合・要約開始...")
 
@@ -919,7 +919,7 @@ class ClassroomReprocessorV2:
 
             try:
                 from pathlib import Path as PathLib
-                stageA_result = await stage1_classifier.classify(
+                stagea_result = await stagea_classifier.classify(
                     file_path=PathLib("dummy"),
                     doc_types_yaml=yaml_string,
                     mime_type="text/plain",
@@ -927,8 +927,8 @@ class ClassroomReprocessorV2:
                     stagec_result=stagec_result
                 )
 
-                summary = stageA_result.get('summary', '')
-                relevant_date = stageA_result.get('relevant_date')
+                summary = stagea_result.get('summary', '')
+                relevant_date = stagea_result.get('relevant_date')
 
                 logger.info(f"[Stage A] 完了: summary={summary[:50] if summary else ''}...")
 
@@ -936,7 +936,7 @@ class ClassroomReprocessorV2:
                 logger.error(f"[Stage A] 処理エラー: {e}")
                 summary = stagec_result.get('summary', '')
                 relevant_date = stagec_result.get('document_date')
-                logger.info("[Stage A] 失敗 → Stage Cのsummaryを使用")
+                logger.info("[Stage A] 失敗 → Stage Hのsummaryを使用")
 
             # 結果の統合
             doc_type = doc.get('doc_type', 'unknown')

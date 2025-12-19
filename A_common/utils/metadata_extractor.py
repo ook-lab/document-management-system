@@ -1,7 +1,7 @@
 """
 メタデータ抽出ユーティリティ
 
-Stage 2で抽出されたメタデータから、フィルタリング用の構造化データを抽出します。
+Stage Hで抽出されたメタデータから、フィルタリング用の構造化データを抽出します。
 """
 from typing import Dict, Any, Optional, List
 from datetime import datetime
@@ -21,7 +21,7 @@ class MetadataExtractor:
         メタデータからフィルタリング用の構造化データを抽出
 
         Args:
-            metadata: Stage 2で抽出されたメタデータ
+            metadata: Stage Hで抽出されたメタデータ
             document_date: 文書の日付（YYYY-MM-DD形式）
 
         Returns:

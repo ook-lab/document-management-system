@@ -156,9 +156,9 @@ class LLMClient:
         指定されたタスクに最適なモデルを呼び出し
 
         Args:
-            tier: モデル階層("stage1_classification", "stage2_extraction", "ui_response")
+            tier: モデル階層("stagea_classification", "stageh_extraction", "ui_response")
             prompt: プロンプト
-            file_path: ファイルパス (GeminiのStage 1分類用)
+            file_path: ファイルパス (GeminiのStage A分類用)
             **kwargs: 追加パラメータ
 
         Returns:

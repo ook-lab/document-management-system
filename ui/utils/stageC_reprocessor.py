@@ -3,7 +3,7 @@
 
 全ての編集箇所（全文編集、行単位編集、フォーム編集、表形式編集）から
 Stage C（構造化）を再実行できる共通機能を提供します。
-旧名: Stage 2 Reprocessor
+旧名: Stage H Reprocessor
 """
 import streamlit as st
 from typing import Dict, Any, Optional
@@ -127,10 +127,10 @@ def show_reprocess_button(
     workspace: str,
     db_client,
     trigger_source: str = "manual_edit",
-    button_label: str = "🔄 変更を反映してStage 2再実行"
+    button_label: str = "🔄 変更を反映してStage H再実行"
 ) -> bool:
     """
-    Stage 2再実行ボタンを表示
+    Stage H再実行ボタンを表示
 
     Args:
         doc_id: ドキュメントID

@@ -13,8 +13,8 @@
 ```
 G_unified_pipeline/
 ├── config/
-│   ├── models.yaml              # AIモデル定義
-│   ├── pipeline_routes.yaml     # ルーティング設定
+│   ├── models.yaml                      # AIモデル定義
+│   ├── source_documents_routing.yaml    # ルーティング設定
 │   └── prompts/
 │       ├── stage_f/             # Visual Analysis プロンプト
 │       │   ├── default.md
@@ -68,7 +68,7 @@ if result['success']:
 
 ### 1. 新しいドキュメントタイプを追加
 
-`config/pipeline_routes.yaml` にルートを追加:
+`config/source_documents_routing.yaml` にルートを追加:
 
 ```yaml
 routing:
@@ -159,5 +159,5 @@ result = await pipeline.process_document(
 
 ### ルーティングが正しく動作しない
 
-- `config/pipeline_routes.yaml` で `doc_type` が正しく定義されているか確認
-- 優先順位: `by_doc_type` > `by_workspace` > `default`
+- `config/source_documents_routing.yaml` で `doc_type` が正しく定義されているか確認
+- 優先順位: `by_workspace` > `by_doc_type` > `default`

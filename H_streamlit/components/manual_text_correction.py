@@ -2,13 +2,13 @@
 手動テキスト補正コンポーネント (Human-in-the-loop)
 
 Gemini Visionが取りこぼしたテキストを人間が補完し、
-Stage 2（Claude 4.5 Haiku）で再構造化する機能を提供します。
+Stage H（Claude 4.5 Haiku）で再構造化する機能を提供します。
 
 使用例:
 - スキャンPDFで500文字のテキストがある
 - Gemini Visionが一部しか拾えなかった（200文字）
 - 人間が残りの300文字を手入力
-- 完全なテキスト（500文字）+ Gemini Visionのレイアウト情報でStage 2再実行
+- 完全なテキスト（500文字）+ Gemini Visionのレイアウト情報でStage H再実行
 - → 高品質な構造化データが生成される
 """
 import streamlit as st
@@ -64,13 +64,13 @@ def render_manual_text_correction(
     1. Gemini Visionが抽出したテキストの表示
     2. 人間による手動補正・完全入力
     3. 補正前後の差分表示
-    4. Stage 2再実行ボタン
+    4. Stage H再実行ボタン
 
     Args:
         doc_id: ドキュメントID
         file_name: ファイル名
         extracted_text: Gemini Visionが抽出したテキスト
-        metadata: 既存のメタデータ（Stage 1の結果を含む）
+        metadata: 既存のメタデータ（Stage Aの結果を含む）
         doc_type: ドキュメントタイプ
 
     Returns:
@@ -92,7 +92,7 @@ def render_manual_text_correction(
         **処理フロー:**
         1. 👇 下のエリアに正しいテキストを入力してください
         2. 🔄 「再構造化」ボタンを押すと...
-        3. **完全なテキスト（人間）+ レイアウト情報（Vision）** でStage 2が再実行されます
+        3. **完全なテキスト（人間）+ レイアウト情報（Vision）** でStage Hが再実行されます
         4. ✨ 構造化データの品質がレベルアップ！
 
         **ポイント:**
@@ -105,18 +105,18 @@ def render_manual_text_correction(
     with col_info1:
         st.metric("元の文字数", len(extracted_text))
     with col_info2:
-        stage1_confidence = metadata.get('stage1_confidence', 0)
-        st.metric("Stage 1 信頼度", f"{stage1_confidence:.2%}")
+        stagea_confidence = metadata.get('stagea_confidence', 0)
+        st.metric("Stage A 信頼度", f"{stagea_confidence:.2%}")
     with col_info3:
         st.metric("ファイル名", file_name[:20] + "..." if len(file_name) > 20 else file_name)
 
-    # Stage 1の情報を表示
+    # Stage Aの情報を表示
     with st.expander("🔍 Gemini Visionの解析情報（保持されるレイアウト情報）"):
         st.json({
             "doc_type": doc_type,
             "summary": metadata.get('summary', '')[:200] + "...",
             "relevant_date": metadata.get('relevant_date'),
-            "confidence": metadata.get('stage1_confidence', 0)
+            "confidence": metadata.get('stagea_confidence', 0)
         })
 
     st.markdown("---")
@@ -209,7 +209,7 @@ def render_manual_text_correction(
 
     with col_btn1:
         if st.button(
-            "🔄 Stage 2 再実行",
+            "🔄 Stage H 再実行",
             type="primary",
             use_container_width=True,
             key=f"reprocess_{doc_id}",
@@ -235,32 +235,32 @@ def render_manual_text_correction(
     return corrected_text
 
 
-def execute_stage2_reprocessing(
+def execute_stageh_reprocessing(
     corrected_text: str,
     file_name: str,
     metadata: Dict[str, Any],
     workspace: str
 ) -> Dict[str, Any]:
     """
-    補正されたテキストでStage 2を再実行
+    補正されたテキストでStage Hを再実行
 
     このラッパー関数は後方互換性のために残されています。
-    新しいコードでは ui.utils.stage2_reprocessor を使用してください。
+    新しいコードでは ui.utils.stageh_reprocessor を使用してください。
 
     Args:
         corrected_text: 人間が補正したテキスト
         file_name: ファイル名
-        metadata: Stage 1の結果を含むメタデータ
+        metadata: Stage Aの結果を含むメタデータ
         workspace: ワークスペース
 
     Returns:
         新しい構造化データ
     """
-    logger.warning("[Deprecated] execute_stage2_reprocessing() は非推奨です。H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。")
+    logger.warning("[Deprecated] execute_stageh_reprocessing() は非推奨です。H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。")
 
     # この関数は後方互換性のために残されていますが、実装は削除されました
     # 新しいコードでは H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を直接使用してください
     raise NotImplementedError(
-        "execute_stage2_reprocessing() は非推奨です。"
+        "execute_stageh_reprocessing() は非推奨です。"
         "H_streamlit.utils.stageC_reprocessor.reprocess_with_stageC() を使用してください。"
     )

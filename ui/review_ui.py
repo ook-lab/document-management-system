@@ -739,7 +739,7 @@ Path.suffix: '{Path(file_path).suffix}'
         if file_path and Path(file_path).exists():
             from ui.components.manual_text_correction import (
                 render_manual_text_correction,
-                execute_stage2_reprocessing
+                execute_stageh_reprocessing
             )
 
             # テキストコンテンツを取得
@@ -767,9 +767,9 @@ Path.suffix: '{Path(file_path).suffix}'
                 attachment_text=attachment_text
             )
 
-            # Stage 2再実行が要求された場合
+            # Stage H再実行が要求された場合
             if corrected_texts:
-                with st.spinner("🔄 補正されたテキストでStage 2（構造化）+ 全チャンク再生成中..."):
+                with st.spinner("🔄 補正されたテキストでStage H（構造化）+ 全チャンク再生成中..."):
                     try:
                         # 結合されたテキスト（Stage C用）
                         corrected_combined_text = '\n\n'.join([
@@ -777,8 +777,8 @@ Path.suffix: '{Path(file_path).suffix}'
                             corrected_texts.get('attachment_text', '')
                         ]).strip()
 
-                        # Stage 2再実行
-                        reprocessed_result = execute_stage2_reprocessing(
+                        # Stage H再実行
+                        reprocessed_result = execute_stageh_reprocessing(
                             corrected_text=corrected_combined_text,
                             file_name=file_name,
                             metadata=metadata,
@@ -789,9 +789,9 @@ Path.suffix: '{Path(file_path).suffix}'
                         new_metadata = reprocessed_result['metadata']
 
                         # データベースに保存
-                        logger.info(f"[Stage 2再実行] データベース保存開始: doc_id={doc_id}")
-                        logger.info(f"[Stage 2再実行] new_metadata keys: {list(new_metadata.keys())}")
-                        logger.info(f"[Stage 2再実行] new_doc_type: {doc_type}")
+                        logger.info(f"[Stage H再実行] データベース保存開始: doc_id={doc_id}")
+                        logger.info(f"[Stage H再実行] new_metadata keys: {list(new_metadata.keys())}")
+                        logger.info(f"[Stage H再実行] new_doc_type: {doc_type}")
 
                         # display_post_text と attachment_text を更新
                         update_fields = {
@@ -810,7 +810,7 @@ Path.suffix: '{Path(file_path).suffix}'
                                 new_metadata=new_metadata,
                                 new_doc_type=doc_type,
                                 corrector_email=None,
-                                notes="手動テキスト補正によるStage 2再実行 + 全チャンク再生成"
+                                notes="手動テキスト補正によるStage H再実行 + 全チャンク再生成"
                             )
 
                             # search_indexの全チャンクを削除して再生成
@@ -911,8 +911,8 @@ Path.suffix: '{Path(file_path).suffix}'
                                 st.warning(f"⚠️ チャンク再生成中にエラーが発生しました: {chunk_error}")
 
                         if success:
-                            st.success("✅ Stage 2再実行が完了しました！構造化データが更新されました。")
-                            logger.info(f"[Stage 2再実行] データベース保存成功")
+                            st.success("✅ Stage H再実行が完了しました！構造化データが更新されました。")
+                            logger.info(f"[Stage H再実行] データベース保存成功")
                             st.balloons()
 
                             # 補正前後の比較を表示
@@ -936,14 +936,14 @@ Path.suffix: '{Path(file_path).suffix}'
                             time.sleep(2)
                             st.rerun()
                         else:
-                            logger.error(f"[Stage 2再実行] データベース保存失敗: doc_id={doc_id}")
-                            logger.error(f"[Stage 2再実行] metadata type: {type(new_metadata)}")
-                            logger.error(f"[Stage 2再実行] metadata sample: {str(new_metadata)[:500]}")
+                            logger.error(f"[Stage H再実行] データベース保存失敗: doc_id={doc_id}")
+                            logger.error(f"[Stage H再実行] metadata type: {type(new_metadata)}")
+                            logger.error(f"[Stage H再実行] metadata sample: {str(new_metadata)[:500]}")
                             st.error("❌ データベースへの保存に失敗しました。詳細はログを確認してください。")
 
                     except Exception as e:
-                        logger.error(f"Stage 2再実行エラー: {e}", exc_info=True)
-                        st.error(f"❌ Stage 2再実行エラー: {e}")
+                        logger.error(f"Stage H再実行エラー: {e}", exc_info=True)
+                        st.error(f"❌ Stage H再実行エラー: {e}")
 
     with col_right:
         st.markdown("### ✏️ メタデータ編集")

@@ -356,11 +356,13 @@ models:
     invoice: "claude-haiku-4-5-20251001"  # ← 新規追加
 ```
 
-2. **pipeline_routes.yaml に追加**
+2. **source_documents_routing.yaml に追加**
 ```yaml
 routing:
   by_doc_type:
     invoice:  # ← 新規追加
+      description: "請求書処理"
+      schema: "invoice"
       stages:
         stage_h:
           prompt_key: "invoice"

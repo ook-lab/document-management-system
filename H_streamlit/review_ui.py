@@ -690,7 +690,7 @@ def pdf_review_ui():
         if file_path and Path(file_path).exists():
             from H_streamlit.components.manual_text_correction import (
                 render_manual_text_correction,
-                execute_stage2_reprocessing
+                execute_stageh_reprocessing
             )
 
             # テキストコンテンツを取得
@@ -706,12 +706,12 @@ def pdf_review_ui():
                 doc_type=doc_type
             )
 
-            # Stage 2再実行が要求された場合
+            # Stage H再実行が要求された場合
             if corrected_text:
-                with st.spinner("🔄 補正されたテキストでStage 2（構造化）を再実行中..."):
+                with st.spinner("🔄 補正されたテキストでStage H（構造化）を再実行中..."):
                     try:
-                        # Stage 2再実行
-                        reprocessed_result = execute_stage2_reprocessing(
+                        # Stage H再実行
+                        reprocessed_result = execute_stageh_reprocessing(
                             corrected_text=corrected_text,
                             file_name=file_name,
                             metadata=metadata,
@@ -728,11 +728,11 @@ def pdf_review_ui():
                             new_metadata=new_metadata,
                             new_doc_type=doc_type,
                             corrector_email=None,
-                            notes="手動テキスト補正によるStage 2再実行"
+                            notes="手動テキスト補正によるStage H再実行"
                         )
 
                         if success:
-                            st.success("✅ Stage 2再実行が完了しました！構造化データが更新されました。")
+                            st.success("✅ Stage H再実行が完了しました！構造化データが更新されました。")
                             st.balloons()
 
                             # 補正前後の比較を表示
@@ -757,8 +757,8 @@ def pdf_review_ui():
                             st.error("❌ データベースへの保存に失敗しました")
 
                     except Exception as e:
-                        logger.error(f"Stage 2再実行エラー: {e}", exc_info=True)
-                        st.error(f"❌ Stage 2再実行エラー: {e}")
+                        logger.error(f"Stage H再実行エラー: {e}", exc_info=True)
+                        st.error(f"❌ Stage H再実行エラー: {e}")
 
     with col_right:
         st.markdown("### ✏️ メタデータ編集")
