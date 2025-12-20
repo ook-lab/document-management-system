@@ -28,27 +28,19 @@ BEGIN
     INSERT INTO "99_lg_image_proc_log" (
         file_name,
         drive_file_id,
-        source_folder,
         status,
         ocr_model,
         receipt_id,
-        error_message,
-        processed_at,
-        created_at,
-        updated_at
+        error_message
     )
     SELECT
         -- image_pathからファイル名を抽出（例: 99_Archive/2025-11/556648403.jpeg → 556648403.jpeg）
         SUBSTRING(image_path FROM '[^/]+$') AS file_name,
         drive_file_id,
-        source_folder,
         'success' AS status,
         ocr_model,
         id AS receipt_id,
-        NULL AS error_message,
-        created_at AS processed_at,
-        created_at,
-        updated_at
+        NULL AS error_message
     FROM "60_rd_receipts"
     WHERE NOT EXISTS (
         -- 重複防止：既にログが存在する場合はスキップ
