@@ -119,12 +119,13 @@ class TransactionProcessor:
                 )
                 standardized_ids.append(std_id)
 
-            # 6. 処理ログ記録（receipt_idも保存）
+            # 6. 処理ログ記録（receipt_idとocr_resultも保存）
             processing_log_id = self._log_processing_success(
                 file_name=file_name,
                 drive_file_id=drive_file_id,
                 receipt_id=receipt_id,
                 transaction_ids=transaction_ids,
+                ocr_result=ocr_result,
                 model_name=model_name
             )
 
@@ -298,17 +299,19 @@ class TransactionProcessor:
         result = self.db.table("60_rd_standardized_items").insert(std_data).execute()
         return result.data[0]["id"]
 
-    def _log_processing_success(self, file_name: str, drive_file_id: str, receipt_id: str, transaction_ids: List[str], model_name: str = None) -> str:
+    def _log_processing_success(self, file_name: str, drive_file_id: str, receipt_id: str, transaction_ids: List[str], ocr_result: Dict = None, model_name: str = None) -> str:
         """処理成功をログに記録"""
         log_data = {
             "file_name": file_name,
             "drive_file_id": drive_file_id,
-            "receipt_id": receipt_id,  # 新規追加
+            "receipt_id": receipt_id,
             "status": "success",
             "transaction_ids": transaction_ids
         }
         if model_name:
             log_data["ocr_model"] = model_name
+        if ocr_result:
+            log_data["ocr_result"] = ocr_result
 
         result = self.db.table("99_lg_image_proc_log").insert(log_data).execute()
         return result.data[0]["id"]
