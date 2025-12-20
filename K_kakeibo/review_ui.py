@@ -82,11 +82,16 @@ def main():
     st.sidebar.header("レシート一覧")
 
     # 処理ログ取得（レシート単位）
-    logs = db.table("99_lg_image_proc_log") \
-        .select("*") \
-        .order("processed_at", desc=True) \
-        .limit(100) \
-        .execute()
+    try:
+        logs = db.table("99_lg_image_proc_log") \
+            .select("*") \
+            .order("processed_at", {"ascending": False}) \
+            .limit(100) \
+            .execute()
+    except Exception as e:
+        st.error(f"処理ログの取得エラー: {str(e)}")
+        st.info("テーブル構造を確認してください")
+        return
 
     if not logs.data:
         st.info("処理済みレシートがありません")
@@ -177,27 +182,31 @@ def show_receipt_detail(log: dict):
             receipt = receipt_result.data[0]
 
             # トランザクション（3テーブルJOIN）を取得
-            transactions = db.table("60_rd_transactions") \
-                .select("""
-                    *,
-                    60_rd_standardized_items(
-                        id,
-                        std_amount,
-                        tax_rate,
-                        tax_amount,
-                        official_name,
-                        category_id,
-                        situation_id,
-                        major_category,
-                        minor_category,
-                        person,
-                        purpose,
-                        needs_review
-                    )
-                """) \
-                .eq("receipt_id", log["receipt_id"]) \
-                .order("line_number") \
-                .execute()
+            try:
+                transactions = db.table("60_rd_transactions") \
+                    .select("""
+                        *,
+                        60_rd_standardized_items(
+                            id,
+                            std_amount,
+                            tax_rate,
+                            tax_amount,
+                            official_name,
+                            category_id,
+                            situation_id,
+                            major_category,
+                            minor_category,
+                            person,
+                            purpose,
+                            needs_review
+                        )
+                    """) \
+                    .eq("receipt_id", log["receipt_id"]) \
+                    .order("line_number", {"ascending": True}) \
+                    .execute()
+            except Exception as e:
+                st.error(f"トランザクション取得エラー: {str(e)}")
+                return
 
             if transactions.data:
                 # DataFrameに変換
