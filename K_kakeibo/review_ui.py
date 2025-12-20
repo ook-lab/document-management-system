@@ -85,12 +85,14 @@ def main():
     try:
         logs = db.table("99_lg_image_proc_log") \
             .select("*") \
-            .order("processed_at", {"ascending": False}) \
+            .order("processed_at", desc=True) \
             .limit(100) \
             .execute()
     except Exception as e:
         st.error(f"処理ログの取得エラー: {str(e)}")
-        st.info("テーブル構造を確認してください")
+        st.info("エラー詳細を確認してください")
+        import traceback
+        st.code(traceback.format_exc())
         return
 
     if not logs.data:
@@ -202,10 +204,12 @@ def show_receipt_detail(log: dict):
                         )
                     """) \
                     .eq("receipt_id", log["receipt_id"]) \
-                    .order("line_number", {"ascending": True}) \
+                    .order("line_number") \
                     .execute()
             except Exception as e:
                 st.error(f"トランザクション取得エラー: {str(e)}")
+                import traceback
+                st.code(traceback.format_exc())
                 return
 
             if transactions.data:
