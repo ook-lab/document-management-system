@@ -337,6 +337,17 @@ def show_receipt_detail(log: dict):
                 if len(transactions.data) > 0:
                     first_t = transactions.data[0]
                     with st.expander("🔍 デバッグ情報（最初の商品）"):
+                        # データベースキー情報
+                        import os
+                        service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+                        anon_key = os.getenv("SUPABASE_KEY")
+                        st.write("**🔑 データベースキー情報**")
+                        st.write(f"SERVICE_ROLE_KEY設定: {'✅ あり (...{service_role_key[-4:]})' if service_role_key else '❌ なし'}")
+                        st.write(f"ANON_KEY設定: {'✅ あり (...{anon_key[-4:]})' if anon_key else '❌ なし'}")
+                        st.write(f"使用中のキー末尾: ...{SUPABASE_KEY[-4:]}")
+                        st.write("---")
+
+                        # データ構造情報
                         st.write(f"**商品名**: {first_t.get('product_name')}")
                         st.write(f"**60_rd_standardized_items type**: {type(first_t.get('60_rd_standardized_items'))}")
                         st.write(f"**60_rd_standardized_items value**: {first_t.get('60_rd_standardized_items')}")
