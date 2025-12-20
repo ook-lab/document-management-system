@@ -333,6 +333,20 @@ def show_receipt_detail(log: dict):
                 return
 
             if transactions.data:
+                # 🔍 デバッグ：最初のトランザクションのデータ構造を確認
+                if len(transactions.data) > 0:
+                    first_t = transactions.data[0]
+                    with st.expander("🔍 デバッグ情報（最初の商品）"):
+                        st.write(f"**商品名**: {first_t.get('product_name')}")
+                        st.write(f"**60_rd_standardized_items type**: {type(first_t.get('60_rd_standardized_items'))}")
+                        st.write(f"**60_rd_standardized_items value**: {first_t.get('60_rd_standardized_items')}")
+
+                        std_test = first_t.get("60_rd_standardized_items", [{}])[0] if isinstance(first_t.get("60_rd_standardized_items"), list) else first_t.get("60_rd_standardized_items", {})
+                        st.write(f"**std (processed)**: {std_test}")
+                        st.write(f"**std_unit_price**: {std_test.get('std_unit_price')}")
+                        st.write(f"**tax_amount**: {std_test.get('tax_amount')}")
+                        st.write(f"**std_amount**: {std_test.get('std_amount')}")
+
                 # DataFrameに変換（7要素構造）
                 df_data = []
                 for t in transactions.data:
