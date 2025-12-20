@@ -223,11 +223,21 @@ class TransactionProcessor:
         # レシートの合計金額を計算
         total_amount = sum(item["total_amount"] for item in ocr_result["items"])
 
+        # 税額サマリーから税抜小計を計算
+        tax_summary = ocr_result.get("tax_summary", {})
+        subtotal_amount = None
+        if tax_summary:
+            # 8%税抜 + 10%税抜
+            subtotal_8 = tax_summary.get("tax_8_subtotal", 0)
+            subtotal_10 = tax_summary.get("tax_10_subtotal", 0)
+            if subtotal_8 or subtotal_10:
+                subtotal_amount = subtotal_8 + subtotal_10
+
         receipt_data = {
             "transaction_date": ocr_result["transaction_date"],
             "shop_name": ocr_result["shop_name"],
-            "total_amount_check": ocr_result.get("total_amount", total_amount),
-            "subtotal_amount": ocr_result.get("subtotal", None),
+            "total_amount_check": ocr_result.get("total", total_amount),  # "total_amount" → "total"
+            "subtotal_amount": subtotal_amount,
             "image_path": f"99_Archive/{trans_date.strftime('%Y-%m')}/{file_name}",
             "drive_file_id": drive_file_id,
             "source_folder": source_folder,
