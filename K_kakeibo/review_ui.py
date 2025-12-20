@@ -479,9 +479,9 @@ def show_receipt_detail(log: dict):
 
                 # 税額サマリー取得（レシート記載値との比較）
                 try:
-                    tax_summary = db.table("money_receipt_tax_summary") \
+                    tax_summary = db.table("60_ag_receipt_summary") \
                         .select("*") \
-                        .eq("processing_log_id", log["id"]) \
+                        .eq("receipt_id", log["receipt_id"]) \
                         .execute()
                 except Exception as e:
                     # テーブルが存在しない場合はスキップ

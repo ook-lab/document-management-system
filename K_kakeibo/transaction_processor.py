@@ -131,6 +131,7 @@ class TransactionProcessor:
             # 7. 税額サマリー保存
             if "tax_summary" in ocr_result:
                 self._save_tax_summary(
+                    receipt_id=receipt_id,
                     processing_log_id=processing_log_id,
                     tax_summary=ocr_result["tax_summary"],
                     items_with_tax=items_with_tax
@@ -437,11 +438,12 @@ class TransactionProcessor:
 
         logger.debug(f"Distributed {total_tax}円 tax: {distributed_tax} (remainder={remainder})")
 
-    def _save_tax_summary(self, processing_log_id: str, tax_summary: Dict, items_with_tax: List[Dict]):
+    def _save_tax_summary(self, receipt_id: str, processing_log_id: str, tax_summary: Dict, items_with_tax: List[Dict]):
         """
         税額サマリーを保存
 
         Args:
+            receipt_id: レシートID
             processing_log_id: 処理ログID
             tax_summary: レシート記載の税額サマリー
             items_with_tax: 税額計算済み商品リスト
@@ -471,7 +473,7 @@ class TransactionProcessor:
 
         # サマリー保存
         summary_data = {
-            "processing_log_id": processing_log_id,
+            "receipt_id": receipt_id,
             "tax_8_subtotal": tax_summary.get("tax_8_subtotal"),
             "tax_8_amount": actual_tax_8,
             "tax_10_subtotal": tax_summary.get("tax_10_subtotal"),
@@ -484,7 +486,7 @@ class TransactionProcessor:
             "tax_10_diff": tax_10_diff
         }
 
-        self.db.table("money_receipt_tax_summary").insert(summary_data).execute()
+        self.db.table("60_ag_receipt_summary").insert(summary_data).execute()
 
         if matches:
             logger.info(f"Tax calculation successful: 8%={calculated_tax_8}円, 10%={calculated_tax_10}円")
