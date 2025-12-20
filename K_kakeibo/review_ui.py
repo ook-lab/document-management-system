@@ -302,30 +302,24 @@ def show_receipt_detail(log: dict):
             else:
                 tax_display_type = "不明"
 
-            # トランザクション（3テーブルJOIN）を取得
+            # トランザクションを取得（JOINは使わず2段階クエリ）
             try:
                 transactions = db.table("60_rd_transactions") \
-                    .select("""
-                        *,
-                        60_rd_standardized_items(
-                            id,
-                            std_amount,
-                            std_unit_price,
-                            tax_rate,
-                            tax_amount,
-                            official_name,
-                            category_id,
-                            situation_id,
-                            major_category,
-                            minor_category,
-                            person,
-                            purpose,
-                            needs_review
-                        )
-                    """) \
+                    .select("*") \
                     .eq("receipt_id", log["receipt_id"]) \
                     .order("line_number") \
                     .execute()
+
+                # 各transactionに対してstandardized_itemsを取得して結合
+                if transactions.data:
+                    for t in transactions.data:
+                        std_items = db.table("60_rd_standardized_items") \
+                            .select("*") \
+                            .eq("transaction_id", t["id"]) \
+                            .execute()
+                        # standardized_itemsデータを配列として追加（最初の1件のみ）
+                        t["60_rd_standardized_items"] = std_items.data[0] if std_items.data else None
+
             except Exception as e:
                 st.error(f"トランザクション取得エラー: {str(e)}")
                 import traceback
@@ -381,16 +375,20 @@ def show_receipt_detail(log: dict):
                         st.write(f"**60_rd_standardized_items type**: {type(first_t.get('60_rd_standardized_items'))}")
                         st.write(f"**60_rd_standardized_items value**: {first_t.get('60_rd_standardized_items')}")
 
-                        std_test = first_t.get("60_rd_standardized_items", [{}])[0] if isinstance(first_t.get("60_rd_standardized_items"), list) else first_t.get("60_rd_standardized_items", {})
+                        std_test = first_t.get("60_rd_standardized_items") or {}
                         st.write(f"**std (processed)**: {std_test}")
-                        st.write(f"**std_unit_price**: {std_test.get('std_unit_price')}")
-                        st.write(f"**tax_amount**: {std_test.get('tax_amount')}")
-                        st.write(f"**std_amount**: {std_test.get('std_amount')}")
+                        if std_test:
+                            st.write(f"**std_unit_price**: {std_test.get('std_unit_price')}")
+                            st.write(f"**tax_amount**: {std_test.get('tax_amount')}")
+                            st.write(f"**std_amount**: {std_test.get('std_amount')}")
+                        else:
+                            st.write("⚠️ standardized_itemsデータが空です")
 
                 # DataFrameに変換（7要素構造）
                 df_data = []
                 for t in transactions.data:
-                    std = t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})
+                    # standardized_itemsデータを取得（辞書またはNone）
+                    std = t.get("60_rd_standardized_items") or {}
 
                     # 7要素データを取得
                     quantity = t.get("quantity") or 1
