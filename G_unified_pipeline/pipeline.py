@@ -20,9 +20,16 @@ from .stage_e_preprocessing import StageEPreprocessor
 from .stage_f_visual import StageFVisualAnalyzer
 from .stage_g_formatting import StageGTextFormatter
 from .stage_h_structuring import StageHStructuring
+from .stage_h_kakeibo import StageHKakeibo
 from .stage_i_synthesis import StageISynthesis
 from .stage_j_chunking import StageJChunking
 from .stage_k_embedding import StageKEmbedding
+
+# 家計簿専用のDB保存ハンドラー
+import sys
+from pathlib import Path
+sys.path.append(str(Path(__file__).parent.parent))
+from K_kakeibo.kakeibo_db_handler import KakeiboDBHandler
 
 
 class UnifiedDocumentPipeline:
@@ -41,7 +48,7 @@ class UnifiedDocumentPipeline:
             config_dir: 設定ディレクトリ（デフォルト: G_unified_pipeline/config/）
         """
         self.llm_client = llm_client or LLMClient()
-        self.db = db_client or DatabaseClient()
+        self.db = db_client or DatabaseClient(use_service_role=True)  # RLSバイパスのためService Role使用
 
         # 設定ローダーを初期化
         self.config = ConfigLoader(config_dir)
@@ -51,9 +58,13 @@ class UnifiedDocumentPipeline:
         self.stage_f = StageFVisualAnalyzer(self.llm_client)
         self.stage_g = StageGTextFormatter(self.llm_client)
         self.stage_h = StageHStructuring(self.llm_client)
+        self.stage_h_kakeibo = StageHKakeibo(self.db)  # 家計簿専用Stage H
         self.stage_i = StageISynthesis(self.llm_client)
         self.stage_j = StageJChunking()
         self.stage_k = StageKEmbedding(self.llm_client, self.db)
+
+        # 家計簿専用のDB保存ハンドラー
+        self.kakeibo_db_handler = KakeiboDBHandler(self.db)
 
         logger.info("✅ UnifiedDocumentPipeline 初期化完了（設定ベース）")
 
@@ -133,43 +144,99 @@ class UnifiedDocumentPipeline:
             # ============================================
             # 設定から Stage H のプロンプトとモデルを取得
             stage_h_config = self.config.get_stage_config('stage_h', doc_type, workspace)
-            prompt_h = stage_h_config['prompt']
-            model_h = stage_h_config['model']
+            custom_handler = stage_h_config.get('custom_handler')
 
-            logger.info(f"[Stage H] 構造化開始... (model={model_h})")
-            stageH_result = self.stage_h.process(
-                file_name=file_name,
-                doc_type=doc_type,
-                workspace=workspace,
-                combined_text=combined_text,
-                prompt=prompt_h,
-                model=model_h
-            )
+            # 家計簿専用処理の場合
+            if custom_handler == 'kakeibo':
+                logger.info(f"[Stage H] 家計簿構造化開始... (custom_handler=kakeibo)")
 
-            document_date = stageH_result.get('document_date')
-            tags = stageH_result.get('tags', [])
-            stageH_metadata = stageH_result.get('metadata', {})
-            logger.info(f"[Stage H完了]")
+                # Stage G の出力を辞書に変換（combined_text が JSON 文字列の場合）
+                import json
+                import re
+                try:
+                    # Markdownのコードブロック (```json ... ```) を除去
+                    json_text = combined_text.strip()
+                    if json_text.startswith('```'):
+                        # 最初と最後の```を除去
+                        json_text = re.sub(r'^```(?:json)?\s*\n', '', json_text)
+                        json_text = re.sub(r'\n```\s*$', '', json_text)
+
+                    logger.debug(f"[Stage H] JSON パース前の最初の500文字:\n{json_text[:500]}")
+                    stage_g_output = json.loads(json_text)
+                except (json.JSONDecodeError, TypeError) as e:
+                    logger.error(f"[Stage H] combined_text が JSON 形式ではありません: {e}")
+                    logger.error(f"[Stage H] combined_text の内容:\n{combined_text[:1000]}")
+                    raise ValueError("Stage G output must be JSON for kakeibo processing")
+
+                # 家計簿専用 Stage H で処理
+                stageH_result = self.stage_h_kakeibo.process(stage_g_output)
+
+                # 家計簿専用のDB保存
+                logger.info("[DB保存] 家計簿データをDBに保存...")
+                kakeibo_save_result = self.kakeibo_db_handler.save_receipt(
+                    stage_h_output=stageH_result,
+                    file_name=file_name,
+                    drive_file_id=source_id,
+                    model_name=stage_h_config['model'],
+                    source_folder=workspace
+                )
+                logger.info(f"[DB保存完了] receipt_id={kakeibo_save_result['receipt_id']}")
+
+                # 家計簿は source_documents に保存せず、ここで終了
+                return {
+                    'success': True,
+                    'receipt_id': kakeibo_save_result['receipt_id'],
+                    'transaction_ids': kakeibo_save_result['transaction_ids'],
+                    'standardized_ids': kakeibo_save_result['standardized_ids'],
+                    'doc_type': 'kakeibo'
+                }
+
+            # 通常の Stage H 処理
+            else:
+                prompt_h = stage_h_config['prompt']
+                model_h = stage_h_config['model']
+
+                logger.info(f"[Stage H] 構造化開始... (model={model_h})")
+                stageH_result = self.stage_h.process(
+                    file_name=file_name,
+                    doc_type=doc_type,
+                    workspace=workspace,
+                    combined_text=combined_text,
+                    prompt=prompt_h,
+                    model=model_h
+                )
+
+                document_date = stageH_result.get('document_date')
+                tags = stageH_result.get('tags', [])
+                stageH_metadata = stageH_result.get('metadata', {})
+                logger.info(f"[Stage H完了]")
 
             # ============================================
             # Stage I: Synthesis
             # ============================================
             # 設定から Stage I のプロンプトとモデルを取得
             stage_i_config = self.config.get_stage_config('stage_i', doc_type, workspace)
-            prompt_i = stage_i_config['prompt']
-            model_i = stage_i_config['model']
 
-            logger.info(f"[Stage I] 統合・要約開始... (model={model_i})")
-            stageI_result = self.stage_i.process(
-                combined_text=combined_text,
-                stageH_result=stageH_result,
-                prompt=prompt_i,
-                model=model_i
-            )
+            # skip フラグがある場合はスキップ
+            if stage_i_config.get('skip'):
+                logger.info("[Stage I] スキップ (skip=true)")
+                summary = ""
+                relevant_date = None
+            else:
+                prompt_i = stage_i_config['prompt']
+                model_i = stage_i_config['model']
 
-            summary = stageI_result.get('summary', '')
-            relevant_date = stageI_result.get('relevant_date')
-            logger.info(f"[Stage I完了]")
+                logger.info(f"[Stage I] 統合・要約開始... (model={model_i})")
+                stageI_result = self.stage_i.process(
+                    combined_text=combined_text,
+                    stageH_result=stageH_result,
+                    prompt=prompt_i,
+                    model=model_i
+                )
+
+                summary = stageI_result.get('summary', '')
+                relevant_date = stageI_result.get('relevant_date')
+                logger.info(f"[Stage I完了]")
 
             # ============================================
             # Stage J: Chunking

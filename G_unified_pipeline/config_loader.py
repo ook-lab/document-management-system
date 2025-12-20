@@ -141,7 +141,7 @@ class ConfigLoader:
         workspace: Optional[str] = None
     ) -> Dict[str, str]:
         """
-        特定ステージの設定を取得（プロンプト + モデル）
+        特定ステージの設定を取得（プロンプト + モデル + custom_handler）
 
         Args:
             stage: ステージ名 (stage_f, stage_g, stage_h, stage_i)
@@ -149,7 +149,7 @@ class ConfigLoader:
             workspace: ワークスペース（オプション）
 
         Returns:
-            {'prompt': str, 'model': str}
+            {'prompt': str, 'model': str, 'custom_handler': str (optional), 'skip': bool (optional)}
         """
         route = self.get_route_config(doc_type, workspace)
         stages_config = route.get('stages', {})
@@ -158,7 +158,17 @@ class ConfigLoader:
         prompt_key = stage_config.get('prompt_key', 'default')
         model_key = stage_config.get('model_key', 'default')
 
-        return {
+        result = {
             'prompt': self.get_prompt(stage, prompt_key),
             'model': self.get_model(stage, model_key)
         }
+
+        # custom_handler がある場合は追加
+        if 'custom_handler' in stage_config:
+            result['custom_handler'] = stage_config['custom_handler']
+
+        # skip フラグがある場合は追加
+        if 'skip' in stage_config:
+            result['skip'] = stage_config['skip']
+
+        return result

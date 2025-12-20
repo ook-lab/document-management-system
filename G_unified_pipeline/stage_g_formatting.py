@@ -137,8 +137,8 @@ class StageGTextFormatter:
         logger.info(f"[Stage G] Text Formatting開始... (model={model})")
 
         try:
-            # プロンプトテンプレートに vision_raw を挿入
-            prompt = prompt_template.format(vision_raw=vision_raw)
+            # プロンプトテンプレートに vision_raw を挿入 (.replace() を使用してJSON内の { } を保護)
+            prompt = prompt_template.replace('{vision_raw}', vision_raw)
 
             response = self.llm_client.call_model(
                 tier="default",

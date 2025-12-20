@@ -10,18 +10,21 @@ models:
     default: "gemini-2.5-flash"
     flyer: "gemini-2.5-pro"
     classroom: "gemini-2.5-pro"
+    flash_lite: "gemini-2.5-flash-lite"  # 家計簿用（最軽量）
 
   # Stage G: Text Formatting (書式整形)
   stage_g:
     default: "gemini-2.5-flash"
     flyer: "gemini-2.5-pro"
     classroom: "gemini-2.5-flash"
+    flash_lite: "gemini-2.5-flash-lite"  # 家計簿用
 
   # Stage H: Structuring (構造化)
   stage_h:
     default: "claude-haiku-4-5-20251001"
     flyer: "claude-haiku-4-5-20251001"
     classroom: "claude-haiku-4-5-20251001"
+    flash_lite: "gemini-2.5-flash-lite"  # 家計簿用（Pythonロジック中心）
 
   # Stage I: Synthesis (統合・要約)
   stage_i:

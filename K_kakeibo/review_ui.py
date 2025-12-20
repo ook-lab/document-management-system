@@ -183,6 +183,30 @@ def show_receipt_detail(log: dict):
 
             receipt = receipt_result.data[0]
 
+            # 税表示タイプを判定（レシートレベル）
+            # すべてのレシートには小計がある（前提）
+            # 合計が省略されている場合は、小計と同じ値とする
+            subtotal = receipt.get('subtotal_amount')
+            total = receipt.get('total_amount_check')
+
+            # 合計が省略されている場合、小計と同じとする
+            if total is None and subtotal is not None:
+                total = subtotal
+                st.info(f"合計が省略されているため、小計と同じ値（¥{subtotal:,}）を使用")
+
+            # 念のため：小計がない場合のフォールバック
+            if subtotal is None and total is not None:
+                subtotal = total
+
+            # 判定：小計 < 合計 → 外税、小計 = 合計 → 内税
+            if subtotal and total:
+                if subtotal < total:
+                    tax_display_type = "外税"
+                else:
+                    tax_display_type = "内税"
+            else:
+                tax_display_type = "不明"
+
             # トランザクション（3テーブルJOIN）を取得
             try:
                 transactions = db.table("60_rd_transactions") \
@@ -191,6 +215,7 @@ def show_receipt_detail(log: dict):
                         60_rd_standardized_items(
                             id,
                             std_amount,
+                            std_unit_price,
                             tax_rate,
                             tax_amount,
                             official_name,
@@ -213,17 +238,40 @@ def show_receipt_detail(log: dict):
                 return
 
             if transactions.data:
-                # DataFrameに変換
+                # DataFrameに変換（7要素構造）
                 df_data = []
                 for t in transactions.data:
                     std = t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})
+
+                    # 7要素データを取得
+                    quantity = t.get("quantity") or 1
+                    base_price = std.get('std_unit_price')  # 本体価（税抜）
+                    tax_amount = std.get('tax_amount')  # 税額
+                    tax_included_amount = std.get('std_amount')  # 税込価
+
+                    # 表示額を計算（内税なら税込価、外税なら本体価）
+                    if tax_display_type == "内税":
+                        displayed_amount = tax_included_amount
+                    elif tax_display_type == "外税":
+                        displayed_amount = base_price
+                    else:
+                        displayed_amount = None
+
+                    # 単価を計算（税込価 ÷ 数量）
+                    unit_price_calculated = None
+                    if tax_included_amount and quantity:
+                        unit_price_calculated = tax_included_amount // quantity
+
                     df_data.append({
                         "商品名": t["product_name"],
-                        "数量": t["quantity"],
-                        "単価": t['unit_price'],
-                        "金額": std.get('std_amount', 0),
+                        "数量": quantity,
+                        "表示額": displayed_amount,
+                        "外or内": tax_display_type,
                         "税率": f"{std.get('tax_rate', 10)}%",
-                        "内税額": std.get('tax_amount', 0),
+                        "本体価": base_price,
+                        "税額": tax_amount,
+                        "税込価": tax_included_amount,
+                        "単価": unit_price_calculated,
                         "正式名": std.get("official_name") or "",
                         "物品名": t.get("item_name") or "",
                         "大分類": std.get("major_category") or "",
@@ -235,10 +283,12 @@ def show_receipt_detail(log: dict):
 
                 df = pd.DataFrame(df_data)
 
-                # 金額関連のカラムをフォーマット
-                df["単価"] = df["単価"].apply(lambda x: f"¥{x:,}")
-                df["金額"] = df["金額"].apply(lambda x: f"¥{x:,}")
-                df["内税額"] = df["内税額"].apply(lambda x: f"¥{x:,}")
+                # 金額関連のカラムをフォーマット（None値に対応）
+                df["表示額"] = df["表示額"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
+                df["本体価"] = df["本体価"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
+                df["税額"] = df["税額"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
+                df["税込価"] = df["税込価"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
+                df["単価"] = df["単価"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
 
                 # データフレームを表示（横スクロール有効、高さ指定）
                 st.dataframe(
@@ -249,23 +299,23 @@ def show_receipt_detail(log: dict):
 
                 # 合計金額・税額サマリー
                 total = sum(
-                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("std_amount", 0)
+                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("std_amount") or 0
                     for t in transactions.data
                 )
                 total_tax_8 = sum(
-                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_amount", 0)
+                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_amount") or 0
                     for t in transactions.data
                     if (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_rate") == 8
                 )
                 total_tax_10 = sum(
-                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_amount", 0)
+                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_amount") or 0
                     for t in transactions.data
                     if (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_rate") == 10
                 )
 
                 col1, col2, col3 = st.columns(3)
                 with col1:
-                    st.markdown(f"### 合計: ¥{total:,}")
+                    st.markdown(f"### 合計（税込）: ¥{total:,}")
                 with col2:
                     st.markdown(f"**8%税額: ¥{total_tax_8:,}**")
                 with col3:
@@ -291,16 +341,16 @@ def show_receipt_detail(log: dict):
                     comparison_data = {
                         "税率": ["8%", "10%"],
                         "レシート記載": [
-                            f"¥{summary['tax_8_amount']:,}",
-                            f"¥{summary['tax_10_amount']:,}"
+                            f"¥{summary['tax_8_amount']:,}" if summary.get('tax_8_amount') is not None else "—",
+                            f"¥{summary['tax_10_amount']:,}" if summary.get('tax_10_amount') is not None else "—"
                         ],
                         "計算値": [
-                            f"¥{summary['calculated_tax_8_amount']:,}",
-                            f"¥{summary['calculated_tax_10_amount']:,}"
+                            f"¥{summary['calculated_tax_8_amount']:,}" if summary.get('calculated_tax_8_amount') is not None else "—",
+                            f"¥{summary['calculated_tax_10_amount']:,}" if summary.get('calculated_tax_10_amount') is not None else "—"
                         ],
                         "差分": [
-                            f"{summary['tax_8_diff']:+d}円",
-                            f"{summary['tax_10_diff']:+d}円"
+                            f"{summary['tax_8_diff']:+d}円" if summary.get('tax_8_diff') is not None else "—",
+                            f"{summary['tax_10_diff']:+d}円" if summary.get('tax_10_diff') is not None else "—"
                         ]
                     }
 
@@ -353,7 +403,9 @@ def show_receipt_detail(log: dict):
                     st.subheader("個別編集")
 
                     for idx, t in enumerate(transactions.data):
-                        with st.expander(f"{t['product_name']} (¥{t['total_amount']:,})"):
+                        std = t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})
+                        amount = std.get('std_amount', 0) or 0
+                        with st.expander(f"{t['product_name']} (¥{amount:,})"):
                             col_a, col_b, col_c = st.columns(3)
 
                             with col_a:
@@ -365,19 +417,19 @@ def show_receipt_detail(log: dict):
 
                                 new_amount = st.number_input(
                                     "金額",
-                                    value=t["total_amount"],
+                                    value=amount,
                                     key=f"amt_{idx}"
                                 )
 
                                 new_tax_included = st.number_input(
                                     "内税額",
-                                    value=t.get("tax_included_amount") or t["total_amount"],
+                                    value=std.get("tax_amount", 0) or 0,
                                     key=f"tax_{idx}"
                                 )
 
                                 new_official_name = st.text_input(
                                     "正式名",
-                                    value=t.get("official_name") or "",
+                                    value=std.get("official_name") or "",
                                     key=f"official_{idx}"
                                 )
 
@@ -390,26 +442,26 @@ def show_receipt_detail(log: dict):
                             with col_b:
                                 new_major_category = st.text_input(
                                     "大分類",
-                                    value=t.get("major_category") or "",
+                                    value=std.get("major_category") or "",
                                     key=f"major_{idx}"
                                 )
 
                                 new_minor_category = st.text_input(
                                     "小分類",
-                                    value=t.get("minor_category") or "",
+                                    value=std.get("minor_category") or "",
                                     key=f"minor_{idx}"
                                 )
 
                             with col_c:
                                 new_person = st.text_input(
                                     "人物",
-                                    value=t.get("person") or "",
+                                    value=std.get("person") or "",
                                     key=f"person_{idx}"
                                 )
 
                                 new_purpose = st.text_input(
                                     "名目",
-                                    value=t.get("purpose") or "",
+                                    value=std.get("purpose") or "",
                                     key=f"purpose_{idx}"
                                 )
 
