@@ -118,13 +118,23 @@ def main():
                             cwd=str(project_root)
                         )
 
+                        # 標準出力を表示
+                        if result.stdout:
+                            st.text("=== 実行ログ ===")
+                            st.code(result.stdout, language="log")
+
+                        # 標準エラー出力を表示
+                        if result.stderr:
+                            st.warning("=== エラー/警告 ===")
+                            st.code(result.stderr, language="log")
+
                         if result.returncode == 0:
-                            st.success(f"✅ {limit}件の取り込みが完了しました！")
-                            st.text(result.stdout)
-                            st.rerun()  # ページをリロード
+                            st.success(f"✅ 処理が完了しました！（終了コード: {result.returncode}）")
+                            st.info("数秒待ってからページをリロードしてください")
+                            if st.button("🔄 今すぐリロード"):
+                                st.rerun()
                         else:
-                            st.error(f"❌ エラーが発生しました")
-                            st.code(result.stderr)
+                            st.error(f"❌ エラーが発生しました（終了コード: {result.returncode}）")
 
                     except subprocess.TimeoutExpired:
                         st.warning("⏱️ タイムアウトしました。処理に時間がかかっています。")
