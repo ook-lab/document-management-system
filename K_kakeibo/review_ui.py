@@ -245,22 +245,27 @@ def show_receipt_detail(log: dict):
 
                     # 7要素データを取得
                     quantity = t.get("quantity") or 1
-                    base_price = std.get('std_unit_price')  # 本体価（税抜）
+                    std_unit_price = std.get('std_unit_price')  # 本体単価（1個あたりの税抜価格）
                     tax_amount = std.get('tax_amount')  # 税額
                     tax_included_amount = std.get('std_amount')  # 税込価
+
+                    # 本体価を計算（本体単価 × 数量 = 税抜総額）
+                    base_price_total = None
+                    if std_unit_price is not None and quantity:
+                        base_price_total = std_unit_price * quantity
 
                     # 表示額を計算（内税なら税込価、外税なら本体価）
                     if tax_display_type == "内税":
                         displayed_amount = tax_included_amount
                     elif tax_display_type == "外税":
-                        displayed_amount = base_price
+                        displayed_amount = base_price_total
                     else:
                         displayed_amount = None
 
-                    # 単価を計算（税込価 ÷ 数量）
-                    unit_price_calculated = None
+                    # 税込単価を計算（税込価 ÷ 数量）
+                    tax_included_unit_price = None
                     if tax_included_amount and quantity:
-                        unit_price_calculated = tax_included_amount // quantity
+                        tax_included_unit_price = tax_included_amount // quantity
 
                     df_data.append({
                         "商品名": t["product_name"],
@@ -268,10 +273,10 @@ def show_receipt_detail(log: dict):
                         "表示額": displayed_amount,
                         "外or内": tax_display_type,
                         "税率": f"{std.get('tax_rate', 10)}%",
-                        "本体価": base_price,
+                        "本体価": base_price_total,  # 税抜総額
                         "税額": tax_amount,
-                        "税込価": tax_included_amount,
-                        "単価": unit_price_calculated,
+                        "税込価": tax_included_amount,  # 税込総額
+                        "単価": tax_included_unit_price,  # 税込単価
                         "正式名": std.get("official_name") or "",
                         "物品名": t.get("item_name") or "",
                         "大分類": std.get("major_category") or "",
