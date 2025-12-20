@@ -7,8 +7,19 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# .envファイル読み込み
+# .envファイル読み込み（ローカル環境用）
 load_dotenv()
+
+# Streamlit Cloud環境の場合はSecretsから読み込む
+try:
+    import streamlit as st
+    if "KAKEIBO_INBOX_EASY_FOLDER_ID" in st.secrets:
+        os.environ["KAKEIBO_INBOX_EASY_FOLDER_ID"] = st.secrets["KAKEIBO_INBOX_EASY_FOLDER_ID"]
+    if "KAKEIBO_INBOX_HARD_FOLDER_ID" in st.secrets:
+        os.environ["KAKEIBO_INBOX_HARD_FOLDER_ID"] = st.secrets["KAKEIBO_INBOX_HARD_FOLDER_ID"]
+except ImportError:
+    # streamlitがない環境（CLIスクリプト実行時など）ではスキップ
+    pass
 
 # ========================================
 # Google Drive 設定

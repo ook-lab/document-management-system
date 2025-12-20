@@ -108,6 +108,12 @@ def main():
                         env = os.environ.copy()
                         env['PYTHONPATH'] = str(project_root)
 
+                        # Streamlit CloudのSecretsから環境変数を渡す
+                        if "KAKEIBO_INBOX_EASY_FOLDER_ID" in st.secrets:
+                            env['KAKEIBO_INBOX_EASY_FOLDER_ID'] = st.secrets["KAKEIBO_INBOX_EASY_FOLDER_ID"]
+                        if "KAKEIBO_INBOX_HARD_FOLDER_ID" in st.secrets:
+                            env['KAKEIBO_INBOX_HARD_FOLDER_ID'] = st.secrets["KAKEIBO_INBOX_HARD_FOLDER_ID"]
+
                         # subprocess でスクリプトを実行
                         result = subprocess.run(
                             [sys.executable, str(script_path), f"--limit={limit}"],
