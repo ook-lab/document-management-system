@@ -353,6 +353,11 @@ def show_receipt_detail(log: dict):
                         st.write(f"使用中のキー末尾: ...{SUPABASE_KEY[-4:]}")
                         st.write("---")
 
+                        # 生のトランザクションデータを表示
+                        st.write("**📦 生のトランザクションデータ（全キー）:**")
+                        st.json(first_t)
+                        st.write("---")
+
                         # データ構造情報
                         st.write(f"**商品名**: {first_t.get('product_name')}")
                         st.write(f"**60_rd_standardized_items type**: {type(first_t.get('60_rd_standardized_items'))}")
