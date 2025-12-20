@@ -157,12 +157,12 @@ SELECT
     t.minor_category,
     t.purpose,
     t.person,
-    COALESCE(t.tax_rate, 10) AS tax_rate,       -- デフォルト10%
+    10 AS tax_rate,                              -- デフォルト10%（旧テーブルにはtax_rateカラムなし）
     NULL AS std_unit_price,                      -- 既存データにはないのでNULL
     t.total_amount AS std_amount,                -- 最終支払金額
-    t.tax_amount,
+    NULL AS tax_amount,                          -- 旧テーブルにはtax_amountカラムなし
     'Migrated from old schema' AS calc_logic_log, -- マイグレーション由来であることを記録
-    COALESCE(t.needs_tax_review, FALSE) AS needs_review,
+    FALSE AS needs_review,                       -- 旧テーブルにはneeds_tax_reviewカラムなし
     t.notes,
     t.created_at,
     t.updated_at
