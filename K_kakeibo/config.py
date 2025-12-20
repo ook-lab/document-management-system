@@ -52,7 +52,7 @@ FOLDER_MODEL_MAP = {
 # ========================================
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 # service_role キー推奨（anonキーでも動作するが権限制限あり）
-SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_KEY") or os.getenv("SUPABASE_KEY")
+SUPABASE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_KEY")
 
 # ========================================
 # 処理設定
