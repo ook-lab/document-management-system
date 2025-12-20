@@ -78,6 +78,63 @@ def main():
     st.set_page_config(page_title="家計簿レビュー", layout="wide")
     st.title("📊 家計簿レビューシステム")
 
+    # サイドバー：Google Driveから取り込み
+    st.sidebar.header("📥 レシート取り込み")
+
+    with st.sidebar.expander("Google Driveから取り込む"):
+        st.markdown("**00_Inbox_Easy** から最新のレシート画像を取り込みます")
+
+        col1, col2 = st.columns(2)
+
+        with col1:
+            limit = st.number_input("取り込み件数", min_value=1, max_value=10, value=3, key="import_limit")
+
+        with col2:
+            if st.button("🚀 取り込み開始", key="start_import"):
+                with st.spinner("レシート画像を取り込み中..."):
+                    import subprocess
+                    import sys
+                    from pathlib import Path
+
+                    try:
+                        # Pythonスクリプトのパスを取得
+                        script_path = Path(__file__).parent / "reimport_receipts_from_drive.py"
+
+                        # subprocess でスクリプトを実行
+                        result = subprocess.run(
+                            [sys.executable, str(script_path), f"--limit={limit}"],
+                            capture_output=True,
+                            text=True,
+                            timeout=600
+                        )
+
+                        if result.returncode == 0:
+                            st.success(f"✅ {limit}件の取り込みが完了しました！")
+                            st.text(result.stdout)
+                            st.rerun()  # ページをリロード
+                        else:
+                            st.error(f"❌ エラーが発生しました")
+                            st.code(result.stderr)
+
+                    except subprocess.TimeoutExpired:
+                        st.warning("⏱️ タイムアウトしました。処理に時間がかかっています。")
+                    except Exception as e:
+                        st.error(f"エラー: {e}")
+                        import traceback
+                        st.code(traceback.format_exc())
+
+        st.divider()
+
+        if st.button("📊 データ件数を確認"):
+            try:
+                receipts = db.table("60_rd_receipts").select("*", count="exact").execute()
+                transactions = db.table("60_rd_transactions").select("*", count="exact").execute()
+                st.success(f"レシート: {receipts.count}件、商品: {transactions.count}件")
+            except Exception as e:
+                st.error(f"エラー: {e}")
+
+    st.sidebar.divider()
+
     # サイドバー：レシート一覧
     st.sidebar.header("レシート一覧")
 
