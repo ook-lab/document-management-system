@@ -18,7 +18,12 @@ from PIL import Image
 import io
 
 # 設定
-from config import SUPABASE_URL, SUPABASE_KEY, GOOGLE_DRIVE_CREDENTIALS
+try:
+    # Streamlit Cloud環境
+    from K_kakeibo.config import SUPABASE_URL, SUPABASE_KEY, GOOGLE_DRIVE_CREDENTIALS
+except ImportError:
+    # ローカル環境
+    from config import SUPABASE_URL, SUPABASE_KEY, GOOGLE_DRIVE_CREDENTIALS
 
 # Supabase接続
 db = create_client(SUPABASE_URL, SUPABASE_KEY)
