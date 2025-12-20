@@ -272,6 +272,15 @@ class TransactionProcessor:
                                   situation_id: str, total_amount: int, tax_amount: int,
                                   needs_review: bool) -> str:
         """正規化された家計簿アイテムをDBに登録（孫テーブル）"""
+        # 7要素構造のデータを取得
+        quantity = normalized.get("quantity", 1)
+        base_price = normalized.get("base_price")  # 本体価（税抜）
+
+        # 本体単価を計算（本体価 ÷ 数量）
+        std_unit_price = None
+        if base_price is not None and quantity and quantity > 0:
+            std_unit_price = base_price // quantity  # 整数除算
+
         std_data = {
             "transaction_id": transaction_id,
             "receipt_id": receipt_id,  # 冗長化（JOIN削減のため）
@@ -279,7 +288,8 @@ class TransactionProcessor:
             "category_id": normalized.get("category_id"),
             "situation_id": situation_id,
             "tax_rate": normalized["tax_rate"],
-            "std_amount": total_amount,
+            "std_amount": total_amount,  # 税込価
+            "std_unit_price": std_unit_price,  # 本体単価
             "tax_amount": tax_amount,
             "needs_review": needs_review
         }
