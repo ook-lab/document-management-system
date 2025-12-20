@@ -451,27 +451,31 @@ def show_receipt_detail(log: dict):
 
                 # 合計金額・税額サマリー
                 total = sum(
-                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("std_amount") or 0
+                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
                     for t in transactions.data
                 )
+                # 税率別の集計
                 total_tax_8 = sum(
-                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_amount") or 0
+                    (t.get("60_rd_standardized_items") or {}).get("tax_amount", 0)
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_rate") == 8
+                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 8
                 )
                 total_tax_10 = sum(
-                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_amount") or 0
+                    (t.get("60_rd_standardized_items") or {}).get("tax_amount", 0)
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_rate") == 10
+                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 10
                 )
-
-                col1, col2, col3 = st.columns(3)
-                with col1:
-                    st.markdown(f"### 合計（税込）: ¥{total:,}")
-                with col2:
-                    st.markdown(f"**8%税額: ¥{total_tax_8:,}**")
-                with col3:
-                    st.markdown(f"**10%税額: ¥{total_tax_10:,}**")
+                # 税込合計（8%、10%それぞれ）
+                total_amount_8 = sum(
+                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    for t in transactions.data
+                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 8
+                )
+                total_amount_10 = sum(
+                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    for t in transactions.data
+                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 10
+                )
 
                 # 税額サマリー取得（レシート記載値との比較）
                 try:
@@ -483,30 +487,101 @@ def show_receipt_detail(log: dict):
                     # テーブルが存在しない場合はスキップ
                     tax_summary = None
 
+                # ========================================
+                # レシート情報サマリー（詳細版）
+                # ========================================
+                st.subheader("📊 レシート情報サマリー")
+
+                # 計算値を集計
+                calc_subtotal = sum(
+                    (t.get("60_rd_standardized_items") or {}).get("std_unit_price", 0) * (t.get("quantity") or 1)
+                    for t in transactions.data
+                )
+                calc_total = sum(
+                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    for t in transactions.data
+                )
+
+                # 基本情報（小計・合計）
+                col1, col2 = st.columns(2)
+                with col1:
+                    st.markdown("### 小計（税抜）")
+                    receipt_subtotal = receipt.get("subtotal_amount")
+                    if receipt_subtotal is not None:
+                        st.write(f"**レシート記載**: ¥{receipt_subtotal:,}")
+                    else:
+                        st.write("**レシート記載**: —")
+                    st.write(f"**計算値**: ¥{calc_subtotal:,}")
+                    if receipt_subtotal and abs(calc_subtotal - receipt_subtotal) > 5:
+                        st.warning(f"⚠️ 差分: ¥{calc_subtotal - receipt_subtotal:+,}")
+
+                with col2:
+                    st.markdown("### 税込合計")
+                    receipt_total = receipt.get("total_amount_check")
+                    if receipt_total is not None:
+                        st.write(f"**レシート記載**: ¥{receipt_total:,}")
+                    else:
+                        st.write("**レシート記載**: —")
+                    st.write(f"**計算値**: ¥{calc_total:,}")
+                    if receipt_total and abs(calc_total - receipt_total) > 5:
+                        st.warning(f"⚠️ 差分: ¥{calc_total - receipt_total:+,}")
+
+                # 税率別の詳細情報
                 if tax_summary and tax_summary.data:
                     summary = tax_summary.data[0]
-                    st.subheader("税額整合性チェック")
+
+                    st.markdown("---")
+                    st.markdown(f"### 税率別詳細（{tax_display_type}レシート）")
 
                     match_icon = "✅" if summary["calculated_matches_actual"] else "⚠️"
-                    st.markdown(f"### {match_icon} 整合性: {'一致' if summary['calculated_matches_actual'] else '不一致'}")
+                    st.markdown(f"**整合性**: {match_icon} {'一致' if summary['calculated_matches_actual'] else '不一致'}")
 
-                    comparison_data = {
-                        "税率": ["8%", "10%"],
+                    # 8%と10%のデータを整理
+                    tax_detail_data = {
+                        "項目": [
+                            f"{tax_display_type}8%対象額（税抜）",
+                            f"{tax_display_type}8%税額",
+                            f"{tax_display_type}8%対象額（税込）",
+                            f"{tax_display_type}10%対象額（税抜）",
+                            f"{tax_display_type}10%税額",
+                            f"{tax_display_type}10%対象額（税込）"
+                        ],
                         "レシート記載": [
+                            f"¥{summary['tax_8_subtotal']:,}" if summary.get('tax_8_subtotal') is not None else "—",
                             f"¥{summary['tax_8_amount']:,}" if summary.get('tax_8_amount') is not None else "—",
-                            f"¥{summary['tax_10_amount']:,}" if summary.get('tax_10_amount') is not None else "—"
+                            f"¥{(summary.get('tax_8_subtotal', 0) + summary.get('tax_8_amount', 0)):,}" if summary.get('tax_8_subtotal') is not None else "—",
+                            f"¥{summary['tax_10_subtotal']:,}" if summary.get('tax_10_subtotal') is not None else "—",
+                            f"¥{summary['tax_10_amount']:,}" if summary.get('tax_10_amount') is not None else "—",
+                            f"¥{(summary.get('tax_10_subtotal', 0) + summary.get('tax_10_amount', 0)):,}" if summary.get('tax_10_subtotal') is not None else "—"
                         ],
                         "計算値": [
+                            "—",  # 税抜は計算しない
                             f"¥{summary['calculated_tax_8_amount']:,}" if summary.get('calculated_tax_8_amount') is not None else "—",
-                            f"¥{summary['calculated_tax_10_amount']:,}" if summary.get('calculated_tax_10_amount') is not None else "—"
+                            f"¥{total_amount_8:,}",  # 8%税込合計（計算値）
+                            "—",  # 税抜は計算しない
+                            f"¥{summary['calculated_tax_10_amount']:,}" if summary.get('calculated_tax_10_amount') is not None else "—",
+                            f"¥{total_amount_10:,}"  # 10%税込合計（計算値）
                         ],
                         "差分": [
+                            "—",
                             f"{summary['tax_8_diff']:+d}円" if summary.get('tax_8_diff') is not None else "—",
-                            f"{summary['tax_10_diff']:+d}円" if summary.get('tax_10_diff') is not None else "—"
+                            "—",
+                            "—",
+                            f"{summary['tax_10_diff']:+d}円" if summary.get('tax_10_diff') is not None else "—",
+                            "—"
                         ]
                     }
 
-                    st.table(pd.DataFrame(comparison_data))
+                    st.table(pd.DataFrame(tax_detail_data))
+                else:
+                    # tax_summaryがない場合は簡易表示
+                    st.markdown("---")
+                    st.markdown("### 税額サマリー")
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.write(f"**8%税額（計算）**: ¥{total_tax_8:,}")
+                    with col2:
+                        st.write(f"**10%税額（計算）**: ¥{total_tax_10:,}")
 
                 # 店名・日付（レシートから取得）
                 st.text(f"店名: {receipt['shop_name']}")
