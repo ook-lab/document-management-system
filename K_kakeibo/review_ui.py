@@ -358,6 +358,24 @@ def show_receipt_detail(log: dict):
                         st.json(first_t)
                         st.write("---")
 
+                        # 直接60_rd_standardized_itemsテーブルをクエリ
+                        st.write("**🔍 直接クエリ: 60_rd_standardized_items**")
+                        transaction_id = first_t.get('id')
+                        if transaction_id:
+                            try:
+                                std_items = db.table("60_rd_standardized_items") \
+                                    .select("*") \
+                                    .eq("transaction_id", transaction_id) \
+                                    .execute()
+                                st.write(f"取得件数: {len(std_items.data) if std_items.data else 0}")
+                                if std_items.data and len(std_items.data) > 0:
+                                    st.json(std_items.data[0])
+                                else:
+                                    st.write("⚠️ データが見つかりません")
+                            except Exception as e:
+                                st.write(f"❌ エラー: {e}")
+                        st.write("---")
+
                         # データ構造情報
                         st.write(f"**商品名**: {first_t.get('product_name')}")
                         st.write(f"**60_rd_standardized_items type**: {type(first_t.get('60_rd_standardized_items'))}")
