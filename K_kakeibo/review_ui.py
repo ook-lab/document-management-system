@@ -508,7 +508,7 @@ def show_receipt_detail(log: dict):
                 # 整合性チェック
                 if tax_summary and tax_summary.data:
                     summary = tax_summary.data[0]
-                    match_icon = "✅" if summary["calculated_matches_actual"] else "⚠️"
+                    match_icon = "✅" if summary.get("calculated_matches_actual") else "⚠️"
                     st.subheader(f"📊 レシート情報サマリー {match_icon}")
                 else:
                     st.subheader("📊 レシート情報サマリー")
@@ -535,8 +535,9 @@ def show_receipt_detail(log: dict):
                 if summary:
                     # 8%税額
                     table_data["項目"].append("8%税額")
+                    tax_8_amount = summary.get('tax_8_amount')
                     table_data["レシート記載"].append(
-                        f"¥{summary['tax_8_amount']:,}" if summary.get('tax_8_amount') is not None else "—"
+                        f"¥{tax_8_amount:,}" if tax_8_amount is not None else "—"
                     )
                     tax_8_diff = summary.get('tax_8_diff', 0)
                     calc_tax_8 = summary.get('calculated_tax_8_amount', 0)
@@ -547,8 +548,9 @@ def show_receipt_detail(log: dict):
 
                     # 10%税額
                     table_data["項目"].append("10%税額")
+                    tax_10_amount = summary.get('tax_10_amount')
                     table_data["レシート記載"].append(
-                        f"¥{summary['tax_10_amount']:,}" if summary.get('tax_10_amount') is not None else "—"
+                        f"¥{tax_10_amount:,}" if tax_10_amount is not None else "—"
                     )
                     tax_10_diff = summary.get('tax_10_diff', 0)
                     calc_tax_10 = summary.get('calculated_tax_10_amount', 0)
