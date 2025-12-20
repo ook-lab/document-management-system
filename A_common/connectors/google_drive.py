@@ -84,8 +84,11 @@ class GoogleDriveConnector:
                 q=query,
                 spaces='drive',
                 fields='nextPageToken, files(id, name, mimeType, size)',
+                supportsAllDrives=True,  # 共有ドライブ対応
+                includeItemsFromAllDrives=True,  # 共有ドライブのアイテムを含む
+                corpora='allDrives'  # すべてのドライブから検索
             ).execute()
-            
+
             return results.get('files', [])
         except Exception as e:
             print(f"Error listing files: {e}")
@@ -124,21 +127,24 @@ class GoogleDriveConnector:
                 # Google Docs -> DOCXとしてエクスポート
                 request = self.service.files().export(
                     fileId=file_id,
-                    mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+                    mimeType='application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+                    supportsAllDrives=True  # 共有ドライブ対応
                 )
                 dest_path = dest_path.with_suffix('.docx')
             elif mime_type == 'application/vnd.google-apps.spreadsheet':
                 # Google Sheets -> XLSXとしてエクスポート
                 request = self.service.files().export(
                     fileId=file_id,
-                    mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+                    mimeType='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    supportsAllDrives=True  # 共有ドライブ対応
                 )
                 dest_path = dest_path.with_suffix('.xlsx')
             elif mime_type == 'application/vnd.google-apps.presentation':
                 # Google Slides -> PPTXとしてエクスポート
                 request = self.service.files().export(
                     fileId=file_id,
-                    mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation'
+                    mimeType='application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                    supportsAllDrives=True  # 共有ドライブ対応
                 )
                 dest_path = dest_path.with_suffix('.pptx')
             else:
@@ -243,7 +249,8 @@ class GoogleDriveConnector:
             # 現在の親フォルダを取得
             file = self.service.files().get(
                 fileId=file_id,
-                fields='parents'
+                fields='parents',
+                supportsAllDrives=True  # 共有ドライブ対応
             ).execute()
 
             previous_parents = ",".join(file.get('parents', []))
@@ -253,7 +260,8 @@ class GoogleDriveConnector:
                 fileId=file_id,
                 addParents=new_folder_id,
                 removeParents=previous_parents,
-                fields='id, parents'
+                fields='id, parents',
+                supportsAllDrives=True  # 共有ドライブ対応
             ).execute()
 
             logger.info(f"ファイル移動成功: {file_id} -> {new_folder_id}")
