@@ -116,8 +116,15 @@ def main():
                         # Streamlit CloudのSecretsから環境変数を渡す
                         if "KAKEIBO_INBOX_EASY_FOLDER_ID" in st.secrets:
                             env['KAKEIBO_INBOX_EASY_FOLDER_ID'] = st.secrets["KAKEIBO_INBOX_EASY_FOLDER_ID"]
+                            st.info(f"✅ INBOX_EASY_FOLDER_ID を設定: {st.secrets['KAKEIBO_INBOX_EASY_FOLDER_ID'][:20]}...")
+                        else:
+                            st.warning("⚠️ INBOX_EASY_FOLDER_ID がSecretsに見つかりません")
+
                         if "KAKEIBO_INBOX_HARD_FOLDER_ID" in st.secrets:
                             env['KAKEIBO_INBOX_HARD_FOLDER_ID'] = st.secrets["KAKEIBO_INBOX_HARD_FOLDER_ID"]
+                            st.info(f"✅ INBOX_HARD_FOLDER_ID を設定: {st.secrets['KAKEIBO_INBOX_HARD_FOLDER_ID'][:20]}...")
+                        else:
+                            st.warning("⚠️ INBOX_HARD_FOLDER_ID がSecretsに見つかりません")
 
                         # subprocess でスクリプトを実行
                         result = subprocess.run(
