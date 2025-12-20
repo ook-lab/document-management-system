@@ -180,8 +180,8 @@ def show_receipt_detail(log: dict):
             transactions = db.table("60_rd_transactions") \
                 .select("""
                     *,
-                    receipt:60_rd_receipts!inner(transaction_date, shop_name),
-                    standardized:60_rd_standardized_items!inner(
+                    60_rd_standardized_items(
+                        id,
                         std_amount,
                         tax_rate,
                         tax_amount,
@@ -203,7 +203,7 @@ def show_receipt_detail(log: dict):
                 # DataFrameに変換
                 df_data = []
                 for t in transactions.data:
-                    std = t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})
+                    std = t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})
                     df_data.append({
                         "商品名": t["product_name"],
                         "数量": t["quantity"],
@@ -236,18 +236,18 @@ def show_receipt_detail(log: dict):
 
                 # 合計金額・税額サマリー
                 total = sum(
-                    (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("std_amount", 0)
+                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("std_amount", 0)
                     for t in transactions.data
                 )
                 total_tax_8 = sum(
-                    (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("tax_amount", 0)
+                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_amount", 0)
                     for t in transactions.data
-                    if (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("tax_rate") == 8
+                    if (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_rate") == 8
                 )
                 total_tax_10 = sum(
-                    (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("tax_amount", 0)
+                    (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_amount", 0)
                     for t in transactions.data
-                    if (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("tax_rate") == 10
+                    if (t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})).get("tax_rate") == 10
                 )
 
                 col1, col2, col3 = st.columns(3)
@@ -408,7 +408,7 @@ def show_receipt_detail(log: dict):
                                 }).eq("id", t["id"]).execute()
 
                                 # 孫テーブル（分類・金額）の更新
-                                std = t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})
+                                std = t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})
                                 if std and "id" in std:
                                     db.table("60_rd_standardized_items").update({
                                         "std_amount": new_amount,
