@@ -384,7 +384,7 @@ def show_receipt_detail(log: dict):
                         else:
                             st.write("⚠️ standardized_itemsデータが空です")
 
-                # DataFrameに変換（7要素構造）
+                # DataFrameに変換（7要素構造 + ID情報）
                 df_data = []
                 for t in transactions.data:
                     # standardized_itemsデータを取得（辞書またはNone）
@@ -415,15 +415,17 @@ def show_receipt_detail(log: dict):
                         tax_included_unit_price = tax_included_amount // quantity
 
                     df_data.append({
+                        "_transaction_id": t["id"],  # 更新用（非表示）
+                        "_std_id": std.get("id"),  # 更新用（非表示）
                         "商品名": t["product_name"],
                         "数量": quantity,
-                        "表示額": displayed_amount,
+                        "表示額": displayed_amount if displayed_amount is not None else 0,
                         "外or内": tax_display_type,
-                        "税率": f"{std.get('tax_rate', 10)}%",
-                        "本体価": base_price_total,  # 税抜総額
-                        "税額": tax_amount,
-                        "税込価": tax_included_amount,  # 税込総額
-                        "単価": tax_included_unit_price,  # 税込単価
+                        "税率": std.get('tax_rate', 10),
+                        "本体価": base_price_total if base_price_total is not None else 0,
+                        "税額": tax_amount if tax_amount is not None else 0,
+                        "税込価": tax_included_amount if tax_included_amount is not None else 0,
+                        "単価": tax_included_unit_price if tax_included_unit_price is not None else 0,
                         "正式名": std.get("official_name") or "",
                         "物品名": t.get("item_name") or "",
                         "大分類": std.get("major_category") or "",
@@ -435,19 +437,53 @@ def show_receipt_detail(log: dict):
 
                 df = pd.DataFrame(df_data)
 
-                # 金額関連のカラムをフォーマット（None値に対応）
-                df["表示額"] = df["表示額"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
-                df["本体価"] = df["本体価"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
-                df["税額"] = df["税額"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
-                df["税込価"] = df["税込価"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
-                df["単価"] = df["単価"].apply(lambda x: f"¥{x:,}" if x is not None else "—")
-
-                # データフレームを表示（横スクロール有効、高さ指定）
-                st.dataframe(
+                # 編集可能なデータエディタ
+                edited_df = st.data_editor(
                     df,
                     hide_index=True,
-                    height=400  # 高さを指定して見やすく
+                    height=400,
+                    column_config={
+                        "_transaction_id": None,  # 非表示
+                        "_std_id": None,  # 非表示
+                        "商品名": st.column_config.TextColumn("商品名", disabled=True),
+                        "数量": st.column_config.NumberColumn("数量", min_value=1, step=1),
+                        "表示額": st.column_config.NumberColumn("表示額", format="¥%d"),
+                        "外or内": st.column_config.TextColumn("外or内", disabled=True),
+                        "税率": st.column_config.NumberColumn("税率", format="%d%%", disabled=True),
+                        "本体価": st.column_config.NumberColumn("本体価", format="¥%d"),
+                        "税額": st.column_config.NumberColumn("税額", format="¥%d"),
+                        "税込価": st.column_config.NumberColumn("税込価", format="¥%d"),
+                        "単価": st.column_config.NumberColumn("単価", format="¥%d", disabled=True),
+                    },
+                    use_container_width=True
                 )
+
+                # 更新ボタン
+                if st.button("💾 データを更新", type="primary"):
+                    # 変更されたデータをDBに保存
+                    updated_count = 0
+                    for idx, row in edited_df.iterrows():
+                        std_id = row["_std_id"]
+                        if std_id:
+                            # 本体単価を逆算（本体価 ÷ 数量）
+                            quantity = row["数量"]
+                            base_price = row["本体価"]
+                            std_unit_price = base_price // quantity if quantity > 0 else 0
+
+                            # 60_rd_standardized_itemsを更新
+                            try:
+                                db.table("60_rd_standardized_items").update({
+                                    "std_unit_price": std_unit_price,
+                                    "tax_amount": row["税額"],
+                                    "std_amount": row["税込価"]
+                                }).eq("id", std_id).execute()
+                                updated_count += 1
+                            except Exception as e:
+                                st.error(f"更新エラー ({row['商品名']}): {e}")
+
+                    if updated_count > 0:
+                        st.success(f"✅ {updated_count}件のデータを更新しました")
+                        st.rerun()  # ページをリロードしてレシート情報サマリーも更新
 
                 # 合計金額・税額サマリー
                 total = sum(
