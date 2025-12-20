@@ -342,8 +342,14 @@ def show_receipt_detail(log: dict):
                         service_role_key = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
                         anon_key = os.getenv("SUPABASE_KEY")
                         st.write("**🔑 データベースキー情報**")
-                        st.write(f"SERVICE_ROLE_KEY設定: {'✅ あり (...{service_role_key[-4:]})' if service_role_key else '❌ なし'}")
-                        st.write(f"ANON_KEY設定: {'✅ あり (...{anon_key[-4:]})' if anon_key else '❌ なし'}")
+                        if service_role_key:
+                            st.write(f"SERVICE_ROLE_KEY設定: ✅ あり (...{service_role_key[-4:]})")
+                        else:
+                            st.write("SERVICE_ROLE_KEY設定: ❌ なし")
+                        if anon_key:
+                            st.write(f"ANON_KEY設定: ✅ あり (...{anon_key[-4:]})")
+                        else:
+                            st.write("ANON_KEY設定: ❌ なし")
                         st.write(f"使用中のキー末尾: ...{SUPABASE_KEY[-4:]}")
                         st.write("---")
 
