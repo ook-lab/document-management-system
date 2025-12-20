@@ -100,12 +100,22 @@ def main():
                         # Pythonスクリプトのパスを取得
                         script_path = Path(__file__).parent / "reimport_receipts_from_drive.py"
 
+                        # プロジェクトルートディレクトリを取得
+                        project_root = Path(__file__).parent.parent
+
+                        # 環境変数にPYTHONPATHを設定
+                        import os
+                        env = os.environ.copy()
+                        env['PYTHONPATH'] = str(project_root)
+
                         # subprocess でスクリプトを実行
                         result = subprocess.run(
                             [sys.executable, str(script_path), f"--limit={limit}"],
                             capture_output=True,
                             text=True,
-                            timeout=600
+                            timeout=600,
+                            env=env,
+                            cwd=str(project_root)
                         )
 
                         if result.returncode == 0:
