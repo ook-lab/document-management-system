@@ -491,14 +491,40 @@ def show_receipt_detail(log: dict):
                 # レシート情報サマリー（詳細版）
                 # ========================================
 
-                # 計算値を集計
-                calc_subtotal = sum(
+                # 計算値を集計（税抜・税込両方）
+                calc_subtotal_excluding_tax = sum(  # 税抜合計（外税用）
                     (t.get("60_rd_standardized_items") or {}).get("std_unit_price", 0) * (t.get("quantity") or 1)
                     for t in transactions.data
                 )
-                calc_total = sum(
+                calc_total = sum(  # 税込合計
                     (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
                     for t in transactions.data
+                )
+
+                # 税率別の対象額（8%, 10%）
+                # 10%対象額（税込）- 内税用
+                calc_10_amount_including_tax = sum(
+                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    for t in transactions.data
+                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 10
+                )
+                # 10%対象額（税抜）- 外税用
+                calc_10_amount_excluding_tax = sum(
+                    (t.get("60_rd_standardized_items") or {}).get("std_unit_price", 0) * (t.get("quantity") or 1)
+                    for t in transactions.data
+                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 10
+                )
+                # 8%対象額（税込）- 内税用
+                calc_8_amount_including_tax = sum(
+                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    for t in transactions.data
+                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 8
+                )
+                # 8%対象額（税抜）- 外税用
+                calc_8_amount_excluding_tax = sum(
+                    (t.get("60_rd_standardized_items") or {}).get("std_unit_price", 0) * (t.get("quantity") or 1)
+                    for t in transactions.data
+                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 8
                 )
 
                 # レシート記載値
@@ -509,64 +535,176 @@ def show_receipt_detail(log: dict):
                 if tax_summary and tax_summary.data:
                     summary = tax_summary.data[0]
                     match_icon = "✅" if summary.get("calculated_matches_actual") else "⚠️"
-                    st.subheader(f"📊 レシート情報サマリー {match_icon}")
+                    st.subheader(f"📊 レシート情報サマリー（{tax_display_type}） {match_icon}")
                 else:
-                    st.subheader("📊 レシート情報サマリー")
+                    st.subheader(f"📊 レシート情報サマリー（{tax_display_type}）")
                     summary = None
 
-                # テーブルデータを作成（上から：小計、税額、税込合計）
+                # テーブルデータを作成（内税・外税で項目名と計算方法を変える）
                 table_data = {
                     "項目": [],
                     "レシート記載": [],
                     "計算値（差分）": []
                 }
 
-                # 1. 小計（税抜）
-                table_data["項目"].append("小計（税抜）")
-                table_data["レシート記載"].append(f"¥{receipt_subtotal:,}" if receipt_subtotal is not None else "—")
+                # 1. 小計
+                if tax_display_type == "内税":
+                    # 内税の場合：小計 = 税込合計
+                    table_data["項目"].append("小計（税込）")
+                    table_data["レシート記載"].append(f"¥{receipt_subtotal:,}" if receipt_subtotal is not None else "—")
 
-                subtotal_diff = calc_subtotal - receipt_subtotal if receipt_subtotal else 0
-                if receipt_subtotal and abs(subtotal_diff) > 5:
-                    table_data["計算値（差分）"].append(f"¥{calc_subtotal:,} ({subtotal_diff:+,}円)")
+                    subtotal_diff = calc_total - receipt_subtotal if receipt_subtotal else 0
+                    if receipt_subtotal and abs(subtotal_diff) > 5:
+                        table_data["計算値（差分）"].append(f"¥{calc_total:,} ({subtotal_diff:+,}円)")
+                    else:
+                        table_data["計算値（差分）"].append(f"¥{calc_total:,}")
                 else:
-                    table_data["計算値（差分）"].append(f"¥{calc_subtotal:,}")
+                    # 外税の場合：小計 = 税抜合計
+                    table_data["項目"].append("小計（税抜）")
+                    table_data["レシート記載"].append(f"¥{receipt_subtotal:,}" if receipt_subtotal is not None else "—")
 
-                # 2. 税額（8%, 10%）
+                    subtotal_diff = calc_subtotal_excluding_tax - receipt_subtotal if receipt_subtotal else 0
+                    if receipt_subtotal and abs(subtotal_diff) > 5:
+                        table_data["計算値（差分）"].append(f"¥{calc_subtotal_excluding_tax:,} ({subtotal_diff:+,}円)")
+                    else:
+                        table_data["計算値（差分）"].append(f"¥{calc_subtotal_excluding_tax:,}")
+
+                # 2. 税率別の対象額と税額
                 if summary:
-                    # 8%税額
-                    table_data["項目"].append("8%税額")
-                    tax_8_amount = summary.get('tax_8_amount')
-                    table_data["レシート記載"].append(
-                        f"¥{tax_8_amount:,}" if tax_8_amount is not None else "—"
-                    )
-                    tax_8_diff = summary.get('tax_8_diff', 0)
-                    calc_tax_8 = summary.get('calculated_tax_8_amount', 0)
-                    if tax_8_diff and abs(tax_8_diff) > 1:
-                        table_data["計算値（差分）"].append(f"¥{calc_tax_8:,} ({tax_8_diff:+d}円)")
-                    else:
-                        table_data["計算値（差分）"].append(f"¥{calc_tax_8:,}")
+                    if tax_display_type == "内税":
+                        # 内税10%対象額（税込）
+                        table_data["項目"].append("内税10%対象額（税込）")
+                        tax_10_subtotal = summary.get('tax_10_subtotal')
+                        tax_10_amount = summary.get('tax_10_amount')
+                        # レシート記載 = 対象額（税抜） + 税額 = 税込
+                        if tax_10_subtotal is not None and tax_10_amount is not None:
+                            receipt_10_including = tax_10_subtotal + tax_10_amount
+                            table_data["レシート記載"].append(f"¥{receipt_10_including:,}")
+                        else:
+                            table_data["レシート記載"].append("—")
+                            receipt_10_including = None
 
-                    # 10%税額
-                    table_data["項目"].append("10%税額")
-                    tax_10_amount = summary.get('tax_10_amount')
-                    table_data["レシート記載"].append(
-                        f"¥{tax_10_amount:,}" if tax_10_amount is not None else "—"
-                    )
-                    tax_10_diff = summary.get('tax_10_diff', 0)
-                    calc_tax_10 = summary.get('calculated_tax_10_amount', 0)
-                    if tax_10_diff and abs(tax_10_diff) > 1:
-                        table_data["計算値（差分）"].append(f"¥{calc_tax_10:,} ({tax_10_diff:+d}円)")
-                    else:
-                        table_data["計算値（差分）"].append(f"¥{calc_tax_10:,}")
+                        # 計算値 = 10%対象商品の税込価合計
+                        amount_diff = calc_10_amount_including_tax - receipt_10_including if receipt_10_including else 0
+                        if receipt_10_including and abs(amount_diff) > 5:
+                            table_data["計算値（差分）"].append(f"¥{calc_10_amount_including_tax:,} ({amount_diff:+,}円)")
+                        else:
+                            table_data["計算値（差分）"].append(f"¥{calc_10_amount_including_tax:,}")
+
+                        # 内税10%税額
+                        table_data["項目"].append("内税10%税額")
+                        table_data["レシート記載"].append(
+                            f"¥{tax_10_amount:,}" if tax_10_amount is not None else "—"
+                        )
+                        tax_10_diff = summary.get('tax_10_diff', 0)
+                        calc_tax_10 = summary.get('calculated_tax_10_amount', 0)
+                        if tax_10_diff and abs(tax_10_diff) > 1:
+                            table_data["計算値（差分）"].append(f"¥{calc_tax_10:,} ({tax_10_diff:+d}円)")
+                        else:
+                            table_data["計算値（差分）"].append(f"¥{calc_tax_10:,}")
+
+                        # 内税8%対象額（税込）
+                        if calc_8_amount_including_tax > 0:
+                            table_data["項目"].append("内税8%対象額（税込）")
+                            tax_8_subtotal = summary.get('tax_8_subtotal')
+                            tax_8_amount = summary.get('tax_8_amount')
+                            if tax_8_subtotal is not None and tax_8_amount is not None:
+                                receipt_8_including = tax_8_subtotal + tax_8_amount
+                                table_data["レシート記載"].append(f"¥{receipt_8_including:,}")
+                            else:
+                                table_data["レシート記載"].append("—")
+                                receipt_8_including = None
+
+                            amount_diff = calc_8_amount_including_tax - receipt_8_including if receipt_8_including else 0
+                            if receipt_8_including and abs(amount_diff) > 5:
+                                table_data["計算値（差分）"].append(f"¥{calc_8_amount_including_tax:,} ({amount_diff:+,}円)")
+                            else:
+                                table_data["計算値（差分）"].append(f"¥{calc_8_amount_including_tax:,}")
+
+                            # 内税8%税額
+                            table_data["項目"].append("内税8%税額")
+                            table_data["レシート記載"].append(
+                                f"¥{tax_8_amount:,}" if tax_8_amount is not None else "—"
+                            )
+                            tax_8_diff = summary.get('tax_8_diff', 0)
+                            calc_tax_8 = summary.get('calculated_tax_8_amount', 0)
+                            if tax_8_diff and abs(tax_8_diff) > 1:
+                                table_data["計算値（差分）"].append(f"¥{calc_tax_8:,} ({tax_8_diff:+d}円)")
+                            else:
+                                table_data["計算値（差分）"].append(f"¥{calc_tax_8:,}")
+
+                    else:  # 外税
+                        # 外税10%対象額（税抜）
+                        table_data["項目"].append("外税10%対象額（税抜）")
+                        tax_10_subtotal = summary.get('tax_10_subtotal')
+                        table_data["レシート記載"].append(
+                            f"¥{tax_10_subtotal:,}" if tax_10_subtotal is not None else "—"
+                        )
+
+                        # 計算値 = 10%対象商品の税抜価合計
+                        amount_diff = calc_10_amount_excluding_tax - tax_10_subtotal if tax_10_subtotal else 0
+                        if tax_10_subtotal and abs(amount_diff) > 5:
+                            table_data["計算値（差分）"].append(f"¥{calc_10_amount_excluding_tax:,} ({amount_diff:+,}円)")
+                        else:
+                            table_data["計算値（差分）"].append(f"¥{calc_10_amount_excluding_tax:,}")
+
+                        # 外税10%税額
+                        table_data["項目"].append("外税10%税額")
+                        tax_10_amount = summary.get('tax_10_amount')
+                        table_data["レシート記載"].append(
+                            f"¥{tax_10_amount:,}" if tax_10_amount is not None else "—"
+                        )
+                        tax_10_diff = summary.get('tax_10_diff', 0)
+                        calc_tax_10 = summary.get('calculated_tax_10_amount', 0)
+                        if tax_10_diff and abs(tax_10_diff) > 1:
+                            table_data["計算値（差分）"].append(f"¥{calc_tax_10:,} ({tax_10_diff:+d}円)")
+                        else:
+                            table_data["計算値（差分）"].append(f"¥{calc_tax_10:,}")
+
+                        # 外税8%対象額（税抜）
+                        if calc_8_amount_excluding_tax > 0:
+                            table_data["項目"].append("外税8%対象額（税抜）")
+                            tax_8_subtotal = summary.get('tax_8_subtotal')
+                            table_data["レシート記載"].append(
+                                f"¥{tax_8_subtotal:,}" if tax_8_subtotal is not None else "—"
+                            )
+
+                            amount_diff = calc_8_amount_excluding_tax - tax_8_subtotal if tax_8_subtotal else 0
+                            if tax_8_subtotal and abs(amount_diff) > 5:
+                                table_data["計算値（差分）"].append(f"¥{calc_8_amount_excluding_tax:,} ({amount_diff:+,}円)")
+                            else:
+                                table_data["計算値（差分）"].append(f"¥{calc_8_amount_excluding_tax:,}")
+
+                            # 外税8%税額
+                            table_data["項目"].append("外税8%税額")
+                            tax_8_amount = summary.get('tax_8_amount')
+                            table_data["レシート記載"].append(
+                                f"¥{tax_8_amount:,}" if tax_8_amount is not None else "—"
+                            )
+                            tax_8_diff = summary.get('tax_8_diff', 0)
+                            calc_tax_8 = summary.get('calculated_tax_8_amount', 0)
+                            if tax_8_diff and abs(tax_8_diff) > 1:
+                                table_data["計算値（差分）"].append(f"¥{calc_tax_8:,} ({tax_8_diff:+d}円)")
+                            else:
+                                table_data["計算値（差分）"].append(f"¥{calc_tax_8:,}")
                 else:
                     # tax_summaryがない場合
-                    table_data["項目"].append("8%税額")
-                    table_data["レシート記載"].append("—")
-                    table_data["計算値（差分）"].append(f"¥{total_tax_8:,}")
+                    if tax_display_type == "内税":
+                        table_data["項目"].append("内税10%対象額（税込）")
+                        table_data["レシート記載"].append("—")
+                        table_data["計算値（差分）"].append(f"¥{calc_10_amount_including_tax:,}")
 
-                    table_data["項目"].append("10%税額")
-                    table_data["レシート記載"].append("—")
-                    table_data["計算値（差分）"].append(f"¥{total_tax_10:,}")
+                        table_data["項目"].append("内税10%税額")
+                        table_data["レシート記載"].append("—")
+                        table_data["計算値（差分）"].append(f"¥{total_tax_10:,}")
+                    else:
+                        table_data["項目"].append("外税10%対象額（税抜）")
+                        table_data["レシート記載"].append("—")
+                        table_data["計算値（差分）"].append(f"¥{calc_10_amount_excluding_tax:,}")
+
+                        table_data["項目"].append("外税10%税額")
+                        table_data["レシート記載"].append("—")
+                        table_data["計算値（差分）"].append(f"¥{total_tax_10:,}")
 
                 # 3. 税込合計
                 table_data["項目"].append("税込合計")
