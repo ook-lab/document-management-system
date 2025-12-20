@@ -55,9 +55,12 @@ ALTER TABLE "60_rd_transactions" RENAME TO "60_rd_transactions_OLD_BACKUP";
 -- インデックスもリネーム（PostgreSQLが自動で行うが、明示的に記録）
 COMMENT ON TABLE "60_rd_transactions_OLD_BACKUP" IS 'バックアップテーブル - 削除予定';
 
-RAISE NOTICE '✅ 旧テーブルをバックアップとしてリネームしました';
-RAISE NOTICE '   60_rd_transactions → 60_rd_transactions_OLD_BACKUP';
-RAISE NOTICE '';
+DO $$
+BEGIN
+    RAISE NOTICE '✅ 旧テーブルをバックアップとしてリネームしました';
+    RAISE NOTICE '   60_rd_transactions → 60_rd_transactions_OLD_BACKUP';
+    RAISE NOTICE '';
+END $$;
 
 -- ====================================================================
 -- ステップ3: 新テーブルを正式名称にリネーム
@@ -70,9 +73,12 @@ ALTER TABLE "60_rd_transactions_new" RENAME TO "60_rd_transactions";
 -- 注意: 既に外部キー制約が設定されているため、この操作は不要
 --      60_rd_standardized_items.transaction_id は既に 60_rd_transactions_new を参照
 
-RAISE NOTICE '✅ 新テーブルを正式名称にリネームしました';
-RAISE NOTICE '   60_rd_transactions_new → 60_rd_transactions';
-RAISE NOTICE '';
+DO $$
+BEGIN
+    RAISE NOTICE '✅ 新テーブルを正式名称にリネームしました';
+    RAISE NOTICE '   60_rd_transactions_new → 60_rd_transactions';
+    RAISE NOTICE '';
+END $$;
 
 -- ====================================================================
 -- ステップ4: インデックス名の調整（必要に応じて）
@@ -102,8 +108,11 @@ DROP INDEX IF EXISTS idx_60_rd_trans_new_created CASCADE;
 CREATE INDEX IF NOT EXISTS idx_60_rd_transactions_created
     ON "60_rd_transactions"(created_at DESC);
 
-RAISE NOTICE '✅ インデックス名を調整しました';
-RAISE NOTICE '';
+DO $$
+BEGIN
+    RAISE NOTICE '✅ インデックス名を調整しました';
+    RAISE NOTICE '';
+END $$;
 
 -- ====================================================================
 -- ステップ5: RLSポリシーの更新
@@ -128,8 +137,11 @@ CREATE POLICY "Allow service role full access to transactions"
     USING (true)
     WITH CHECK (true);
 
-RAISE NOTICE '✅ RLSポリシーを更新しました';
-RAISE NOTICE '';
+DO $$
+BEGIN
+    RAISE NOTICE '✅ RLSポリシーを更新しました';
+    RAISE NOTICE '';
+END $$;
 
 -- ====================================================================
 -- ステップ6: 動作確認期間の案内
