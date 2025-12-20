@@ -41,33 +41,51 @@ BEGIN
 END $$;
 
 -- ====================================================================
--- ステップ1: 全テーブルのデータを一括削除（TRUNCATE CASCADE使用）
+-- ステップ1: 99_lg_image_proc_logのreceipt_idをクリア（先に実行）
 -- ====================================================================
-
--- 親テーブルからTRUNCATEすると、CASCADE で子・孫も削除される
-TRUNCATE TABLE "60_rd_receipts" CASCADE;
-
-DO $$
-BEGIN
-    RAISE NOTICE '✅ 60_rd_receipts (CASCADE) を削除しました';
-    RAISE NOTICE '   → 60_rd_transactions も削除されました';
-    RAISE NOTICE '   → 60_rd_standardized_items も削除されました';
-END $$;
-
--- ====================================================================
--- ステップ2: 99_lg_image_proc_logのreceipt_idをクリア
--- ====================================================================
+-- 重要: TRUNCATE CASCADEで99_lg_image_proc_logが削除されないように先にクリア
 
 DO $$
 DECLARE
     cleared_count INTEGER;
 BEGIN
+    RAISE NOTICE 'ステップ1: 99_lg_image_proc_log の receipt_id をクリア...';
+
     UPDATE "99_lg_image_proc_log"
     SET receipt_id = NULL
     WHERE receipt_id IS NOT NULL;
 
     GET DIAGNOSTICS cleared_count = ROW_COUNT;
-    RAISE NOTICE '✅ 99_lg_image_proc_log の receipt_id をクリアしました (% 件)', cleared_count;
+    RAISE NOTICE '  - 99_lg_image_proc_log: % 件のreceipt_idをクリア', cleared_count;
+END $$;
+
+-- ====================================================================
+-- ステップ2: 全テーブルのデータを削除（DELETE使用）
+-- ====================================================================
+-- TRUNCATE CASCADEは99_lg_image_proc_logも削除してしまうため、DELETEを使用
+
+DO $$
+DECLARE
+    items_deleted INTEGER;
+    trans_deleted INTEGER;
+    receipts_deleted INTEGER;
+BEGIN
+    RAISE NOTICE 'ステップ2: データ削除...';
+
+    -- 孫テーブル削除
+    DELETE FROM "60_rd_standardized_items";
+    GET DIAGNOSTICS items_deleted = ROW_COUNT;
+    RAISE NOTICE '  - 60_rd_standardized_items: % 件削除', items_deleted;
+
+    -- 子テーブル削除
+    DELETE FROM "60_rd_transactions";
+    GET DIAGNOSTICS trans_deleted = ROW_COUNT;
+    RAISE NOTICE '  - 60_rd_transactions: % 件削除', trans_deleted;
+
+    -- 親テーブル削除
+    DELETE FROM "60_rd_receipts";
+    GET DIAGNOSTICS receipts_deleted = ROW_COUNT;
+    RAISE NOTICE '  - 60_rd_receipts: % 件削除', receipts_deleted;
 END $$;
 
 -- ====================================================================
@@ -79,10 +97,12 @@ DECLARE
     receipt_count INTEGER;
     trans_count INTEGER;
     std_count INTEGER;
+    log_count INTEGER;
 BEGIN
     SELECT COUNT(*) INTO receipt_count FROM "60_rd_receipts";
     SELECT COUNT(*) INTO trans_count FROM "60_rd_transactions";
     SELECT COUNT(*) INTO std_count FROM "60_rd_standardized_items";
+    SELECT COUNT(*) INTO log_count FROM "99_lg_image_proc_log";
 
     RAISE NOTICE '';
     RAISE NOTICE '====================================================================';
@@ -91,10 +111,12 @@ BEGIN
     RAISE NOTICE '60_rd_receipts: % 件 (期待: 0件)', receipt_count;
     RAISE NOTICE '60_rd_transactions: % 件 (期待: 0件)', trans_count;
     RAISE NOTICE '60_rd_standardized_items: % 件 (期待: 0件)', std_count;
+    RAISE NOTICE '99_lg_image_proc_log: % 件 (保護されました)', log_count;
     RAISE NOTICE '';
 
     IF receipt_count = 0 AND trans_count = 0 AND std_count = 0 THEN
         RAISE NOTICE '✅ クリーンアップ成功';
+        RAISE NOTICE '⚠️  99_lg_image_proc_logは保護されています（receipt_idはNULL）';
         RAISE NOTICE '次のステップ: kakeibo_3table_split_02b_remigrate_from_backup.sql を実行してください';
     ELSE
         RAISE WARNING '⚠️  クリーンアップ失敗 - データが残っています';
