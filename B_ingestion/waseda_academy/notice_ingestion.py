@@ -112,7 +112,7 @@ class WasedaNoticeIngestionPipeline:
         """
         try:
             # source_documents テーブルで source_type='waseda_academy_online' のドキュメントを取得
-            result = self.db.client.table('source_documents').select('metadata').eq(
+            result = self.db.client.table('10_rd_source_docs').select('metadata').eq(
                 'source_type', 'waseda_academy_online'
             ).execute()
 
@@ -314,7 +314,7 @@ class WasedaNoticeIngestionPipeline:
 
                 try:
                     # Supabaseに保存
-                    doc_result = await self.db.insert_document('source_documents', doc_data)
+                    doc_result = await self.db.insert_document('10_rd_source_docs', doc_data)
                     if doc_result:
                         doc_id = doc_result.get('id')
                         result['document_ids'].append(doc_id)

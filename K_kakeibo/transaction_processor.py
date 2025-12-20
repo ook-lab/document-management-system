@@ -3,7 +3,7 @@
 
 - Gemini OCRの結果を正規化
 - エイリアス変換・辞書マッチング
-- イベント期間判定 → シチュエーション自動設定
+- シチュエーション設定（デフォルト: 日常）
 - Supabaseへの登録
 """
 
@@ -24,7 +24,6 @@ class TransactionProcessor:
         # マスタデータをキャッシュ
         self.aliases = self._load_aliases()
         self.product_dict = self._load_product_dictionary()
-        self.events = self._load_events()
         self.situations = self._load_situations()
         self.categories = self._load_categories()
 
@@ -37,7 +36,7 @@ class TransactionProcessor:
         source_folder: str = "INBOX"
     ) -> Dict:
         """
-        OCR結果を処理してDBに登録
+        OCR結果を処理してDBに登録（3層構造対応）
 
         Args:
             ocr_result: Gemini OCRの結果
@@ -48,22 +47,31 @@ class TransactionProcessor:
 
         Returns:
             Dict: 処理結果
-                - success: {"transaction_ids": [...]}
+                - success: {"receipt_id": "...", "transaction_ids": [...]}
                 - error: {"error": "...", "message": "..."}
         """
         try:
             # エラーチェック
             if "error" in ocr_result:
-                self._log_processing_error(file_name, drive_file_id, ocr_result, model_name)
+                self._log_processing_error(file_name, drive_file_id, ocr_result, model_name, None)
                 return ocr_result
 
             # トランザクション日付
             trans_date = datetime.strptime(ocr_result["transaction_date"], "%Y-%m-%d").date()
 
-            # イベント期間判定 → シチュエーション確定
+            # 1. レシート情報を登録（親テーブル）
+            receipt_id = self._insert_receipt(
+                ocr_result=ocr_result,
+                file_name=file_name,
+                drive_file_id=drive_file_id,
+                model_name=model_name,
+                source_folder=source_folder
+            )
+
+            # 2. イベント期間判定 → シチュエーション確定
             situation_id = self._determine_situation(trans_date)
 
-            # 各商品を正規化（税率決定のみ、税額はまだ計算しない）
+            # 3. 各商品を正規化（税率決定のみ、税額はまだ計算しない）
             normalized_items = []
             for item in ocr_result["items"]:
                 normalized = self._normalize_item(item, ocr_result["shop_name"])
@@ -72,42 +80,55 @@ class TransactionProcessor:
                     "normalized": normalized
                 })
 
-            # 税額を按分計算
+            # 4. 税額を按分計算
             items_with_tax = self._calculate_and_distribute_tax(
                 normalized_items,
                 ocr_result.get("tax_summary")
             )
 
-            # DB登録
+            # 5. 各明細を3層に分けて登録
             transaction_ids = []
-            for item_data in items_with_tax:
+            standardized_ids = []
+
+            for line_num, item_data in enumerate(items_with_tax, start=1):
                 item = item_data["raw_item"]
                 normalized = item_data["normalized"]
 
+                # 子テーブル: トランザクション（OCRテキスト正規化）
                 trans_id = self._insert_transaction(
-                    transaction_date=trans_date.isoformat(),
-                    shop_name=ocr_result["shop_name"],
+                    receipt_id=receipt_id,
+                    line_number=line_num,
+                    ocr_raw_text=item.get("ocr_raw", item["product_name"]),  # OCR原文
+                    ocr_confidence=item.get("confidence", None),
                     product_name=normalized["product_name"],
-                    quantity=item.get("quantity", 1),
-                    unit_price=item["unit_price"],
-                    total_amount=item["total_amount"],
-                    category_id=normalized.get("category_id"),
-                    situation_id=situation_id,
-                    tax_rate=normalized["tax_rate"],
-                    tax_amount=normalized["tax_amount"],
-                    needs_tax_review=item_data.get("needs_review", False),
-                    image_path=f"99_Archive/{trans_date.strftime('%Y-%m')}/{file_name}",
-                    drive_file_id=drive_file_id,
-                    ocr_model=model_name,
-                    source_folder=source_folder
+                    item_name=None,  # 将来的にOCRから取得
+                    unit_price=item.get("unit_price"),
+                    quantity=item.get("quantity", 1)
                 )
-
                 transaction_ids.append(trans_id)
 
-            # 処理ログ記録
-            processing_log_id = self._log_processing_success(file_name, drive_file_id, transaction_ids, model_name)
+                # 孫テーブル: 正規化アイテム（家計簿・情報正規化）
+                std_id = self._insert_standardized_item(
+                    transaction_id=trans_id,
+                    receipt_id=receipt_id,
+                    normalized=normalized,
+                    situation_id=situation_id,
+                    total_amount=item["total_amount"],
+                    tax_amount=normalized["tax_amount"],
+                    needs_review=item_data.get("needs_review", False)
+                )
+                standardized_ids.append(std_id)
 
-            # 税額サマリー保存
+            # 6. 処理ログ記録（receipt_idも保存）
+            processing_log_id = self._log_processing_success(
+                file_name=file_name,
+                drive_file_id=drive_file_id,
+                receipt_id=receipt_id,
+                transaction_ids=transaction_ids,
+                model_name=model_name
+            )
+
+            # 7. 税額サマリー保存
             if "tax_summary" in ocr_result:
                 self._save_tax_summary(
                     processing_log_id=processing_log_id,
@@ -115,16 +136,18 @@ class TransactionProcessor:
                     items_with_tax=items_with_tax
                 )
 
-            logger.info(f"Processed {len(transaction_ids)} transactions from {file_name} using {model_name}")
+            logger.info(f"Processed receipt {receipt_id} with {len(transaction_ids)} transactions from {file_name} using {model_name}")
 
             return {
                 "success": True,
-                "transaction_ids": transaction_ids
+                "receipt_id": receipt_id,
+                "transaction_ids": transaction_ids,
+                "standardized_ids": standardized_ids
             }
 
         except Exception as e:
             logger.error(f"Failed to process {file_name}: {e}")
-            self._log_processing_error(file_name, drive_file_id, {"error": str(e)}, model_name)
+            self._log_processing_error(file_name, drive_file_id, {"error": str(e)}, model_name, None)
             return {
                 "error": "processing_failed",
                 "message": str(e)
@@ -179,41 +202,97 @@ class TransactionProcessor:
             trans_date: 取引日
 
         Returns:
-            str: situation_id（イベント期間中なら該当シチュエーション、それ以外は「日常」）
+            str: situation_id（常に「日常」を返す。必要に応じて手動でpurposeカラムを設定）
         """
-        # イベント期間に該当するかチェック
-        for event in self.events:
-            if event["start_date"] <= trans_date <= event["end_date"]:
-                logger.info(f"Date {trans_date} matches event: {event['name']}")
-                return event["situation_id"]
-
-        # デフォルトは「日常」
+        # デフォルトは「日常」を返す
         default_situation = next(
             (s for s in self.situations if s["name"] == "日常"),
-            self.situations[0]
+            self.situations[0] if self.situations else None
         )
-        return default_situation["id"]
 
-    def _insert_transaction(self, **kwargs) -> str:
-        """トランザクションをDBに登録"""
-        result = self.db.table("money_transactions").insert(kwargs).execute()
+        if default_situation:
+            return default_situation["id"]
+        else:
+            logger.warning("「日常」シチュエーションが見つかりません。最初のシチュエーションを使用します。")
+            return self.situations[0]["id"] if self.situations else None
+
+    def _insert_receipt(self, ocr_result: Dict, file_name: str, drive_file_id: str, model_name: str, source_folder: str) -> str:
+        """レシート情報をDBに登録（親テーブル）"""
+        trans_date = datetime.strptime(ocr_result["transaction_date"], "%Y-%m-%d").date()
+
+        # レシートの合計金額を計算
+        total_amount = sum(item["total_amount"] for item in ocr_result["items"])
+
+        receipt_data = {
+            "transaction_date": ocr_result["transaction_date"],
+            "shop_name": ocr_result["shop_name"],
+            "total_amount_check": ocr_result.get("total_amount", total_amount),
+            "subtotal_amount": ocr_result.get("subtotal", None),
+            "image_path": f"99_Archive/{trans_date.strftime('%Y-%m')}/{file_name}",
+            "drive_file_id": drive_file_id,
+            "source_folder": source_folder,
+            "ocr_model": model_name,
+            "workspace": "household",
+            "is_verified": False
+        }
+
+        result = self.db.table("60_rd_receipts").insert(receipt_data).execute()
         return result.data[0]["id"]
 
-    def _log_processing_success(self, file_name: str, drive_file_id: str, transaction_ids: List[str], model_name: str = None) -> str:
+    def _insert_transaction(self, receipt_id: str, line_number: int, ocr_raw_text: str,
+                           ocr_confidence: float, product_name: str, item_name: str,
+                           unit_price: int, quantity: int) -> str:
+        """トランザクション（明細行）をDBに登録（子テーブル）"""
+        trans_data = {
+            "receipt_id": receipt_id,
+            "line_number": line_number,
+            "line_type": "ITEM",  # 将来的にOCRで判定
+            "ocr_raw_text": ocr_raw_text,
+            "ocr_confidence": ocr_confidence,
+            "product_name": product_name,
+            "item_name": item_name,
+            "unit_price": unit_price,
+            "quantity": quantity
+        }
+
+        result = self.db.table("60_rd_transactions").insert(trans_data).execute()
+        return result.data[0]["id"]
+
+    def _insert_standardized_item(self, transaction_id: str, receipt_id: str, normalized: Dict,
+                                  situation_id: str, total_amount: int, tax_amount: int,
+                                  needs_review: bool) -> str:
+        """正規化された家計簿アイテムをDBに登録（孫テーブル）"""
+        std_data = {
+            "transaction_id": transaction_id,
+            "receipt_id": receipt_id,  # 冗長化（JOIN削減のため）
+            "official_name": normalized.get("official_name"),
+            "category_id": normalized.get("category_id"),
+            "situation_id": situation_id,
+            "tax_rate": normalized["tax_rate"],
+            "std_amount": total_amount,
+            "tax_amount": tax_amount,
+            "needs_review": needs_review
+        }
+
+        result = self.db.table("60_rd_standardized_items").insert(std_data).execute()
+        return result.data[0]["id"]
+
+    def _log_processing_success(self, file_name: str, drive_file_id: str, receipt_id: str, transaction_ids: List[str], model_name: str = None) -> str:
         """処理成功をログに記録"""
         log_data = {
             "file_name": file_name,
             "drive_file_id": drive_file_id,
+            "receipt_id": receipt_id,  # 新規追加
             "status": "success",
             "transaction_ids": transaction_ids
         }
         if model_name:
             log_data["ocr_model"] = model_name
 
-        result = self.db.table("money_image_processing_log").insert(log_data).execute()
+        result = self.db.table("99_lg_image_proc_log").insert(log_data).execute()
         return result.data[0]["id"]
 
-    def _log_processing_error(self, file_name: str, drive_file_id: str, error_info: Dict, model_name: str = None):
+    def _log_processing_error(self, file_name: str, drive_file_id: str, error_info: Dict, model_name: str = None, receipt_id: str = None):
         """処理エラーをログに記録"""
         log_data = {
             "file_name": file_name,
@@ -223,8 +302,10 @@ class TransactionProcessor:
         }
         if model_name:
             log_data["ocr_model"] = model_name
+        if receipt_id:
+            log_data["receipt_id"] = receipt_id
 
-        self.db.table("money_image_processing_log").insert(log_data).execute()
+        self.db.table("99_lg_image_proc_log").insert(log_data).execute()
 
     def _calculate_and_distribute_tax(self, normalized_items: List[Dict], tax_summary: Dict) -> List[Dict]:
         """
@@ -395,31 +476,20 @@ class TransactionProcessor:
     # ========================================
     def _load_aliases(self) -> Dict[str, str]:
         """エイリアステーブルを読み込み"""
-        result = self.db.table("money_aliases").select("*").execute()
+        result = self.db.table("60_ms_ocr_aliases").select("*").execute()
         return {row["input_word"].lower(): row["correct_word"] for row in result.data}
 
     def _load_product_dictionary(self) -> List[Dict]:
         """商品辞書を読み込み"""
-        result = self.db.table("money_product_dictionary").select("*").execute()
-        return result.data
-
-    def _load_events(self) -> List[Dict]:
-        """イベント期間を読み込み"""
-        result = self.db.table("money_events").select("*").execute()
-
-        # 日付をdateオブジェクトに変換
-        for event in result.data:
-            event["start_date"] = datetime.strptime(event["start_date"], "%Y-%m-%d").date()
-            event["end_date"] = datetime.strptime(event["end_date"], "%Y-%m-%d").date()
-
+        result = self.db.table("60_ms_product_dict").select("*").execute()
         return result.data
 
     def _load_situations(self) -> List[Dict]:
         """シチュエーション一覧を読み込み"""
-        result = self.db.table("money_situations").select("*").execute()
+        result = self.db.table("60_ms_situations").select("*").execute()
         return result.data
 
     def _load_categories(self) -> List[Dict]:
         """カテゴリ一覧を読み込み"""
-        result = self.db.table("money_categories").select("*").execute()
+        result = self.db.table("60_ms_categories").select("*").execute()
         return result.data

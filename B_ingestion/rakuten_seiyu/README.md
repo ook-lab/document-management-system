@@ -21,33 +21,87 @@
 ## ディレクトリ構成
 
 ```
-I:\マイドライブ\document-management-system\
+document_management_system/
 ├── B_ingestion/
-│   └── rakuten_seiyu/                    # 新規作成
+│   └── rakuten_seiyu/
 │       ├── __init__.py
-│       ├── README.md                      # 使用方法ドキュメント
-│       ├── rakuten_seiyu_scraper.py       # スクレイパークラス
-│       ├── product_ingestion.py           # データパイプライン
-│       ├── categories_config.json         # カテゴリー設定
-│       └── schema.sql                     # データベーススキーマ
+│       ├── README.md                              # 使用方法ドキュメント
+│       ├── auth_manager.py                        # ログイン＆Cookie取得（Playwright）※旧版
+│       ├── rakuten_seiyu_scraper_playwright.py    # スクレイパークラス（Playwright統合版）
+│       ├── product_ingestion.py                   # データパイプライン
+│       ├── categories_config.json                 # カテゴリー設定
+│       └── schema.sql                             # データベーススキーマ
 │
-├── process_rakuten_seiyu.py               # メイン実行スクリプト（ルート）
-└── requirements.txt                        # 依存関係更新
+├── process_rakuten_seiyu.py                       # メイン実行スクリプト（ルート）
+└── requirements.txt                                # 依存関係更新
 ```
 
 ---
 
 ## Phase 1: MVP実装（1カテゴリー・1ページ）
 
-### 1.1 rakuten_seiyu_scraper.py
+### アーキテクチャ概要: Playwright統合構成
+
+楽天西友では**地域（配送エリア）ごとに在庫・価格が異なる**ため、正確なデータを取得するにはログインが必須です。
+
+そのため**Playwright**を使用してブラウザセッションを維持したまま、ログインから商品データ取得まで一貫して処理します：
+
+1. **Playwright統合**: `rakuten_seiyu_scraper_playwright.py`
+   - ヘッドレスブラウザで楽天IDログイン
+   - ログイン状態を保持したまま商品ページを取得
+   - `window.__NUXT__` から商品JSONデータを抽出
+
+2. **データパイプライン**: `product_ingestion.py`
+   - スクレイパーを使用して商品データを取得
+   - JANコードで重複チェック
+   - Supabaseに保存（新規登録 or 更新）
+
+**メリット:**
+- ✅ 確実性: 正規の手順でログインし、ログイン状態を維持したままデータ取得
+- ✅ シンプル: 認証からデータ取得まで一貫したPlaywrightフロー
+- ✅ 安定性: ブラウザセッションを維持するため認証エラーが発生しにくい
+
+---
+
+### 1.1 auth_manager.py（新規作成）
+
+**役割:** ログイン処理とCookie取得
+
+**技術:** Playwright（ヘッドレスブラウザ）
+
+**主要クラス:**
+```python
+class RakutenSeiyuAuthManager:
+    def __init__(self, headless: bool = True)
+    async def login(self, rakuten_id: str, password: str) -> bool
+    async def set_delivery_area(self, zip_code: str) -> bool
+    async def save_cookies(self, file_path: str = "rakuten_seiyu_cookies.json") -> bool
+    async def close()
+```
+
+**実装フロー:**
+1. Playwrightでブラウザ起動
+2. 楽天西友トップページにアクセス
+3. 「ログイン」ボタンをクリック
+4. 楽天ID・パスワードを入力
+5. 配送先設定画面で郵便番号を入力
+6. セッションCookieを取得してJSON保存
+7. ブラウザを閉じる
+
+**参考ファイル:**
+- `B_ingestion/waseda_academy/main_chrome.py`（Playwrightの使用例）
+
+---
+
+### 1.2 rakuten_seiyu_scraper.py
 
 **技術選択:** requests + BeautifulSoup + JSON解析
 
 **主要クラス:**
 ```python
 class RakutenSeiyuScraper:
-    def __init__(self, area_zip_code: Optional[str] = None)
-    def _set_area(self, zip_code: str) -> bool  # エリア設定
+    def __init__(self, cookies_file: Optional[str] = None)
+    def load_cookies_from_file(self, file_path: str) -> bool
     def fetch_products_page(self, category_id: str, page: int = 1) -> Optional[str]
     def extract_products_from_html(self, html_content: str) -> List[Dict[str, Any]]
     def _fix_image_url(self, url: str) -> str
@@ -55,32 +109,63 @@ class RakutenSeiyuScraper:
 
 **重要な実装ポイント:**
 - `window.__NUXT__` からJSONデータを正規表現で抽出
-- エリア設定: 初回アクセス時にクッキーを設定（郵便番号POSTリクエスト）
+- **Cookie読み込み**: `auth_manager`が保存したCookieをセット
 - User-Agent設定とアクセス間隔制御（1～2秒のランダム）
 - 画像URL修正（`//netsuper.r10s.jp/...` → `https://netsuper.r10s.jp/...`）
+
+**修正内容:**
+- ❌ 削除: `_set_area()` メソッド（エリア設定は`auth_manager`に任せる）
+- ✅ 追加: `load_cookies_from_file()` メソッド
 
 **参考ファイル:**
 - `I:\マイドライブ\document-management-system\B_ingestion\tokubai\tokubai_scraper.py`
 
-### 1.2 product_ingestion.py
+### 1.3 product_ingestion.py
 
 **主要クラス:**
 ```python
 class RakutenSeiyuProductIngestionPipeline:
-    def __init__(self, zip_code: Optional[str] = None)
+    def __init__(self, cookies_file: Optional[str] = None)
     async def check_existing_products(self, jan_codes: List[str]) -> set
     async def process_category_page(self, category_id: str, page: int) -> List[Dict]
     def _prepare_product_data(self, product: Dict[str, Any]) -> Dict[str, Any]
 ```
 
 **処理フロー:**
-1. 1ページのHTMLを取得
-2. 商品データをJSON解析
-3. JANコードで重複チェック
-4. Supabaseに保存（`rakuten_seiyu_products`テーブル）
+1. `auth_manager`で取得したCookieファイルを指定
+2. `rakuten_seiyu_scraper`にCookieを渡して初期化
+3. 1ページのHTMLを取得
+4. 商品データをJSON解析
+5. JANコードで重複チェック
+6. Supabaseに保存（`rakuten_seiyu_products`テーブル）
+
+**修正内容:**
+- ✅ 追加: コンストラクタに`cookies_file`パラメータ
+- ✅ 追加: スクレイパー初期化時にCookieを渡す処理
 
 **参考ファイル:**
 - `I:\マイドライブ\document-management-system\B_ingestion\tokubai\flyer_ingestion.py`
+
+---
+
+### 1.4 実装の流れ（Phase 1）
+
+```python
+# ステップ1: 認証してCookie取得（初回のみ、または有効期限切れ時）
+from B_ingestion.rakuten_seiyu.auth_manager import RakutenSeiyuAuthManager
+
+auth = RakutenSeiyuAuthManager()
+await auth.login(rakuten_id="your_id", password="your_password")
+await auth.set_delivery_area(zip_code="211-0063")
+await auth.save_cookies("rakuten_seiyu_cookies.json")
+await auth.close()
+
+# ステップ2: Cookieを使って高速収集
+from B_ingestion.rakuten_seiyu.product_ingestion import RakutenSeiyuProductIngestionPipeline
+
+pipeline = RakutenSeiyuProductIngestionPipeline(cookies_file="rakuten_seiyu_cookies.json")
+result = await pipeline.process_category_page(category_id="110001", page=1)
+```
 
 ---
 
@@ -305,41 +390,63 @@ async def update_product_and_record_history(
 - 変更があれば `rakuten_seiyu_price_history` に記録
 - 変更率の計算とログ出力
 
-### 4.3 エリア設定実装
+### 4.3 Cookie有効期限管理
 
 **実装方法:**
 ```python
-def _set_area(self, zip_code: str) -> bool:
+async def ensure_valid_session(
+    self,
+    cookies_file: str = "rakuten_seiyu_cookies.json",
+    max_age_hours: int = 24
+) -> bool:
     """
-    エリア設定（郵便番号）
+    Cookieの有効性をチェックし、必要なら再認証
 
-    実装手順:
-    1. トップページにアクセスしてセッションを確立
-    2. エリア設定APIを探索（DevToolsでネットワークタブを確認）
-    3. 郵便番号をPOSTリクエストで送信
-    4. クッキーを保存して以降のリクエストで使用
+    処理フロー:
+    1. Cookieファイルの最終更新時刻を確認
+    2. max_age_hours を超えていたら再認証
+    3. テストリクエストを送信してCookieが有効か確認
+    4. 無効なら auth_manager で再認証
     """
-    # エリア設定エンドポイント（要調査）
-    area_url = f"{self.base_url}/api/area/set"
+    if not os.path.exists(cookies_file):
+        logger.warning("Cookie file not found, re-authenticating...")
+        return await self._re_authenticate()
 
-    response = self.session.post(
-        area_url,
-        json={'zip_code': zip_code},
-        headers=self.headers
+    # ファイルの最終更新時刻をチェック
+    file_age = time.time() - os.path.getmtime(cookies_file)
+    if file_age > max_age_hours * 3600:
+        logger.info(f"Cookies expired ({file_age/3600:.1f}h old), re-authenticating...")
+        return await self._re_authenticate()
+
+    # テストリクエストで有効性を確認
+    test_response = self.session.get(f"{self.base_url}/api/test")
+    if test_response.status_code == 401:
+        logger.warning("Cookies invalid, re-authenticating...")
+        return await self._re_authenticate()
+
+    logger.info("Cookies valid")
+    return True
+
+async def _re_authenticate(self) -> bool:
+    """auth_manager を使って再認証"""
+    from .auth_manager import RakutenSeiyuAuthManager
+
+    auth = RakutenSeiyuAuthManager()
+    success = await auth.login(
+        rakuten_id=os.getenv("RAKUTEN_ID"),
+        password=os.getenv("RAKUTEN_PASSWORD")
     )
-
-    if response.status_code == 200:
-        logger.info(f"エリア設定成功: {zip_code}")
-        return True
-    else:
-        logger.warning(f"エリア設定失敗: {response.status_code}")
-        return False
+    if success:
+        await auth.set_delivery_area(os.getenv("DELIVERY_ZIP_CODE"))
+        await auth.save_cookies("rakuten_seiyu_cookies.json")
+    await auth.close()
+    return success
 ```
 
 **注意事項:**
-- 実際のエリア設定APIは楽天西友のサイトを調査して特定
-- クッキー名とパラメータはブラウザのDevToolsで確認
-- エリア設定に失敗した場合は全国共通商品のみ取得
+- Cookie有効期限は通常24時間程度（サイトによる）
+- 定期実行時は毎回有効性をチェック
+- 認証情報は環境変数で管理（`.env`ファイル）
 
 ### 4.4 定期実行スクリプト
 
@@ -349,6 +456,10 @@ def _set_area(self, zip_code: str) -> bool:
 楽天西友ネットスーパー 商品データ定期取得スクリプト
 
 使用方法:
+    # 初回: ログインしてCookie取得
+    python process_rakuten_seiyu.py --auth
+
+    # 商品データ取得
     python process_rakuten_seiyu.py --once              # 1回だけ実行
     python process_rakuten_seiyu.py --continuous        # 継続実行（24時間ごと）
     python process_rakuten_seiyu.py --categories 110001,110003  # 特定カテゴリーのみ
@@ -356,15 +467,46 @@ def _set_area(self, zip_code: str) -> bool:
 
 import asyncio
 import argparse
+import os
 from pathlib import Path
+from dotenv import load_dotenv
+from B_ingestion.rakuten_seiyu.auth_manager import RakutenSeiyuAuthManager
 from B_ingestion.rakuten_seiyu.product_ingestion import main as run_ingestion
+
+load_dotenv()
+
+async def authenticate():
+    """ログインしてCookieを保存"""
+    print("🔐 楽天西友にログイン中...")
+    auth = RakutenSeiyuAuthManager()
+
+    success = await auth.login(
+        rakuten_id=os.getenv("RAKUTEN_ID"),
+        password=os.getenv("RAKUTEN_PASSWORD")
+    )
+
+    if not success:
+        print("❌ ログイン失敗")
+        return False
+
+    await auth.set_delivery_area(os.getenv("DELIVERY_ZIP_CODE", "211-0063"))
+    await auth.save_cookies("rakuten_seiyu_cookies.json")
+    await auth.close()
+
+    print("✅ Cookie保存完了")
+    return True
 
 async def main():
     parser = argparse.ArgumentParser()
+    parser.add_argument('--auth', action='store_true', help='ログインしてCookie取得')
     parser.add_argument('--once', action='store_true', help='1回だけ実行')
     parser.add_argument('--continuous', action='store_true', help='継続実行')
     parser.add_argument('--categories', type=str, help='カンマ区切りのカテゴリーID')
     args = parser.parse_args()
+
+    if args.auth:
+        await authenticate()
+        return
 
     if args.once:
         await run_ingestion(categories=args.categories)
@@ -372,6 +514,8 @@ async def main():
         while True:
             await run_ingestion(categories=args.categories)
             await asyncio.sleep(86400)  # 24時間待機
+    else:
+        parser.print_help()
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -409,12 +553,16 @@ if __name__ == "__main__":
 
 ### ステップ1: Phase 1（MVP）実装
 1. `B_ingestion/rakuten_seiyu/` ディレクトリ作成
-2. `rakuten_seiyu_scraper.py` 実装（基本機能）
-3. `product_ingestion.py` 実装（1ページ処理）
-4. テスト: カテゴリー `110001`（野菜）の1ページ目
+2. **`auth_manager.py` 実装（ログイン・Cookie取得）**
+3. `rakuten_seiyu_scraper.py` 実装（Cookie読み込み機能）
+4. `product_ingestion.py` 実装（1ページ処理）
+5. `.env` ファイルに認証情報を追加
+6. テスト: `python process_rakuten_seiyu.py --auth` でCookie取得
+7. テスト: カテゴリー `110001`（野菜）の1ページ目
 
 **完了条件:**
-- 1ページから10～50件の商品が取得できる
+- ログインが成功し、Cookieが保存される
+- Cookieを使って1ページから10～50件の商品が取得できる
 - Supabaseに正しく保存される
 
 ### ステップ2: Phase 2（全ページ対応）
@@ -568,12 +716,27 @@ console.log(JSON.stringify(window.__NUXT__, null, 2));
 
 商品データの配列がどこにあるか（例: `data[0].itemList`）を特定し、スクレイパーの実装に反映します。
 
-### エリア設定APIの調査
-ブラウザのDevToolsで郵便番号入力時のネットワークリクエストを監視し、以下を特定：
-- エンドポイントURL
-- リクエストメソッド（POST/GET）
-- パラメータ（zip_code, postal_code など）
-- クッキー名
+### ログインフローの調査
+Playwrightで自動化する前に、手動でログインフローを確認：
+
+1. **ログインボタンの特定**
+   - セレクタ: `button:has-text("ログイン")` など
+   - URLパターン: `/login` または `/auth`
+
+2. **楽天ID認証画面の要素**
+   - ユーザー名入力欄: `input[name="u"]` または `#loginInner_u`
+   - パスワード入力欄: `input[name="p"]` または `#loginInner_p`
+   - ログインボタン: `button[type="submit"]`
+
+3. **配送先設定の要素**
+   - 郵便番号入力欄のセレクタ
+   - 「この住所に配送」ボタンのセレクタ
+
+4. **Cookie名の確認**
+   - DevToolsの Application > Cookies で認証後のCookieを確認
+   - セッションIDやトークンの名前をメモ
+
+**参考:** `B_ingestion/waseda_academy/main_chrome.py:89-120` でPlaywrightの要素待機・クリック処理を確認
 
 ---
 

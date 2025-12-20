@@ -24,7 +24,7 @@ def main():
 
     # 全ドキュメントを取得
     print("\n[Step 1] ドキュメント取得中...")
-    result = supabase.table('source_documents').select('id,file_name,attachment_text,summary').execute()
+    result = supabase.table('10_rd_source_docs').select('id,file_name,attachment_text,summary').execute()
     documents = result.data if result.data else []
 
     total = len(documents)
@@ -73,7 +73,7 @@ def main():
             embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
 
             # データベースを更新
-            supabase.table('source_documents').update({
+            supabase.table('10_rd_source_docs').update({
                 'embedding': embedding_str
             }).eq('id', doc_id).execute()
 

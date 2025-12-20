@@ -21,7 +21,7 @@ def main():
     # 1. ドキュメント総数を確認
     print("\n[診断1] ドキュメント総数を確認...")
     try:
-        result = db.client.table('source_documents').select('*', count='exact').execute()
+        result = db.client.table('10_rd_source_docs').select('*', count='exact').execute()
         total = result.count if result.count else 0
         print(f"[OK] 総ドキュメント数: {total} 件")
     except Exception as e:
@@ -49,7 +49,7 @@ def main():
     # 3. embedding が存在するドキュメント数
     print("\n[診断3] embedding の有無...")
     try:
-        all_docs = db.client.table('source_documents').select('id,embedding').limit(1000).execute()
+        all_docs = db.client.table('10_rd_source_docs').select('id,embedding').limit(1000).execute()
         with_embedding = sum(1 for doc in all_docs.data if doc.get('embedding') is not None)
         without_embedding = len(all_docs.data) - with_embedding
         print(f"  embedding あり: {with_embedding} 件")
@@ -60,7 +60,7 @@ def main():
     # 4. doc_type別の件数
     print("\n[診断4] doc_type別の件数（上位10件）...")
     try:
-        result = db.client.table('source_documents').select('doc_type').execute()
+        result = db.client.table('10_rd_source_docs').select('doc_type').execute()
         doc_types = {}
         for doc in result.data:
             dt = doc.get('doc_type', 'NULL')

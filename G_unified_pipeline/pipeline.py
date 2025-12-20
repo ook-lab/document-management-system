@@ -213,13 +213,13 @@ class UnifiedDocumentPipeline:
                 # 既存ドキュメントを更新 or 新規作成
                 if existing_document_id:
                     logger.info(f"[DB更新] 既存ドキュメント更新: {existing_document_id}")
-                    result = self.db.client.table('source_documents').update(doc_data).eq('id', existing_document_id).execute()
+                    result = self.db.client.table('10_rd_source_docs').update(doc_data).eq('id', existing_document_id).execute()
                     if not result.data:
                         logger.error("[DB更新エラー] ドキュメント更新失敗")
                         return {'success': False, 'error': 'Document update failed'}
                 else:
                     logger.info("[DB保存] 新規ドキュメント作成")
-                    result = self.db.client.table('source_documents').insert(doc_data).execute()
+                    result = self.db.client.table('10_rd_source_docs').insert(doc_data).execute()
                     if result.data and len(result.data) > 0:
                         document_id = result.data[0]['id']
                         logger.info(f"[DB保存] source_documents ID: {document_id}")
@@ -240,7 +240,7 @@ class UnifiedDocumentPipeline:
             if existing_document_id:
                 try:
                     logger.info(f"[Stage K] 既存チャンク削除: document_id={document_id}")
-                    self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
+                    self.db.client.table('10_ix_search_index').delete().eq('document_id', document_id).execute()
                 except Exception as e:
                     logger.warning(f"[Stage K 警告] 既存チャンク削除エラー（継続）: {e}")
 

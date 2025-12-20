@@ -78,8 +78,8 @@ class TokubaiFlyerIngestionPipeline:
             既に存在するチラシIDのセット
         """
         try:
-            # flyer_documents テーブルで既存のチラシIDを取得
-            result = self.db.client.table('flyer_documents').select('flyer_id').in_(
+            # 70_rd_flyer_docs テーブルで既存のチラシIDを取得
+            result = self.db.client.table('70_rd_flyer_docs').select('flyer_id').in_(
                 'flyer_id', flyer_ids
             ).execute()
 
@@ -218,7 +218,7 @@ class TokubaiFlyerIngestionPipeline:
                 # 3. メタデータ準備
                 full_flyer_url = f"https://tokubai.co.jp{flyer_url}" if flyer_url.startswith('/') else flyer_url
 
-                # 4. Supabaseに基本情報のみ保存（flyer_documentsテーブル）
+                # 4. Supabaseに基本情報のみ保存（70_rd_flyer_docsテーブル）
                 doc_data = {
                     # 基本情報
                     'source_type': 'flyer',
@@ -273,7 +273,7 @@ class TokubaiFlyerIngestionPipeline:
 
                 try:
                     # Supabaseに保存
-                    doc_result = await self.db.insert_document('flyer_documents', doc_data)
+                    doc_result = await self.db.insert_document('70_rd_flyer_docs', doc_data)
                     if doc_result:
                         doc_id = doc_result.get('id')
                         result['document_ids'].append(doc_id)

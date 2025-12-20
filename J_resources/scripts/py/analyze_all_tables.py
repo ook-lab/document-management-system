@@ -41,15 +41,15 @@ tables = [
     'attachments',
     'corrections',
     'small_chunks',
-    'correction_history',
+    '99_lg_correction_history',
     'documents_legacy',
     'document_chunks_legacy',
     'emails',
     'hypothetical_questions',
-    'document_reprocessing_queue',
-    'source_documents',
-    'process_logs',
-    'search_index'
+    '99_lg_reprocess_queue',
+    '10_rd_source_docs',
+    '99_lg_process_logs',
+    '10_ix_search_index'
 ]
 
 for table in tables:

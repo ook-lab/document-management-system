@@ -96,10 +96,10 @@ class ClassroomReprocessorV2:
         # 対象ドキュメントを取得（processing_status='completed'は除外）
         if workspace == 'all':
             # 全ワークスペースを対象
-            result = self.db.client.table('source_documents').select('*').neq('processing_status', 'completed').limit(limit).execute()
+            result = self.db.client.table('10_rd_source_docs').select('*').neq('processing_status', 'completed').limit(limit).execute()
         else:
             # 特定のワークスペースのみ
-            result = self.db.client.table('source_documents').select('*').eq(
+            result = self.db.client.table('10_rd_source_docs').select('*').eq(
                 'workspace', workspace
             ).neq('processing_status', 'completed').limit(limit).execute()
 
@@ -118,7 +118,7 @@ class ClassroomReprocessorV2:
             file_name = doc.get('file_name', 'unknown')
 
             # 既にキューに登録されているかチェック
-            existing = self.db.client.table('document_reprocessing_queue').select('id, status').eq(
+            existing = self.db.client.table('99_lg_reprocess_queue').select('id, status').eq(
                 'document_id', doc_id
             ).eq('status', 'pending').execute()
 
@@ -142,7 +142,7 @@ class ClassroomReprocessorV2:
                     'created_by': self.worker_id
                 }
 
-                self.db.client.table('document_reprocessing_queue').insert(queue_data).execute()
+                self.db.client.table('99_lg_reprocess_queue').insert(queue_data).execute()
                 added_count += 1
                 logger.debug(f"キューに追加: {file_name}")
 
@@ -564,7 +564,7 @@ class ClassroomReprocessorV2:
 
             # 既存チャンクを削除（再処理の場合）
             try:
-                delete_result = self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
+                delete_result = self.db.client.table('10_ix_search_index').delete().eq('document_id', document_id).execute()
                 deleted_count = len(delete_result.data) if delete_result.data else 0
                 logger.info(f"  既存チャンク削除: {deleted_count}個")
             except Exception as e:
@@ -618,7 +618,7 @@ class ClassroomReprocessorV2:
                 }
 
                 try:
-                    self.db.client.table('search_index').insert(meta_doc).execute()
+                    self.db.client.table('10_ix_search_index').insert(meta_doc).execute()
                     current_chunk_index += 1
                 except Exception as e:
                     logger.error(f"  チャンク保存エラー: {e}")
@@ -645,7 +645,7 @@ class ClassroomReprocessorV2:
             if tags:
                 update_data['tags'] = tags
 
-            response = self.db.client.table('source_documents').update(update_data).eq('id', document_id).execute()
+            response = self.db.client.table('10_rd_source_docs').update(update_data).eq('id', document_id).execute()
 
             if response.data:
                 logger.success(f"✅ テキストのみドキュメント再処理成功: {file_name}")
@@ -920,7 +920,7 @@ class ClassroomReprocessorV2:
 
             # 既存チャンクを削除（再処理の場合）
             try:
-                delete_result = self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
+                delete_result = self.db.client.table('10_ix_search_index').delete().eq('document_id', document_id).execute()
                 deleted_count = len(delete_result.data) if delete_result.data else 0
                 logger.info(f"  既存チャンク削除: {deleted_count}個")
             except Exception as e:
@@ -974,7 +974,7 @@ class ClassroomReprocessorV2:
                 }
 
                 try:
-                    self.db.client.table('search_index').insert(meta_doc).execute()
+                    self.db.client.table('10_ix_search_index').insert(meta_doc).execute()
                     current_chunk_index += 1
                 except Exception as e:
                     logger.error(f"  チャンク保存エラー: {e}")
@@ -1002,7 +1002,7 @@ class ClassroomReprocessorV2:
             if tags:
                 update_data['tags'] = tags
 
-            response = self.db.client.table('source_documents').update(update_data).eq('id', document_id).execute()
+            response = self.db.client.table('10_rd_source_docs').update(update_data).eq('id', document_id).execute()
 
             if response.data:
                 logger.success(f"✅ 動画投稿本文処理成功: {file_name}")
@@ -1108,7 +1108,7 @@ class ClassroomReprocessorV2:
             statuses = ['pending', 'processing', 'completed', 'failed', 'skipped']
 
             for status in statuses:
-                result = self.db.client.table('document_reprocessing_queue').select(
+                result = self.db.client.table('99_lg_reprocess_queue').select(
                     '*', count='exact'
                 ).eq('status', status).execute()
                 stats[status] = result.count if result.count else 0

@@ -21,7 +21,7 @@ def check_database_status():
 
     # 1. 全ドキュメント数
     try:
-        all_docs = db.client.table('source_documents').select('id, file_name, processing_status, workspace').execute()
+        all_docs = db.client.table('10_rd_source_docs').select('id, file_name, processing_status, workspace').execute()
         total_count = len(all_docs.data) if all_docs.data else 0
         print(f"\n1️⃣  全ドキュメント数: {total_count} 件")
 
@@ -51,7 +51,7 @@ def check_database_status():
 
     # 2. embeddingが設定されているドキュメント数
     try:
-        embedded_docs = db.client.table('source_documents').select('id, file_name').not_.is_('embedding', 'null').execute()
+        embedded_docs = db.client.table('10_rd_source_docs').select('id, file_name').not_.is_('embedding', 'null').execute()
         embedded_count = len(embedded_docs.data) if embedded_docs.data else 0
         print(f"\n2️⃣  embeddingあり: {embedded_count} 件")
 
@@ -65,7 +65,7 @@ def check_database_status():
     # 3. 検索可能なドキュメント（embedding + completed）
     try:
         searchable_docs = (
-            db.client.table('source_documents')
+            db.client.table('10_rd_source_docs')
             .select('id, file_name, workspace, doc_type')
             .not_.is_('embedding', 'null')
             .eq('processing_status', 'completed')

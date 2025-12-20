@@ -12,14 +12,28 @@ from A_common.config.settings import settings
 class DatabaseClient:
     """Supabaseデータベースクライアント"""
 
-    def __init__(self):
-        """Supabaseクライアントの初期化"""
-        if not settings.SUPABASE_URL or not settings.SUPABASE_KEY:
-            raise ValueError("SUPABASE_URL と SUPABASE_KEY が設定されていません")
+    def __init__(self, use_service_role: bool = False):
+        """Supabaseクライアントの初期化
+
+        Args:
+            use_service_role: Trueの場合、Service Role Keyを使用（RLSをバイパス）
+        """
+        if not settings.SUPABASE_URL:
+            raise ValueError("SUPABASE_URL が設定されていません")
+
+        # Service Role Key使用の場合
+        if use_service_role:
+            if not settings.SUPABASE_SERVICE_ROLE_KEY:
+                raise ValueError("SUPABASE_SERVICE_ROLE_KEY が設定されていません")
+            api_key = settings.SUPABASE_SERVICE_ROLE_KEY
+        else:
+            if not settings.SUPABASE_KEY:
+                raise ValueError("SUPABASE_KEY が設定されていません")
+            api_key = settings.SUPABASE_KEY
 
         self.client: Client = create_client(
             settings.SUPABASE_URL,
-            settings.SUPABASE_KEY
+            api_key
         )
     
     def get_document_by_source_id(self, source_id: str) -> Optional[Dict[str, Any]]:
@@ -33,7 +47,7 @@ class DatabaseClient:
             既存の文書レコード、存在しない場合は None
         """
         try:
-            response = self.client.table('source_documents').select('*').eq('source_id', source_id).execute()
+            response = self.client.table('10_rd_source_docs').select('*').eq('source_id', source_id).execute()
             if response.data:
                 return response.data[0]
             return None
@@ -550,7 +564,7 @@ class DatabaseClient:
             ドキュメントのリスト（更新日時降順）
         """
         try:
-            query = self.client.table('source_documents').select('*')
+            query = self.client.table('10_rd_source_docs').select('*')
 
             # File typeフィルタを適用
             if file_type:
@@ -625,7 +639,7 @@ class DatabaseClient:
                 update_data['reviewed_by'] = reviewed_by
 
             response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -656,7 +670,7 @@ class DatabaseClient:
             }
 
             response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -677,7 +691,7 @@ class DatabaseClient:
         try:
             # 未レビューの件数（review_status = 'pending' または NULL）
             unreviewed_response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .select('*', count='exact')
                 .in_('review_status', ['pending', None])
                 .execute()
@@ -686,7 +700,7 @@ class DatabaseClient:
 
             # レビュー済みの件数（review_status = 'reviewed'）
             reviewed_response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .select('*', count='exact')
                 .eq('review_status', 'reviewed')
                 .execute()
@@ -723,7 +737,7 @@ class DatabaseClient:
         """
         try:
             # 全ドキュメントからworkspaceを取得
-            response = self.client.table('source_documents').select('workspace').execute()
+            response = self.client.table('10_rd_source_docs').select('workspace').execute()
 
             workspaces = set()
             for doc in response.data:
@@ -745,7 +759,7 @@ class DatabaseClient:
         """
         try:
             # 全ドキュメントからdoc_typeを取得
-            response = self.client.table('source_documents').select('doc_type').execute()
+            response = self.client.table('10_rd_source_docs').select('doc_type').execute()
 
             doc_types = set()
             for doc in response.data:
@@ -767,7 +781,7 @@ class DatabaseClient:
         """
         try:
             # workspaceとdoc_typeの組み合わせを取得
-            response = self.client.table('source_documents').select('workspace, doc_type').execute()
+            response = self.client.table('10_rd_source_docs').select('workspace, doc_type').execute()
 
             hierarchy = {}
             for doc in response.data:
@@ -803,7 +817,7 @@ class DatabaseClient:
             ドキュメント、存在しない場合は None
         """
         try:
-            response = self.client.table('source_documents').select('*').eq('id', doc_id).execute()
+            response = self.client.table('10_rd_source_docs').select('*').eq('id', doc_id).execute()
             if response.data:
                 return response.data[0]
             return None
@@ -837,7 +851,7 @@ class DatabaseClient:
                 update_data['doc_type'] = new_doc_type
 
             response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -897,7 +911,7 @@ class DatabaseClient:
             logger.info(f"[record_correction] correction_history へ挿入開始")
 
             correction_response = (
-                self.client.table('correction_history')
+                self.client.table('99_lg_correction_history')
                 .insert(correction_data)
                 .execute()
             )
@@ -924,7 +938,7 @@ class DatabaseClient:
             logger.info(f"[record_correction] source_documents 更新開始: doc_id={doc_id}")
 
             document_response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -968,7 +982,7 @@ class DatabaseClient:
 
             # Step 2: 最新の修正履歴を取得
             correction_response = (
-                self.client.table('correction_history')
+                self.client.table('99_lg_correction_history')
                 .select('*')
                 .eq('id', latest_correction_id)
                 .execute()
@@ -988,7 +1002,7 @@ class DatabaseClient:
             }
 
             document_response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -1026,7 +1040,7 @@ class DatabaseClient:
         """
         try:
             response = (
-                self.client.table('correction_history')
+                self.client.table('99_lg_correction_history')
                 .select('*')
                 .eq('document_id', doc_id)
                 .order('corrected_at', desc=True)
@@ -1048,7 +1062,7 @@ class DatabaseClient:
         try:
             # source_idが存在するすべてのドキュメントを取得
             response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .select('source_id')
                 .not_.is_('source_id', 'null')
                 .execute()
@@ -1079,7 +1093,7 @@ class DatabaseClient:
         try:
             # content_hashが一致するドキュメントを検索
             response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .select('id, file_name, content_hash')
                 .eq('content_hash', content_hash)
                 .limit(1)
@@ -1115,7 +1129,7 @@ class DatabaseClient:
         try:
             # ドキュメントを削除（ON DELETE CASCADEにより関連データも削除される）
             response = (
-                self.client.table('source_documents')
+                self.client.table('10_rd_source_docs')
                 .delete()
                 .eq('id', doc_id)
                 .execute()

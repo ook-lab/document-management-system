@@ -2,13 +2,13 @@
 チラシ画像処理パイプライン
 
 Gemini 2.5 Pro Visionを使用してチラシ画像から商品情報を抽出し、
-flyer_productsテーブルに保存する。
+70_rd_flyer_itemsテーブルに保存する。
 
 処理フロー:
-1. flyer_documents から processing_status='pending' のチラシを取得
+1. 70_rd_flyer_docs から processing_status='pending' のチラシを取得
 2. Gemini 2.5 Pro Vision でチラシ画像から商品情報を抽出
-3. flyer_products テーブルに商品データを保存
-4. flyer_documents の processing_status を 'completed' に更新
+3. 70_rd_flyer_items テーブルに商品データを保存
+4. 70_rd_flyer_docs の processing_status を 'completed' に更新
 """
 import os
 import sys
@@ -120,7 +120,7 @@ class FlyerProcessor:
             チラシ情報のリスト
         """
         try:
-            result = self.db.client.table('flyer_documents').select('*').eq(
+            result = self.db.client.table('70_rd_flyer_docs').select('*').eq(
                 'processing_status', 'pending'
             ).limit(limit).execute()
 
@@ -189,7 +189,7 @@ class FlyerProcessor:
         page_number: int
     ) -> int:
         """
-        商品情報をflyer_productsテーブルに保存
+        商品情報を70_rd_flyer_itemsテーブルに保存
 
         Args:
             flyer_doc_id: チラシドキュメントID
@@ -246,7 +246,7 @@ class FlyerProcessor:
                     }
                 }
 
-                result = await self.db.insert_document('flyer_products', product_data)
+                result = await self.db.insert_document('70_rd_flyer_items', product_data)
                 if result:
                     success_count += 1
                     logger.debug(f"商品保存成功: {product_name}")
@@ -289,7 +289,7 @@ class FlyerProcessor:
             if status == 'completed':
                 update_data['processing_stage'] = 'products_extracted'
 
-            self.db.client.table('flyer_documents').update(update_data).eq(
+            self.db.client.table('70_rd_flyer_docs').update(update_data).eq(
                 'id', flyer_doc_id
             ).execute()
 

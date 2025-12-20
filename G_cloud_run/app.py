@@ -576,11 +576,11 @@ def debug_database():
         db_client, _, _ = get_clients()
 
         # source_documentsテーブルの件数を確認
-        count_response = db_client.client.table('source_documents').select('id', count='exact').limit(1).execute()
+        count_response = db_client.client.table('10_rd_source_docs').select('id', count='exact').limit(1).execute()
         total_count = count_response.count if hasattr(count_response, 'count') else 'unknown'
 
         # サンプルデータを取得
-        sample_response = db_client.client.table('source_documents').select('workspace, doc_type').limit(10).execute()
+        sample_response = db_client.client.table('10_rd_source_docs').select('workspace, doc_type').limit(10).execute()
         samples = sample_response.data if sample_response.data else []
 
         # get_workspace_hierarchy()を実行

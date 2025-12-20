@@ -3,6 +3,11 @@
 .env.bak
 venv/
 
+# Rakuten Seiyu credentials
+rakuten_seiyu_cookies.json
+debug_step*.png
+debug_step*.html
+
 # Runtime data
 _runtime/
 

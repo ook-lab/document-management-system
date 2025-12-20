@@ -1,7 +1,7 @@
 """
 チラシ処理パイプライン
 
-flyer_documentsテーブルの processing_status='pending' のチラシを処理
+70_rd_flyer_docsテーブルの processing_status='pending' のチラシを処理
 
 処理フロー:
 1. Pre-processing: 画像ファイルダウンロード
@@ -78,7 +78,7 @@ class FlyerProcessor:
             チラシ情報のリスト
         """
         try:
-            query = self.db.client.table('flyer_documents').select('*').eq(
+            query = self.db.client.table('70_rd_flyer_docs').select('*').eq(
                 'processing_status', 'pending'
             )
 
@@ -220,7 +220,7 @@ class FlyerProcessor:
         page_number: int
     ) -> int:
         """
-        商品情報をflyer_productsテーブルに保存
+        商品情報を70_rd_flyer_itemsテーブルに保存
 
         Args:
             flyer_doc_id: チラシドキュメントID
@@ -263,7 +263,7 @@ class FlyerProcessor:
                     }
                 }
 
-                result = await self.db.insert_document('flyer_products', product_data)
+                result = await self.db.insert_document('70_rd_flyer_items', product_data)
                 if result:
                     success_count += 1
 
@@ -296,7 +296,7 @@ class FlyerProcessor:
             if error:
                 update_data['processing_error'] = error
 
-            self.db.client.table('flyer_documents').update(update_data).eq(
+            self.db.client.table('70_rd_flyer_docs').update(update_data).eq(
                 'id', flyer_doc_id
             ).execute()
 

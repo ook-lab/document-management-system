@@ -82,7 +82,7 @@ def main():
     st.sidebar.header("レシート一覧")
 
     # 処理ログ取得（レシート単位）
-    logs = db.table("money_image_processing_log") \
+    logs = db.table("99_lg_image_proc_log") \
         .select("*") \
         .order("processed_at", desc=True) \
         .limit(100) \
@@ -163,30 +163,61 @@ def show_receipt_detail(log: dict):
     with col_right:
         st.subheader("取引明細")
 
-        if log["status"] == "success" and log.get("transaction_ids"):
-            # トランザクションを取得
-            transactions = db.table("money_transactions") \
-                .select("*, money_categories(name), money_situations(name)") \
-                .in_("id", log["transaction_ids"]) \
+        if log["status"] == "success" and log.get("receipt_id"):
+            # レシート情報を取得
+            receipt_result = db.table("60_rd_receipts") \
+                .select("*") \
+                .eq("id", log["receipt_id"]) \
+                .execute()
+
+            if not receipt_result.data:
+                st.warning("レシート情報が見つかりません")
+                return
+
+            receipt = receipt_result.data[0]
+
+            # トランザクション（3テーブルJOIN）を取得
+            transactions = db.table("60_rd_transactions") \
+                .select("""
+                    *,
+                    receipt:60_rd_receipts!inner(transaction_date, shop_name),
+                    standardized:60_rd_standardized_items!inner(
+                        std_amount,
+                        tax_rate,
+                        tax_amount,
+                        official_name,
+                        category_id,
+                        situation_id,
+                        major_category,
+                        minor_category,
+                        person,
+                        purpose,
+                        needs_review
+                    )
+                """) \
+                .eq("receipt_id", log["receipt_id"]) \
+                .order("line_number") \
                 .execute()
 
             if transactions.data:
                 # DataFrameに変換
                 df_data = []
                 for t in transactions.data:
+                    std = t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})
                     df_data.append({
                         "商品名": t["product_name"],
                         "数量": t["quantity"],
                         "単価": t['unit_price'],
-                        "金額": t['total_amount'],
-                        "内税額": t.get('tax_amount') or t.get('tax_included_amount') or t['total_amount'],
-                        "正式名": t.get("official_name") or "",
+                        "金額": std.get('std_amount', 0),
+                        "税率": f"{std.get('tax_rate', 10)}%",
+                        "内税額": std.get('tax_amount', 0),
+                        "正式名": std.get("official_name") or "",
                         "物品名": t.get("item_name") or "",
-                        "大分類": t.get("major_category") or "",
-                        "小分類": t.get("minor_category") or "",
-                        "人物": t.get("person") or "",
-                        "名目": t.get("purpose") or "",
-                        "確認": "✅" if t["is_verified"] else "⏸️"
+                        "大分類": std.get("major_category") or "",
+                        "小分類": std.get("minor_category") or "",
+                        "人物": std.get("person") or "",
+                        "名目": std.get("purpose") or "",
+                        "要確認": "⚠️" if std.get("needs_review") else ""
                     })
 
                 df = pd.DataFrame(df_data)
@@ -204,9 +235,20 @@ def show_receipt_detail(log: dict):
                 )
 
                 # 合計金額・税額サマリー
-                total = sum(t["total_amount"] for t in transactions.data)
-                total_tax_8 = sum(t.get("tax_amount", 0) for t in transactions.data if t.get("tax_rate") == 8)
-                total_tax_10 = sum(t.get("tax_amount", 0) for t in transactions.data if t.get("tax_rate") == 10)
+                total = sum(
+                    (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("std_amount", 0)
+                    for t in transactions.data
+                )
+                total_tax_8 = sum(
+                    (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("tax_amount", 0)
+                    for t in transactions.data
+                    if (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("tax_rate") == 8
+                )
+                total_tax_10 = sum(
+                    (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("tax_amount", 0)
+                    for t in transactions.data
+                    if (t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})).get("tax_rate") == 10
+                )
 
                 col1, col2, col3 = st.columns(3)
                 with col1:
@@ -251,19 +293,16 @@ def show_receipt_detail(log: dict):
 
                     st.table(pd.DataFrame(comparison_data))
 
-                # 店名・日付
-                if transactions.data:
-                    first = transactions.data[0]
-                    st.text(f"店名: {first['shop_name']}")
-                    st.text(f"取引日: {first['transaction_date']}")
+                # 店名・日付（レシートから取得）
+                st.text(f"店名: {receipt['shop_name']}")
+                st.text(f"取引日: {receipt['transaction_date']}")
+                st.text(f"レシート合計: ¥{receipt.get('total_amount_check', 0):,}")
 
-                # 確認状態
-                all_verified = all(t["is_verified"] for t in transactions.data)
-
-                if all_verified:
+                # 確認状態（レシート単位）
+                if receipt["is_verified"]:
                     st.success("✅ このレシートは確認済みです")
                 else:
-                    st.warning(f"⏸️ 未確認の商品があります")
+                    st.warning(f"⏸️ このレシートは未確認です")
 
                 # アクションボタン
                 st.divider()
@@ -272,11 +311,11 @@ def show_receipt_detail(log: dict):
 
                 with col1:
                     if st.button("✅ 全て承認", key="approve_all"):
-                        for t in transactions.data:
-                            db.table("money_transactions") \
-                                .update({"is_verified": True}) \
-                                .eq("id", t["id"]) \
-                                .execute()
+                        # レシート単位で承認
+                        db.table("60_rd_receipts") \
+                            .update({"is_verified": True}) \
+                            .eq("id", log["receipt_id"]) \
+                            .execute()
                         st.success("承認しました")
                         st.rerun()
 
@@ -287,11 +326,11 @@ def show_receipt_detail(log: dict):
 
                 with col3:
                     if st.button("🗑️ 全て削除", key="delete_all"):
-                        for t in transactions.data:
-                            db.table("money_transactions") \
-                                .delete() \
-                                .eq("id", t["id"]) \
-                                .execute()
+                        # レシートを削除（CASCADE で子・孫も削除される）
+                        db.table("60_rd_receipts") \
+                            .delete() \
+                            .eq("id", log["receipt_id"]) \
+                            .execute()
                         st.warning("削除しました")
                         st.rerun()
 
@@ -362,18 +401,29 @@ def show_receipt_detail(log: dict):
                                 )
 
                             if st.button("💾 更新", key=f"update_{idx}"):
-                                db.table("money_transactions").update({
+                                # 子テーブル（テキスト）の更新
+                                db.table("60_rd_transactions").update({
                                     "product_name": new_product,
-                                    "total_amount": new_amount,
-                                    "tax_included_amount": new_tax_included,
-                                    "official_name": new_official_name,
-                                    "item_name": new_item_name,
-                                    "major_category": new_major_category,
-                                    "minor_category": new_minor_category,
-                                    "person": new_person,
-                                    "purpose": new_purpose,
-                                    "is_verified": True
+                                    "item_name": new_item_name
                                 }).eq("id", t["id"]).execute()
+
+                                # 孫テーブル（分類・金額）の更新
+                                std = t.get("standardized", [{}])[0] if isinstance(t.get("standardized"), list) else t.get("standardized", {})
+                                if std and "id" in std:
+                                    db.table("60_rd_standardized_items").update({
+                                        "std_amount": new_amount,
+                                        "tax_amount": new_tax_included,
+                                        "official_name": new_official_name,
+                                        "major_category": new_major_category,
+                                        "minor_category": new_minor_category,
+                                        "person": new_person,
+                                        "purpose": new_purpose
+                                    }).eq("id", std["id"]).execute()
+
+                                # レシート全体を確認済みにマーク
+                                db.table("60_rd_receipts").update({
+                                    "is_verified": True
+                                }).eq("id", log["receipt_id"]).execute()
 
                                 st.success("更新しました")
                                 st.rerun()

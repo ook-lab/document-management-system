@@ -51,7 +51,7 @@ class StageKEmbedding:
         if delete_existing:
             try:
                 logger.info(f"[Stage K] 既存チャンク削除: document_id={document_id}")
-                self.db.client.table('search_index').delete().eq('document_id', document_id).execute()
+                self.db.client.table('10_ix_search_index').delete().eq('document_id', document_id).execute()
             except Exception as e:
                 logger.warning(f"[Stage K 警告] 既存チャンク削除エラー（継続）: {e}")
 
@@ -72,7 +72,7 @@ class StageKEmbedding:
                     'search_weight': chunk.get('search_weight', 1.0)
                 }
 
-                self.db.client.table('search_index').insert(chunk_data).execute()
+                self.db.client.table('10_ix_search_index').insert(chunk_data).execute()
                 saved_count += 1
 
             except Exception as e:

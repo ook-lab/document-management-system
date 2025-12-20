@@ -818,7 +818,7 @@ Path.suffix: '{Path(file_path).suffix}'
                                 logger.info(f"[チャンク再生成] 開始: doc_id={doc_id}")
 
                                 # 1. 既存チャンクを削除
-                                delete_result = db_client.supabase.table('search_index').delete().eq('document_id', doc_id).execute()
+                                delete_result = db_client.supabase.table('10_ix_search_index').delete().eq('document_id', doc_id).execute()
                                 logger.info(f"[チャンク再生成] 既存チャンク削除完了")
 
                                 # 2. チャンク化対象テキストを準備
@@ -857,7 +857,7 @@ Path.suffix: '{Path(file_path).suffix}'
                                         'search_weight': meta_chunk.get('search_weight', 1.0),
                                         'embedding': meta_embedding
                                     }
-                                    db_client.supabase.table('search_index').insert(meta_doc).execute()
+                                    db_client.supabase.table('10_ix_search_index').insert(meta_doc).execute()
                                     current_chunk_index += 1
 
                                 # 4. 小チャンク生成
@@ -879,7 +879,7 @@ Path.suffix: '{Path(file_path).suffix}'
                                         'search_weight': 1.0,
                                         'embedding': small_embedding
                                     }
-                                    db_client.supabase.table('search_index').insert(small_doc).execute()
+                                    db_client.supabase.table('10_ix_search_index').insert(small_doc).execute()
                                     current_chunk_index += 1
 
                                 # 5. 合成チャンク生成
@@ -901,7 +901,7 @@ Path.suffix: '{Path(file_path).suffix}'
                                         'embedding': synthetic_embedding,
                                         'section_title': f'[合成チャンク: {synthetic.get("type", "unknown")}]'
                                     }
-                                    db_client.supabase.table('search_index').insert(synthetic_doc).execute()
+                                    db_client.supabase.table('10_ix_search_index').insert(synthetic_doc).execute()
                                     current_chunk_index += 1
 
                                 logger.info(f"[チャンク再生成] 完了: {current_chunk_index}個のチャンク生成")
