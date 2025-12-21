@@ -758,7 +758,7 @@ def show_receipt_detail(log: dict):
 
                 for i in range(len(table_data["項目"])):
                     item = table_data["項目"][i]
-                    receipt = table_data["レシート記載"][i]
+                    receipt_text = table_data["レシート記載"][i]
                     calc_val = table_data["計算値（差分）"][i]
 
                     # "|" で分割して、差分部分を赤字にする
@@ -771,7 +771,7 @@ def show_receipt_detail(log: dict):
                     else:
                         calc_display = calc_val
 
-                    html_table += f'<tr><td style="padding: 8px; border: 1px solid #ddd;">{item}</td><td style="padding: 8px; border: 1px solid #ddd;">{receipt}</td><td style="padding: 8px; border: 1px solid #ddd;">{calc_display}</td></tr>'
+                    html_table += f'<tr><td style="padding: 8px; border: 1px solid #ddd;">{item}</td><td style="padding: 8px; border: 1px solid #ddd;">{receipt_text}</td><td style="padding: 8px; border: 1px solid #ddd;">{calc_display}</td></tr>'
 
                 html_table += '</table>'
                 st.markdown(html_table, unsafe_allow_html=True)
