@@ -1051,7 +1051,7 @@ def render_product_approval_table(products, title, icon):
     col1, col2 = st.columns(2)
 
     with col1:
-        if st.button(f"✏️ 修正を保存", key=f"btn_save_{title}"):
+        if st.button(f"✏️ 修正を反映", key=f"btn_save_{title}"):
             checked_rows = edited_df[edited_df["承認"] == True]
             if len(checked_rows) > 0:
                 for _, row in checked_rows.iterrows():
@@ -1061,13 +1061,13 @@ def render_product_approval_table(products, title, icon):
                         "product_name_normalized": row['product_name_normalized'],
                         "general_name": row['general_name']
                     }).eq('id', row['id']).execute()
-                st.success(f"{len(checked_rows)}件の修正を保存しました（未承認のまま）")
+                st.success(f"{len(checked_rows)}件の修正を反映しました（未承認のまま）")
                 st.rerun()
             else:
-                st.warning("保存する項目を選択してください")
+                st.warning("反映する項目を選択してください")
 
     with col2:
-        if st.button(f"✅ 選択を承認", key=f"btn_approve_{title}"):
+        if st.button(f"✅ 修正して承認", key=f"btn_approve_{title}"):
             checked_rows = edited_df[edited_df["承認"] == True]
             if len(checked_rows) > 0:
                 for _, row in checked_rows.iterrows():
@@ -1078,7 +1078,7 @@ def render_product_approval_table(products, title, icon):
                         "general_name": row['general_name'],
                         "needs_approval": False
                     }).eq('id', row['id']).execute()
-                st.success(f"{len(checked_rows)}件を承認しました")
+                st.success(f"{len(checked_rows)}件を修正して承認しました")
                 st.rerun()
             else:
                 st.warning("承認する項目を選択してください")
