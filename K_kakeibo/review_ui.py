@@ -83,6 +83,18 @@ def main():
     st.set_page_config(page_title="家計簿レビュー", layout="wide")
     st.title("📊 家計簿レビューシステム")
 
+    # メインタブ
+    tab1, tab2 = st.tabs(["📄 レシートレビュー", "🏷️ 商品分類管理"])
+
+    with tab1:
+        show_receipt_review_tab()
+
+    with tab2:
+        show_product_classification_tab()
+
+
+def show_receipt_review_tab():
+    """レシートレビュータブ"""
     # サイドバー：Google Driveから取り込み
     st.sidebar.header("📥 レシート取り込み")
 
@@ -926,6 +938,293 @@ def show_receipt_detail(log: dict):
 
         else:
             st.info("トランザクションデータがありません")
+
+
+def show_product_classification_tab():
+    """商品分類管理タブ"""
+    st.header("🏷️ 商品分類管理")
+
+    # サブタブ
+    subtab1, subtab2, subtab3 = st.tabs(["📥 日次承認インボックス", "✅ クラスタ承認", "🌳 カテゴリ管理"])
+
+    with subtab1:
+        show_daily_inbox()
+
+    with subtab2:
+        show_bulk_clustering()
+
+    with subtab3:
+        show_category_tree()
+
+
+def show_daily_inbox():
+    """日次承認インボックス（信号機UI）"""
+    st.subheader("📥 日次承認インボックス")
+    st.info("新規商品の分類結果を確認・承認します")
+
+    # 承認待ち商品を信頼度別に取得
+    try:
+        high = db.table('80_rd_products').select(
+            'id, product_name, general_name, category_id, classification_confidence, organization'
+        ).eq('needs_approval', True).gte('classification_confidence', 0.9).execute()
+
+        medium = db.table('80_rd_products').select(
+            'id, product_name, general_name, category_id, classification_confidence, organization'
+        ).eq('needs_approval', True).gte('classification_confidence', 0.7).lt('classification_confidence', 0.9).execute()
+
+        low = db.table('80_rd_products').select(
+            'id, product_name, general_name, category_id, classification_confidence, organization'
+        ).eq('needs_approval', True).lt('classification_confidence', 0.7).execute()
+
+        # タブ表示
+        tab_high, tab_medium, tab_low = st.tabs([
+            f"🟢 高信頼度 ({len(high.data)}件)",
+            f"🟡 中信頼度 ({len(medium.data)}件)",
+            f"🔴 要確認 ({len(low.data)}件)"
+        ])
+
+        with tab_high:
+            render_product_approval_table(high.data, "高信頼度", "🟢")
+
+        with tab_medium:
+            render_product_approval_table(medium.data, "中信頼度", "🟡")
+
+        with tab_low:
+            render_product_approval_table(low.data, "要確認", "🔴")
+
+    except Exception as e:
+        st.error(f"データ取得エラー: {e}")
+
+
+def render_product_approval_table(products, title, icon):
+    """商品承認テーブル表示"""
+    if not products:
+        st.info(f"{title}: 該当なし")
+        return
+
+    st.markdown(f"### {icon} {title} ({len(products)}件)")
+
+    df = pd.DataFrame([{
+        "id": p["id"],
+        "承認": False,
+        "商品名": p["product_name"],
+        "一般名詞": p.get("general_name", "未設定"),
+        "信頼度": f"{p.get('classification_confidence', 0):.1%}" if p.get('classification_confidence') else "—",
+        "店舗": p.get("organization", "")
+    } for p in products])
+
+    edited_df = st.data_editor(
+        df,
+        column_config={
+            "id": st.column_config.TextColumn("ID", disabled=True, width="small"),
+            "承認": st.column_config.CheckboxColumn("承認", default=False),
+            "商品名": st.column_config.TextColumn("商品名", width="large"),
+            "一般名詞": st.column_config.TextColumn("一般名詞", width="medium"),
+            "信頼度": st.column_config.TextColumn("信頼度", width="small"),
+            "店舗": st.column_config.TextColumn("店舗", width="medium")
+        },
+        hide_index=True,
+        use_container_width=True,
+        key=f"table_{title}"
+    )
+
+    if st.button(f"{title}の選択を承認", key=f"btn_{title}"):
+        approved_rows = edited_df[edited_df["承認"] == True]
+        if len(approved_rows) > 0:
+            for _, row in approved_rows.iterrows():
+                db.table('80_rd_products').update({
+                    "needs_approval": False
+                }).eq('id', row['id']).execute()
+            st.success(f"{len(approved_rows)}件の商品を承認しました")
+            st.rerun()
+
+
+def show_bulk_clustering():
+    """一括クラスタリング承認"""
+    st.subheader("✅ クラスタ一括承認")
+    st.info("Geminiが自動生成したクラスタを確認・承認します")
+
+    try:
+        # 承認待ちクラスタを取得
+        clusters = db.table('99_tmp_gemini_clustering').select(
+            '*'
+        ).eq('approval_status', 'pending').execute()
+
+        if not clusters.data:
+            st.success("承認待ちのクラスタはありません")
+            return
+
+        # カテゴリマスタを取得
+        categories = db.table('60_ms_categories').select('id, name').execute()
+        category_map = {cat["name"]: cat["id"] for cat in categories.data}
+
+        st.markdown(f"### 全{len(clusters.data)}クラスタ")
+
+        df = pd.DataFrame([{
+            "id": c["id"],
+            "承認": False,
+            "一般名詞": c["general_name"],
+            "カテゴリ": c.get("category_name", "食材"),
+            "商品数": len(c["product_ids"]),
+            "信頼度": f"{c['confidence_avg']:.1%}",
+            "商品例": ", ".join(c["product_names"][:3]) + "..."
+        } for c in clusters.data])
+
+        edited_df = st.data_editor(
+            df,
+            column_config={
+                "id": st.column_config.TextColumn("ID", disabled=True, width="small"),
+                "承認": st.column_config.CheckboxColumn("承認", default=False),
+                "一般名詞": st.column_config.TextColumn("一般名詞", width="medium"),
+                "カテゴリ": st.column_config.SelectboxColumn(
+                    "カテゴリ",
+                    options=list(category_map.keys()),
+                    width="medium"
+                ),
+                "商品数": st.column_config.NumberColumn("商品数", format="%d"),
+                "信頼度": st.column_config.TextColumn("信頼度", width="small"),
+                "商品例": st.column_config.TextColumn("商品例（先頭3件）", width="large")
+            },
+            hide_index=True,
+            use_container_width=True
+        )
+
+        if st.button("選択を一括承認", type="primary"):
+            approved_rows = edited_df[edited_df["承認"] == True]
+
+            if len(approved_rows) == 0:
+                st.warning("承認する項目を選択してください")
+            else:
+                # 最初の行のカテゴリIDを取得
+                category_name = approved_rows.iloc[0]["カテゴリ"]
+                category_id = category_map[category_name]
+
+                for _, row in approved_rows.iterrows():
+                    # クラスタ情報を取得
+                    cluster = next(c for c in clusters.data if c["id"] == row["id"])
+                    general_name = cluster["general_name"]
+                    product_ids = cluster["product_ids"]
+                    product_names = cluster["product_names"]
+                    confidence = cluster["confidence_avg"]
+
+                    # Tier 1: 各商品名 → general_name のマッピング
+                    for product_name in set(product_names):
+                        db.table('70_ms_product_normalization').upsert({
+                            "raw_keyword": product_name,
+                            "general_name": general_name,
+                            "confidence_score": confidence,
+                            "source": "gemini_batch"
+                        }, on_conflict="raw_keyword,general_name").execute()
+
+                    # Tier 2: general_name + context → category_id
+                    db.table('70_ms_product_classification').upsert({
+                        "general_name": general_name,
+                        "source_type": "online_shop",
+                        "workspace": "shopping",
+                        "doc_type": "online shop",
+                        "organization": None,
+                        "category_id": category_id,
+                        "approval_status": "approved",
+                        "confidence_score": confidence
+                    }, on_conflict="general_name,source_type,workspace,doc_type,organization").execute()
+
+                    # 80_rd_productsを更新
+                    for product_id in product_ids:
+                        db.table('80_rd_products').update({
+                            "general_name": general_name,
+                            "category_id": category_id,
+                            "needs_approval": False,
+                            "classification_confidence": confidence
+                        }).eq('id', product_id).execute()
+
+                    # クラスタのステータスを更新
+                    db.table('99_tmp_gemini_clustering').update({
+                        "approval_status": "approved"
+                    }).eq('id', row["id"]).execute()
+
+                st.success(f"{len(approved_rows)}件のクラスタを承認しました")
+                st.rerun()
+
+    except Exception as e:
+        st.error(f"エラー: {e}")
+
+
+def show_category_tree():
+    """カテゴリツリー編集"""
+    st.subheader("🌳 カテゴリツリー管理")
+    st.info("カテゴリの階層構造を管理します")
+
+    try:
+        # カテゴリ取得
+        categories = db.table('60_ms_categories').select('*').order('name').execute()
+
+        # ツリー構築
+        def build_tree(parent_id=None, level=0):
+            items = []
+            for cat in categories.data:
+                if cat.get("parent_id") == parent_id:
+                    items.append({
+                        "id": cat["id"],
+                        "name": cat["name"],
+                        "level": level,
+                        "is_expense": cat.get("is_expense", True),
+                        "parent_id": parent_id
+                    })
+                    items.extend(build_tree(cat["id"], level + 1))
+            return items
+
+        tree = build_tree()
+
+        # ツリー表示
+        st.markdown("### 現在のカテゴリツリー")
+
+        for item in tree:
+            indent = "　" * item["level"] * 2
+            icon = "📁" if item["level"] == 0 else "📄"
+            expense_mark = "💰" if item["is_expense"] else "🔄"
+
+            col1, col2 = st.columns([4, 1])
+            with col1:
+                st.markdown(f"{indent}{icon} {item['name']} {expense_mark}")
+            with col2:
+                if st.button("🗑️", key=f"del_{item['id']}", help="削除"):
+                    db.table('60_ms_categories').delete().eq('id', item['id']).execute()
+                    st.success("削除しました")
+                    st.rerun()
+
+        st.divider()
+
+        # 新規追加フォーム
+        st.markdown("### 新規カテゴリ追加")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            new_name = st.text_input("カテゴリ名")
+
+        with col2:
+            parent_options = {"（親なし）": None}
+            parent_options.update({cat["name"]: cat["id"] for cat in categories.data})
+            selected_parent = st.selectbox("親カテゴリ", options=list(parent_options.keys()))
+
+        with col3:
+            is_expense = st.checkbox("支出カテゴリ", value=True)
+
+        if st.button("追加", type="primary"):
+            if new_name:
+                parent_id = parent_options[selected_parent]
+                db.table('60_ms_categories').insert({
+                    "name": new_name,
+                    "is_expense": is_expense,
+                    "parent_id": parent_id
+                }).execute()
+                st.success(f"カテゴリ「{new_name}」を追加しました")
+                st.rerun()
+            else:
+                st.warning("カテゴリ名を入力してください")
+
+    except Exception as e:
+        st.error(f"エラー: {e}")
 
 
 if __name__ == "__main__":
