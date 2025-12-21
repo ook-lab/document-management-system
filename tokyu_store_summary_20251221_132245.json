@@ -1,0 +1,172 @@
+{
+  "start_time": "2025-12-21T13:20:56.769398",
+  "end_time": "2025-12-21T13:22:45.191423",
+  "duration_seconds": 108.422025,
+  "categories_processed": 16,
+  "total_categories": 16,
+  "total_products": 0,
+  "new_products": 0,
+  "updated_products": 0,
+  "category_results": [
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC10",
+      "category_name": "野菜",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 6
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC11",
+      "category_name": "果物",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 3
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC20",
+      "category_name": "お魚",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 5
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC30",
+      "category_name": "お肉",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 4
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC40",
+      "category_name": "惣菜",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 7
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC50",
+      "category_name": "牛乳・乳製品・卵",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC51",
+      "category_name": "パン・生菓子・シリアル",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC52",
+      "category_name": "チルド総菜・豆腐・納豆・漬物",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC53",
+      "category_name": "冷凍食品・アイス",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC54",
+      "category_name": "米・餅",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 6
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC55",
+      "category_name": "麺類",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC56",
+      "category_name": "乾物・瓶缶詰・粉類",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC57",
+      "category_name": "調味料・中華材料",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC58",
+      "category_name": "お菓子",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC59",
+      "category_name": "水・飲料",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    },
+    {
+      "success": true,
+      "category_url": "https://ns.tokyu-bell.jp/shop/c/cC60",
+      "category_name": "酒類",
+      "total_products": 0,
+      "new_products": 0,
+      "updated_products": 0,
+      "pages_processed": 0,
+      "total_pages": 8
+    }
+  ]
+}
