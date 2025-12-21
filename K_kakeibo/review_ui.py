@@ -966,7 +966,7 @@ def show_daily_inbox():
     try:
         # まず全ての承認待ち商品を取得
         all_pending = db.table('80_rd_products').select(
-            'id, product_name, general_name, category_id, classification_confidence, organization'
+            'id, product_name, product_name_normalized, general_name, category_id, classification_confidence, organization'
         ).eq('needs_approval', True).execute()
 
         # Pythonで信頼度別に分類（NULL対応）
@@ -1022,24 +1022,26 @@ def render_product_approval_table(products, title, icon):
     st.markdown(f"### {icon} {title} ({len(products)}件)")
 
     df = pd.DataFrame([{
-        "id": p["id"],
+        "id": p["id"],  # 内部IDは非表示だが承認処理で使用
         "承認": False,
-        "商品名": p["product_name"],
-        "一般名詞": p.get("general_name", "未設定"),
-        "信頼度": f"{p.get('classification_confidence', 0):.1%}" if p.get('classification_confidence') else "—",
-        "店舗": p.get("organization", "")
+        "product_name": p.get("product_name", ""),
+        "product_name_normalized": p.get("product_name_normalized", ""),
+        "general_name": p.get("general_name", "未設定"),
+        "店舗": p.get("organization", ""),
+        "信頼度": f"{p.get('classification_confidence', 0):.1%}" if p.get('classification_confidence') else "—"
     } for p in products])
 
     edited_df = st.data_editor(
         df,
         column_config={
-            "id": st.column_config.TextColumn("ID", disabled=True, width="small"),
-            "承認": st.column_config.CheckboxColumn("承認", default=False),
-            "商品名": st.column_config.TextColumn("商品名", width="large"),
-            "一般名詞": st.column_config.TextColumn("一般名詞", width="medium"),
-            "信頼度": st.column_config.TextColumn("信頼度", width="small"),
-            "店舗": st.column_config.TextColumn("店舗", width="medium")
+            "承認": st.column_config.CheckboxColumn("承認", default=False, width="small"),
+            "product_name": st.column_config.TextColumn("product_name", width="large"),
+            "product_name_normalized": st.column_config.TextColumn("product_name_normalized", width="large"),
+            "general_name": st.column_config.TextColumn("general_name", width="medium"),
+            "店舗": st.column_config.TextColumn("店舗", width="medium"),
+            "信頼度": st.column_config.TextColumn("信頼度", width="small")
         },
+        column_order=["承認", "product_name", "product_name_normalized", "general_name", "店舗", "信頼度"],
         hide_index=True,
         use_container_width=True,
         key=f"table_{title}"
