@@ -1047,19 +1047,41 @@ def render_product_approval_table(products, title, icon):
         key=f"table_{title}"
     )
 
-    if st.button(f"{title}の選択を承認", key=f"btn_{title}"):
-        approved_rows = edited_df[edited_df["承認"] == True]
-        if len(approved_rows) > 0:
-            for _, row in approved_rows.iterrows():
-                # 手入力された修正内容を含めて保存
-                db.table('80_rd_products').update({
-                    "product_name": row['product_name'],
-                    "product_name_normalized": row['product_name_normalized'],
-                    "general_name": row['general_name'],
-                    "needs_approval": False
-                }).eq('id', row['id']).execute()
-            st.success(f"{len(approved_rows)}件の商品を承認しました（修正内容も保存）")
-            st.rerun()
+    # ボタンを横に並べる
+    col1, col2 = st.columns(2)
+
+    with col1:
+        if st.button(f"✏️ 修正を保存", key=f"btn_save_{title}"):
+            checked_rows = edited_df[edited_df["承認"] == True]
+            if len(checked_rows) > 0:
+                for _, row in checked_rows.iterrows():
+                    # 修正内容のみ保存（承認はしない）
+                    db.table('80_rd_products').update({
+                        "product_name": row['product_name'],
+                        "product_name_normalized": row['product_name_normalized'],
+                        "general_name": row['general_name']
+                    }).eq('id', row['id']).execute()
+                st.success(f"{len(checked_rows)}件の修正を保存しました（未承認のまま）")
+                st.rerun()
+            else:
+                st.warning("保存する項目を選択してください")
+
+    with col2:
+        if st.button(f"✅ 選択を承認", key=f"btn_approve_{title}"):
+            checked_rows = edited_df[edited_df["承認"] == True]
+            if len(checked_rows) > 0:
+                for _, row in checked_rows.iterrows():
+                    # 修正内容も保存して承認
+                    db.table('80_rd_products').update({
+                        "product_name": row['product_name'],
+                        "product_name_normalized": row['product_name_normalized'],
+                        "general_name": row['general_name'],
+                        "needs_approval": False
+                    }).eq('id', row['id']).execute()
+                st.success(f"{len(checked_rows)}件を承認しました")
+                st.rerun()
+            else:
+                st.warning("承認する項目を選択してください")
 
 
 def show_bulk_clustering():
