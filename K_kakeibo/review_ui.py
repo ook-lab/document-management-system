@@ -1035,11 +1035,11 @@ def render_product_approval_table(products, title, icon):
         df,
         column_config={
             "承認": st.column_config.CheckboxColumn("承認", default=False, width="small"),
-            "product_name": st.column_config.TextColumn("product_name", width="large"),
-            "product_name_normalized": st.column_config.TextColumn("product_name_normalized", width="large"),
-            "general_name": st.column_config.TextColumn("general_name", width="medium"),
-            "店舗": st.column_config.TextColumn("店舗", width="medium"),
-            "信頼度": st.column_config.TextColumn("信頼度", width="small")
+            "product_name": st.column_config.TextColumn("product_name", width="large", disabled=False),
+            "product_name_normalized": st.column_config.TextColumn("product_name_normalized", width="large", disabled=False),
+            "general_name": st.column_config.TextColumn("general_name", width="medium", disabled=False),
+            "店舗": st.column_config.TextColumn("店舗", width="medium", disabled=True),  # 店舗は編集不可
+            "信頼度": st.column_config.TextColumn("信頼度", width="small", disabled=True)  # 信頼度は編集不可
         },
         column_order=["承認", "product_name", "product_name_normalized", "general_name", "店舗", "信頼度"],
         hide_index=True,
@@ -1051,10 +1051,14 @@ def render_product_approval_table(products, title, icon):
         approved_rows = edited_df[edited_df["承認"] == True]
         if len(approved_rows) > 0:
             for _, row in approved_rows.iterrows():
+                # 手入力された修正内容を含めて保存
                 db.table('80_rd_products').update({
+                    "product_name": row['product_name'],
+                    "product_name_normalized": row['product_name_normalized'],
+                    "general_name": row['general_name'],
                     "needs_approval": False
                 }).eq('id', row['id']).execute()
-            st.success(f"{len(approved_rows)}件の商品を承認しました")
+            st.success(f"{len(approved_rows)}件の商品を承認しました（修正内容も保存）")
             st.rerun()
 
 
