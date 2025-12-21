@@ -964,17 +964,34 @@ def show_daily_inbox():
 
     # 承認待ち商品を信頼度別に取得
     try:
-        high = db.table('80_rd_products').select(
+        # まず全ての承認待ち商品を取得
+        all_pending = db.table('80_rd_products').select(
             'id, product_name, general_name, category_id, classification_confidence, organization'
-        ).eq('needs_approval', True).gte('classification_confidence', 0.9).execute()
+        ).eq('needs_approval', True).execute()
 
-        medium = db.table('80_rd_products').select(
-            'id, product_name, general_name, category_id, classification_confidence, organization'
-        ).eq('needs_approval', True).gte('classification_confidence', 0.7).lt('classification_confidence', 0.9).execute()
+        # Pythonで信頼度別に分類（NULL対応）
+        high_data = []
+        medium_data = []
+        low_data = []
 
-        low = db.table('80_rd_products').select(
-            'id, product_name, general_name, category_id, classification_confidence, organization'
-        ).eq('needs_approval', True).lt('classification_confidence', 0.7).execute()
+        for product in all_pending.data:
+            confidence = product.get('classification_confidence')
+            if confidence is not None and confidence >= 0.9:
+                high_data.append(product)
+            elif confidence is not None and confidence >= 0.7:
+                medium_data.append(product)
+            else:
+                # confidence < 0.7 または NULL
+                low_data.append(product)
+
+        # データを返す形式に合わせる
+        class Response:
+            def __init__(self, data):
+                self.data = data
+
+        high = Response(high_data)
+        medium = Response(medium_data)
+        low = Response(low_data)
 
         # タブ表示
         tab_high, tab_medium, tab_low = st.tabs([
