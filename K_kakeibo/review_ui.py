@@ -945,15 +945,23 @@ def show_product_classification_tab():
     st.header("🏷️ 商品分類管理")
 
     # サブタブ
-    subtab1, subtab2, subtab3 = st.tabs(["📥 日次承認インボックス", "✅ クラスタ承認", "🌳 カテゴリ管理"])
+    subtab1, subtab2, subtab3, subtab4 = st.tabs([
+        "📥 日次承認インボックス",
+        "🔍 承認済み商品の検索・編集",
+        "✅ クラスタ承認",
+        "🌳 カテゴリ管理"
+    ])
 
     with subtab1:
         show_daily_inbox()
 
     with subtab2:
-        show_bulk_clustering()
+        show_approved_products_search()
 
     with subtab3:
+        show_bulk_clustering()
+
+    with subtab4:
         show_category_tree()
 
 
@@ -1267,6 +1275,110 @@ def show_category_tree():
                 st.rerun()
             else:
                 st.warning("カテゴリ名を入力してください")
+
+    except Exception as e:
+        st.error(f"エラー: {e}")
+
+
+def show_approved_products_search():
+    """承認済み商品の検索・編集"""
+    st.subheader("🔍 承認済み商品の検索・編集")
+    st.info("承認済み商品を検索して修正できます")
+
+    try:
+        # 検索フィルター
+        st.markdown("### 検索条件")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            # 店舗フィルター
+            stores_result = db.table('80_rd_products').select('organization').execute()
+            unique_stores = sorted(list(set([p.get('organization', '') for p in stores_result.data if p.get('organization')])))
+            selected_store = st.selectbox("店舗", options=["全て"] + unique_stores)
+
+        with col2:
+            # 商品名検索
+            search_text = st.text_input("商品名（部分一致）")
+
+        with col3:
+            # カテゴリフィルター
+            categories_result = db.table('60_ms_categories').select('id, name').execute()
+            category_options = {"全て": None}
+            category_options.update({cat["name"]: cat["id"] for cat in categories_result.data})
+            selected_category = st.selectbox("カテゴリ", options=list(category_options.keys()))
+
+        # 検索ボタン
+        if st.button("🔍 検索", type="primary"):
+            # クエリ構築
+            query = db.table('80_rd_products').select(
+                'id, product_name, product_name_normalized, general_name, category_id, organization, classification_confidence'
+            ).eq('needs_approval', False)  # 承認済みのみ
+
+            # 店舗フィルター
+            if selected_store != "全て":
+                query = query.eq('organization', selected_store)
+
+            # カテゴリフィルター
+            if selected_category != "全て":
+                query = query.eq('category_id', category_options[selected_category])
+
+            # 商品名検索（部分一致）
+            if search_text:
+                query = query.ilike('product_name', f'%{search_text}%')
+
+            # 実行
+            results = query.limit(100).execute()
+
+            if not results.data:
+                st.warning("該当する商品が見つかりませんでした")
+                return
+
+            st.success(f"{len(results.data)}件見つかりました（最大100件表示）")
+
+            # 結果表示・編集
+            st.markdown("### 検索結果")
+
+            df = pd.DataFrame([{
+                "id": p["id"],
+                "選択": False,
+                "product_name": p.get("product_name", ""),
+                "product_name_normalized": p.get("product_name_normalized", ""),
+                "general_name": p.get("general_name", ""),
+                "店舗": p.get("organization", ""),
+                "信頼度": f"{p.get('classification_confidence', 0):.1%}" if p.get('classification_confidence') else "—"
+            } for p in results.data])
+
+            edited_df = st.data_editor(
+                df,
+                column_config={
+                    "選択": st.column_config.CheckboxColumn("選択", default=False, width="small"),
+                    "product_name": st.column_config.TextColumn("product_name", width="large", disabled=False),
+                    "product_name_normalized": st.column_config.TextColumn("product_name_normalized", width="large", disabled=False),
+                    "general_name": st.column_config.TextColumn("general_name", width="medium", disabled=False),
+                    "店舗": st.column_config.TextColumn("店舗", width="medium", disabled=True),
+                    "信頼度": st.column_config.TextColumn("信頼度", width="small", disabled=True)
+                },
+                column_order=["選択", "product_name", "product_name_normalized", "general_name", "店舗", "信頼度"],
+                hide_index=True,
+                use_container_width=True,
+                key="approved_products_table"
+            )
+
+            # 修正保存ボタン
+            if st.button("💾 選択した商品の修正を保存"):
+                checked_rows = edited_df[edited_df["選択"] == True]
+                if len(checked_rows) > 0:
+                    for _, row in checked_rows.iterrows():
+                        db.table('80_rd_products').update({
+                            "product_name": row['product_name'],
+                            "product_name_normalized": row['product_name_normalized'],
+                            "general_name": row['general_name']
+                        }).eq('id', row['id']).execute()
+                    st.success(f"{len(checked_rows)}件の修正を保存しました")
+                    st.rerun()
+                else:
+                    st.warning("保存する商品を選択してください")
 
     except Exception as e:
         st.error(f"エラー: {e}")
