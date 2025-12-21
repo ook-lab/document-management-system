@@ -254,7 +254,7 @@ class DailyAutoClassifier:
                 "general_name": classification.get("general_name"),
                 "category_id": classification.get("category_id"),
                 "classification_confidence": classification.get("confidence"),
-                "needs_approval": classification.get("confidence", 0) < 0.9  # 90%未満は要承認
+                "needs_approval": True  # 常に手動承認必須（自動承認は無効）
             }
 
             self.db.client.table('80_rd_products').update(
