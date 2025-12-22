@@ -240,6 +240,95 @@ def show_receipt_review_tab():
     show_receipt_detail(selected_log)
 
 
+def determine_expense_category(db, product_category: str, person: str, purpose: str):
+    """
+    2次分類（費目）を決定
+
+    優先順位:
+    1. 名目 + 人物 + 1次分類の完全一致（priority=80）
+    2. 名目 + 1次分類（priority=90）
+    3. 名目 + 人物（priority=90）
+    4. 名目のみ（priority=100）
+    5. 人物 + 1次分類（priority=50）
+    6. 1次分類のみ（priority=30）
+
+    Returns:
+        str: 2次分類（費目）名、またはNone
+    """
+    try:
+        # 1次分類IDを取得
+        product_category_id = None
+        if product_category:
+            result = db.table("60_ms_product_categories").select("id") \
+                .eq("name", product_category) \
+                .limit(1) \
+                .execute()
+            if result.data:
+                product_category_id = result.data[0]["id"]
+
+        # 名目IDを取得
+        purpose_id = None
+        if purpose:
+            result = db.table("60_ms_purposes").select("id") \
+                .eq("name", purpose) \
+                .limit(1) \
+                .execute()
+            if result.data:
+                purpose_id = result.data[0]["id"]
+
+        # ルールを検索（優先度の高い順）
+        # SQLでNULL比較を正しく処理
+        query = db.table("60_ms_expense_category_rules") \
+            .select("expense_category_id, 60_ms_expense_categories(name)") \
+            .order("priority", desc=True) \
+            .limit(1)
+
+        # 条件を動的に構築
+        conditions = []
+
+        # 完全一致を優先
+        if purpose_id and person and product_category_id:
+            query = query.eq("purpose_id", purpose_id) \
+                        .eq("person", person) \
+                        .eq("product_category_id", product_category_id)
+        elif purpose_id and product_category_id:
+            query = query.eq("purpose_id", purpose_id) \
+                        .eq("product_category_id", product_category_id) \
+                        .is_("person", "null")
+        elif purpose_id and person:
+            query = query.eq("purpose_id", purpose_id) \
+                        .eq("person", person) \
+                        .is_("product_category_id", "null")
+        elif purpose_id:
+            query = query.eq("purpose_id", purpose_id) \
+                        .is_("person", "null") \
+                        .is_("product_category_id", "null")
+        elif person and product_category_id:
+            query = query.is_("purpose_id", "null") \
+                        .eq("person", person) \
+                        .eq("product_category_id", product_category_id)
+        elif product_category_id:
+            query = query.is_("purpose_id", "null") \
+                        .is_("person", "null") \
+                        .eq("product_category_id", product_category_id)
+        else:
+            return None
+
+        result = query.execute()
+
+        if result.data:
+            # JOINした結果から費目名を取得
+            expense_category_data = result.data[0].get("60_ms_expense_categories")
+            if expense_category_data:
+                return expense_category_data.get("name")
+
+        return None
+
+    except Exception as e:
+        st.warning(f"2次分類決定エラー: {e}")
+        return None
+
+
 def auto_classify_transaction(db, shop_name: str, product_name: str, official_name: str = "", general_name: str = ""):
     """
     辞書テーブルを参照して、分類・人物・名目を自動判定
@@ -600,6 +689,18 @@ def show_receipt_detail(log: dict):
                     # 表示用の分類（最下層のみ、なければ順に上位を表示）
                     category_display = minor or middle or major or ""
 
+                    # 人物と名目を取得
+                    person_value = std.get("person") or "家族"  # デフォルト: 家族
+                    purpose_value = std.get("purpose") or "日常"  # デフォルト: 日常
+
+                    # 2次分類（費目）を自動判定
+                    expense_category = determine_expense_category(
+                        db=db,
+                        product_category=category_display,
+                        person=person_value,
+                        purpose=purpose_value
+                    ) or ""
+
                     df_data.append({
                         "_transaction_id": t["id"],  # 更新用（非表示）
                         "_std_id": std.get("id"),  # 更新用（非表示）
@@ -618,8 +719,9 @@ def show_receipt_detail(log: dict):
                         "正式名": std.get("official_name") or "",
                         "物品名": t.get("item_name") or "",
                         "分類": category_display,
-                        "人物": std.get("person") or "家族",  # デフォルト: 家族
-                        "名目": std.get("purpose") or "日常",  # デフォルト: 日常
+                        "人物": person_value,
+                        "名目": purpose_value,
+                        "費目": expense_category,  # 2次分類（自動判定）
                         "要確認": "⚠️" if std.get("needs_review") else ""
                     })
 
@@ -628,15 +730,27 @@ def show_receipt_detail(log: dict):
                 # 人物と名目の選択肢を取得
                 person_options = ["家族", "パパ", "ママ", "絵麻", "育哉"]
 
-                # 名目の選択肢（DBから既存の値を取得 + デフォルト値）
-                existing_purposes = set()
-                for t in transactions.data:
-                    std = t.get("60_rd_standardized_items")
-                    if std and std.get("purpose"):
-                        existing_purposes.add(std.get("purpose"))
-                purpose_options = sorted(list(existing_purposes)) if existing_purposes else []
-                if "日常" not in purpose_options:
-                    purpose_options.insert(0, "日常")
+                # 名目の選択肢（DBから取得）
+                try:
+                    purposes_result = db.table("60_ms_purposes").select("name").order("display_order").execute()
+                    purpose_options = [p["name"] for p in purposes_result.data] if purposes_result.data else ["日常"]
+                except:
+                    # テーブルがまだ存在しない場合のフォールバック
+                    existing_purposes = set()
+                    for t in transactions.data:
+                        std = t.get("60_rd_standardized_items")
+                        if std and std.get("purpose"):
+                            existing_purposes.add(std.get("purpose"))
+                    purpose_options = sorted(list(existing_purposes)) if existing_purposes else []
+                    if "日常" not in purpose_options:
+                        purpose_options.insert(0, "日常")
+
+                # 費目の選択肢（DBから取得）
+                try:
+                    expense_cats_result = db.table("60_ms_expense_categories").select("name").order("display_order").execute()
+                    expense_category_options = [c["name"] for c in expense_cats_result.data] if expense_cats_result.data else []
+                except:
+                    expense_category_options = []
 
                 # AI自動判定ボタン
                 st.divider()
@@ -672,6 +786,17 @@ def show_receipt_detail(log: dict):
                                     df.loc[idx, "人物"] = result["person"]
                                 if result.get("purpose"):
                                     df.loc[idx, "名目"] = result["purpose"]
+
+                                # 2次分類（費目）を再判定
+                                expense_cat = determine_expense_category(
+                                    db=db,
+                                    product_category=df.loc[idx, "分類"],
+                                    person=df.loc[idx, "人物"],
+                                    purpose=df.loc[idx, "名目"]
+                                )
+                                if expense_cat:
+                                    df.loc[idx, "費目"] = expense_cat
+
                                 auto_classified_count += 1
 
                         if auto_classified_count > 0:
@@ -734,6 +859,7 @@ def show_receipt_detail(log: dict):
                         "分類": st.column_config.TextColumn("分類", width="medium"),
                         "人物": st.column_config.SelectboxColumn("人物", options=person_options, default="家族"),
                         "名目": st.column_config.SelectboxColumn("名目", options=purpose_options, default="日常") if purpose_options else st.column_config.TextColumn("名目"),
+                        "費目": st.column_config.SelectboxColumn("費目", options=expense_category_options) if expense_category_options else st.column_config.TextColumn("費目", help="2次分類（自動判定）"),
                     },
                     use_container_width=True
                 )
