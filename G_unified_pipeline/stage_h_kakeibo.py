@@ -44,9 +44,26 @@ class StageHKakeibo:
             Dict: 最終データ（DB保存可能な形式）
         """
         try:
+            # 0. 値引きを適用（商品金額を値引き後に更新）
+            items_with_discounts = self._apply_discounts(stage_g_output.get("items", []))
+
             # 1. 商品を正規化（マスタとの紐付け）
             normalized_items = []
-            for item in stage_g_output.get("items", []):
+            for item in items_with_discounts:
+                # 値引き行はスキップ（別途保存）
+                if item.get("line_type") == "DISCOUNT":
+                    normalized_items.append({
+                        "raw_item": item,
+                        "normalized": {
+                            "product_name": item.get("product_name", "値引"),
+                            "category_id": None,
+                            "tax_rate": 10,  # デフォルト
+                            "tax_rate_source": "discount",
+                            "is_discount": True
+                        }
+                    })
+                    continue
+
                 normalized = self._normalize_item(
                     item,
                     stage_g_output["shop_info"]["name"]
@@ -85,6 +102,54 @@ class StageHKakeibo:
         except Exception as e:
             logger.error(f"Stage H failed: {e}")
             raise
+
+    def _apply_discounts(self, items: List[Dict]) -> List[Dict]:
+        """
+        値引き行を処理して商品金額を更新
+
+        Args:
+            items: Stage Gで抽出された全明細行（商品+値引き）
+
+        Returns:
+            List[Dict]: 値引き適用後の明細行リスト
+        """
+        # 値引き行を抽出
+        discount_lines = [item for item in items if item.get("line_type") == "DISCOUNT"]
+        product_lines = [item for item in items if item.get("line_type") != "DISCOUNT"]
+
+        # 行番号でインデックスを作成（値引き適用先の検索用）
+        items_by_line = {item.get("line_number"): item for item in items}
+
+        # 各値引きを適用
+        for discount in discount_lines:
+            discount_amount = discount.get("amount", 0)  # 負の値
+            applied_to_line = discount.get("discount_applied_to")
+
+            if applied_to_line and applied_to_line in items_by_line:
+                # 明示的に値引き適用先が指定されている場合
+                target = items_by_line[applied_to_line]
+                if target.get("line_type") != "DISCOUNT":
+                    original_amount = target.get("amount", 0)
+                    target["amount"] = original_amount + discount_amount
+                    target["original_amount"] = original_amount  # 元の金額を保持
+                    target["applied_discount"] = discount_amount
+                    logger.info(f"Applied discount {discount_amount}円 to {target.get('product_name')}: {original_amount}円 → {target['amount']}円")
+            else:
+                # 値引き適用先が不明な場合は、直前の商品に適用（ヒューリスティック）
+                discount_line_num = discount.get("line_number")
+                if discount_line_num:
+                    # 値引き行より前の商品を探す
+                    for i in range(discount_line_num - 1, 0, -1):
+                        if i in items_by_line and items_by_line[i].get("line_type") != "DISCOUNT":
+                            target = items_by_line[i]
+                            original_amount = target.get("amount", 0)
+                            target["amount"] = original_amount + discount_amount
+                            target["original_amount"] = original_amount
+                            target["applied_discount"] = discount_amount
+                            logger.info(f"Applied discount {discount_amount}円 to previous item {target.get('product_name')}: {original_amount}円 → {target['amount']}円")
+                            break
+
+        return items
 
     def _normalize_item(self, item: Dict, shop_name: str) -> Dict:
         """
@@ -176,16 +241,22 @@ class StageHKakeibo:
             List[Dict]: 税額が計算された商品リスト
         """
         # 【重要】内税・外税の判定
-        # 外税レシートは必ず「小計 < 合計」となる
-        subtotal = amounts.get("subtotal")
-        total = amounts.get("total")
+        # Stage Gで判定済みの場合はそれを優先
+        tax_type = amounts.get("tax_display_type")
 
-        if subtotal is not None and total is not None and subtotal < total:
-            tax_type = "excluded"  # 外税
-            logger.info(f"外税レシート検出: 小計={subtotal}円 < 合計={total}円")
+        if tax_type:
+            logger.info(f"Stage Gで判定済み: tax_display_type={tax_type}")
         else:
-            tax_type = "included"  # 内税
-            logger.info(f"内税レシート検出: 小計={subtotal}円 = 合計={total}円")
+            # フォールバック: 小計と合計の比較で判定
+            subtotal = amounts.get("subtotal")
+            total = amounts.get("total")
+
+            if subtotal is not None and total is not None and subtotal < total:
+                tax_type = "excluded"  # 外税
+                logger.info(f"外税レシート検出: 小計={subtotal}円 < 合計={total}円")
+            else:
+                tax_type = "included"  # 内税
+                logger.info(f"内税レシート検出: 小計={subtotal}円 = 合計={total}円")
 
         # 商品を8%と10%にグループ化
         items_8 = []

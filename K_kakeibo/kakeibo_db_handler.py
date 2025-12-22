@@ -68,25 +68,30 @@ class KakeiboDBHandler:
                 transaction_id = self._insert_transaction(
                     receipt_id=receipt_id,
                     line_number=line_num,
+                    line_type=item.get("line_type", "ITEM"),
                     ocr_raw_text=item.get("line_text", ""),
                     product_name=item["product_name"],
                     quantity=item.get("quantity", 1),
                     unit_price=item.get("unit_price"),
-                    amount=item["amount"]
+                    amount=item.get("amount"),
+                    discount_text=item.get("discount_text"),
+                    discount_amount=item.get("applied_discount", 0)
                 )
                 transaction_ids.append(transaction_id)
 
                 # 孫テーブルに登録（7要素を使用）
-                std_id = self._insert_standardized_item(
-                    transaction_id=transaction_id,
-                    receipt_id=receipt_id,
-                    normalized=normalized,
-                    situation_id=stage_h_output["receipt"]["situation_id"],
-                    base_price=normalized.get("base_price", 0),
-                    tax_included_amount=normalized.get("tax_included_amount", 0),
-                    tax_amount=normalized.get("tax_amount", 0)
-                )
-                standardized_ids.append(std_id)
+                # 値引き行の場合はスキップ（トランザクションとしてのみ記録）
+                if item.get("line_type") != "DISCOUNT":
+                    std_id = self._insert_standardized_item(
+                        transaction_id=transaction_id,
+                        receipt_id=receipt_id,
+                        normalized=normalized,
+                        situation_id=stage_h_output["receipt"]["situation_id"],
+                        base_price=normalized.get("base_price", 0),
+                        tax_included_amount=normalized.get("tax_included_amount", 0),
+                        tax_amount=normalized.get("tax_amount", 0)
+                    )
+                    standardized_ids.append(std_id)
 
             # 3. 処理ログを記録
             log_id = self._log_processing_success(
@@ -149,22 +154,27 @@ class KakeiboDBHandler:
         self,
         receipt_id: str,
         line_number: int,
+        line_type: str,
         ocr_raw_text: str,
         product_name: str,
         quantity: int,
         unit_price: int,
-        amount: int
+        amount: int,
+        discount_text: str = None,
+        discount_amount: int = 0
     ) -> str:
         """トランザクション情報をDBに登録（子テーブル）"""
         data = {
             "receipt_id": receipt_id,
             "line_number": line_number,
-            "line_type": "item",  # デフォルト値
+            "line_type": line_type,
             "ocr_raw_text": ocr_raw_text,
             "product_name": product_name,
             "item_name": product_name,  # product_nameと同じ値を設定
             "quantity": quantity,
-            "unit_price": unit_price
+            "unit_price": unit_price,
+            "discount_text": discount_text,
+            "discount_amount": discount_amount
             # amount カラムは存在しないため除外
         }
 
