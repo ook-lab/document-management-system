@@ -48,6 +48,9 @@ class StageHKakeibo:
             # 割引行は別行としてそのまま保持（マイナス金額）
             items = stage_g_output.get("items", [])
 
+            # 割引を商品にリンク（税込価計算用）
+            items = self._link_discounts_to_items(items)
+
             # 1. 商品を正規化（マスタとの紐付け）
             normalized_items = []
             for item in items:
@@ -138,6 +141,54 @@ class StageHKakeibo:
 
         # デフォルト10%
         return 10
+
+    def _link_discounts_to_items(self, items: List[Dict]) -> List[Dict]:
+        """
+        割引行を商品にリンク（税込価計算用）
+
+        各商品に linked_discount フィールドを追加
+        割引の適用先が明示されていない場合は直前の商品に適用
+
+        Args:
+            items: Stage Gで抽出された全明細行
+
+        Returns:
+            List[Dict]: リンク情報が追加された明細行リスト
+        """
+        # 行番号でインデックスを作成
+        items_by_line = {item.get("line_number"): item for item in items}
+
+        # 各商品のlinked_discountを初期化
+        for item in items:
+            if item.get("line_type") != "DISCOUNT":
+                item["linked_discount"] = 0
+
+        # 割引を適用先にリンク
+        for item in items:
+            if item.get("line_type") != "DISCOUNT":
+                continue
+
+            discount_amount = item.get("amount", 0)  # 負の値
+            applied_to_line = item.get("discount_applied_to")
+
+            target = None
+            if applied_to_line and applied_to_line in items_by_line:
+                # 明示的に適用先が指定されている場合
+                target = items_by_line[applied_to_line]
+            else:
+                # 直前の商品を探す
+                discount_line_num = item.get("line_number")
+                if discount_line_num:
+                    for i in range(discount_line_num - 1, 0, -1):
+                        if i in items_by_line and items_by_line[i].get("line_type") != "DISCOUNT":
+                            target = items_by_line[i]
+                            break
+
+            if target and target.get("line_type") != "DISCOUNT":
+                target["linked_discount"] = target.get("linked_discount", 0) + discount_amount
+                logger.info(f"Linked discount {discount_amount}円 to {target.get('product_name')}")
+
+        return items
 
     def _normalize_item(self, item: Dict, shop_name: str) -> Dict:
         """
@@ -301,11 +352,18 @@ class StageHKakeibo:
             total_tax: グループ全体の税額
             tax_type: "included"（内税）or "excluded"（外税）
         """
-        if not items or total_tax == 0:
-            # 税額が0の場合も7要素を設定
+        if not items:
+            return
+
+        if total_tax == 0:
+            # 税額が0の場合も7要素を設定（割引は考慮）
             for item in items:
                 quantity = item["raw_item"].get("quantity", 1)
                 displayed_amount = item["raw_item"].get("amount") or 0
+                linked_discount = item["raw_item"].get("linked_discount", 0)
+
+                # 税込価を計算（表示額 + 割引）
+                tax_included_amount = displayed_amount + linked_discount
 
                 # 7要素を設定
                 item["normalized"]["quantity"] = quantity  # 1. 数量
@@ -316,12 +374,12 @@ class StageHKakeibo:
 
                 if tax_type == "excluded":
                     # 外税：表示額 = 本体価
-                    item["normalized"]["base_price"] = displayed_amount  # 5. 本体価
-                    item["normalized"]["tax_included_amount"] = displayed_amount  # 7. 税込価
+                    item["normalized"]["base_price"] = displayed_amount + linked_discount  # 5. 本体価
+                    item["normalized"]["tax_included_amount"] = displayed_amount + linked_discount  # 7. 税込価
                 else:
                     # 内税：表示額 = 税込額
-                    item["normalized"]["tax_included_amount"] = displayed_amount  # 7. 税込価
-                    item["normalized"]["base_price"] = displayed_amount  # 5. 本体価
+                    item["normalized"]["tax_included_amount"] = tax_included_amount  # 7. 税込価
+                    item["normalized"]["base_price"] = tax_included_amount  # 5. 本体価
             return
 
         # 各商品の表示額の比率で税額を按分
@@ -358,25 +416,37 @@ class StageHKakeibo:
         for i, item in enumerate(items):
             quantity = item["raw_item"].get("quantity", 1)
             displayed_amount = item["raw_item"].get("amount") or 0
-            tax_amount = distributed_tax[i]
+            linked_discount = item["raw_item"].get("linked_discount", 0)  # リンクされた割引（負の値）
+
+            # 税込価を計算（表示額 + 割引）
+            # 割引は負の値なので加算すると減算になる
+            tax_included_amount = displayed_amount + linked_discount
+
+            # 税率から税額と本体価を計算
+            tax_rate = item["normalized"].get("tax_rate", 10)
+            if tax_type == "excluded":
+                # 外税：表示額 = 本体価、税込価 = 本体価 + 税額
+                base_price = displayed_amount + linked_discount
+                tax_amount = round(base_price * tax_rate / 100)
+                tax_included_amount = base_price + tax_amount
+            else:
+                # 内税：税込価から本体価と税額を逆算
+                base_price = round(tax_included_amount * 100 / (100 + tax_rate))
+                tax_amount = tax_included_amount - base_price
 
             # 7要素を設定
             item["normalized"]["quantity"] = quantity  # 1. 数量
             item["normalized"]["displayed_amount"] = displayed_amount  # 2. 表示額
             item["normalized"]["tax_display_type"] = tax_type  # 3. 外or内
             # 4. 税率 は _normalize_item で既に設定済み
+            item["normalized"]["base_price"] = base_price  # 5. 本体価
             item["normalized"]["tax_amount"] = tax_amount  # 6. 税額
+            item["normalized"]["tax_included_amount"] = tax_included_amount  # 7. 税込価
 
-            if tax_type == "excluded":
-                # 外税：表示額 = 本体価
-                item["normalized"]["base_price"] = displayed_amount  # 5. 本体価
-                item["normalized"]["tax_included_amount"] = displayed_amount + tax_amount  # 7. 税込価
-            else:
-                # 内税：表示額 = 税込額
-                item["normalized"]["tax_included_amount"] = displayed_amount  # 7. 税込価
-                item["normalized"]["base_price"] = displayed_amount - tax_amount  # 5. 本体価
+            if linked_discount != 0:
+                logger.info(f"{item['raw_item'].get('product_name')}: 表示額={displayed_amount}, 割引={linked_discount}, 税込価={tax_included_amount}, 本体価={base_price}, 税額={tax_amount}")
 
-        logger.debug(f"Distributed {total_tax}円 tax ({tax_type}): {distributed_tax}")
+        logger.debug(f"Distributed tax ({tax_type})")
 
     # ========================================
     # マスタデータ読み込み
