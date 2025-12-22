@@ -44,20 +44,21 @@ class StageHKakeibo:
             Dict: 最終データ（DB保存可能な形式）
         """
         try:
-            # 0. 値引きを適用（商品金額を値引き後に更新）
-            items_with_discounts = self._apply_discounts(stage_g_output.get("items", []))
+            # 【重要】レシート記載の金額は改ざんしない
+            # 割引行は別行としてそのまま保持（マイナス金額）
+            items = stage_g_output.get("items", [])
 
             # 1. 商品を正規化（マスタとの紐付け）
             normalized_items = []
-            for item in items_with_discounts:
-                # 値引き行はスキップ（別途保存）
+            for item in items:
+                # 値引き行も含めて処理（金額はそのまま）
                 if item.get("line_type") == "DISCOUNT":
                     normalized_items.append({
                         "raw_item": item,
                         "normalized": {
                             "product_name": item.get("product_name", "値引"),
                             "category_id": None,
-                            "tax_rate": 10,  # デフォルト
+                            "tax_rate": self._get_discount_tax_rate(item, items),
                             "tax_rate_source": "discount",
                             "is_discount": True
                         }
@@ -103,53 +104,40 @@ class StageHKakeibo:
             logger.error(f"Stage H failed: {e}")
             raise
 
-    def _apply_discounts(self, items: List[Dict]) -> List[Dict]:
+    def _get_discount_tax_rate(self, discount_item: Dict, all_items: List[Dict]) -> int:
         """
-        値引き行を処理して商品金額を更新
+        割引行の税率を判定（適用先商品から推定）
 
         Args:
-            items: Stage Gで抽出された全明細行（商品+値引き）
+            discount_item: 割引行データ
+            all_items: 全明細行リスト
 
         Returns:
-            List[Dict]: 値引き適用後の明細行リスト
+            int: 税率（8 or 10）
         """
-        # 値引き行を抽出
-        discount_lines = [item for item in items if item.get("line_type") == "DISCOUNT"]
-        product_lines = [item for item in items if item.get("line_type") != "DISCOUNT"]
+        # 行番号でインデックスを作成
+        items_by_line = {item.get("line_number"): item for item in all_items}
 
-        # 行番号でインデックスを作成（値引き適用先の検索用）
-        items_by_line = {item.get("line_number"): item for item in items}
+        # 明示的に値引き適用先が指定されている場合
+        applied_to_line = discount_item.get("discount_applied_to")
+        if applied_to_line and applied_to_line in items_by_line:
+            target = items_by_line[applied_to_line]
+            if target.get("tax_mark") == "※" or "8%" in str(target.get("tax_mark", "")):
+                return 8
+            return 10
 
-        # 各値引きを適用
-        for discount in discount_lines:
-            discount_amount = discount.get("amount", 0)  # 負の値
-            applied_to_line = discount.get("discount_applied_to")
+        # 直前の商品から推定
+        discount_line_num = discount_item.get("line_number")
+        if discount_line_num:
+            for i in range(discount_line_num - 1, 0, -1):
+                if i in items_by_line and items_by_line[i].get("line_type") != "DISCOUNT":
+                    target = items_by_line[i]
+                    if target.get("tax_mark") == "※" or "8%" in str(target.get("tax_mark", "")):
+                        return 8
+                    return 10
 
-            if applied_to_line and applied_to_line in items_by_line:
-                # 明示的に値引き適用先が指定されている場合
-                target = items_by_line[applied_to_line]
-                if target.get("line_type") != "DISCOUNT":
-                    original_amount = target.get("amount", 0)
-                    target["amount"] = original_amount + discount_amount
-                    target["original_amount"] = original_amount  # 元の金額を保持
-                    target["applied_discount"] = discount_amount
-                    logger.info(f"Applied discount {discount_amount}円 to {target.get('product_name')}: {original_amount}円 → {target['amount']}円")
-            else:
-                # 値引き適用先が不明な場合は、直前の商品に適用（ヒューリスティック）
-                discount_line_num = discount.get("line_number")
-                if discount_line_num:
-                    # 値引き行より前の商品を探す
-                    for i in range(discount_line_num - 1, 0, -1):
-                        if i in items_by_line and items_by_line[i].get("line_type") != "DISCOUNT":
-                            target = items_by_line[i]
-                            original_amount = target.get("amount", 0)
-                            target["amount"] = original_amount + discount_amount
-                            target["original_amount"] = original_amount
-                            target["applied_discount"] = discount_amount
-                            logger.info(f"Applied discount {discount_amount}円 to previous item {target.get('product_name')}: {original_amount}円 → {target['amount']}円")
-                            break
-
-        return items
+        # デフォルト10%
+        return 10
 
     def _normalize_item(self, item: Dict, shop_name: str) -> Dict:
         """
@@ -162,7 +150,7 @@ class StageHKakeibo:
         Returns:
             Dict: {"product_name": "正規化後", "category_id": "...", "tax_rate": 10}
         """
-        product_name = item["product_name"]
+        product_name = item.get("product_name") or item.get("line_text") or "不明"
         receipt_tax_mark = item.get("tax_mark")  # レシートの税率マーク
 
         # 1. エイリアス変換

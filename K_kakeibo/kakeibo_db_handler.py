@@ -65,6 +65,9 @@ class KakeiboDBHandler:
                 normalized = item_data["normalized"]
 
                 # 子テーブルに登録
+                # displayed_amount は normalized から取得（レシート記載の金額）
+                displayed_amount = normalized.get("displayed_amount") or item.get("amount") or 0
+
                 transaction_id = self._insert_transaction(
                     receipt_id=receipt_id,
                     line_number=line_num,
@@ -73,9 +76,8 @@ class KakeiboDBHandler:
                     product_name=item["product_name"],
                     quantity=item.get("quantity", 1),
                     unit_price=item.get("unit_price"),
-                    amount=item.get("amount"),
-                    discount_text=item.get("discount_text"),
-                    discount_amount=item.get("applied_discount", 0)
+                    displayed_amount=displayed_amount,
+                    discount_text=item.get("discount_text")
                 )
                 transaction_ids.append(transaction_id)
 
@@ -139,6 +141,8 @@ class KakeiboDBHandler:
             "shop_name": receipt_data["name"],
             "total_amount_check": receipt_data.get("total"),
             "subtotal_amount": receipt_data.get("subtotal"),
+            "tax_8_amount": receipt_data.get("tax_8_amount"),  # 8%消費税額
+            "tax_10_amount": receipt_data.get("tax_10_amount"),  # 10%消費税額
             "image_path": f"99_Archive/{trans_date.strftime('%Y-%m')}/{file_name}",
             "drive_file_id": drive_file_id,
             "source_folder": source_folder,
@@ -159,9 +163,8 @@ class KakeiboDBHandler:
         product_name: str,
         quantity: int,
         unit_price: int,
-        amount: int,
-        discount_text: str = None,
-        discount_amount: int = 0
+        displayed_amount: int,
+        discount_text: str = None
     ) -> str:
         """トランザクション情報をDBに登録（子テーブル）"""
         data = {
@@ -173,9 +176,8 @@ class KakeiboDBHandler:
             "item_name": product_name,  # product_nameと同じ値を設定
             "quantity": quantity,
             "unit_price": unit_price,
-            "discount_text": discount_text,
-            "discount_amount": discount_amount
-            # amount カラムは存在しないため除外
+            "displayed_amount": displayed_amount,  # レシート記載の表示金額
+            "discount_text": discount_text
         }
 
         result = self.db.client.table("60_rd_transactions").insert(data).execute()

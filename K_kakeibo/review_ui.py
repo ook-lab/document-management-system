@@ -413,13 +413,15 @@ def show_receipt_detail(log: dict):
                     if std_unit_price is not None and quantity:
                         base_price_total = std_unit_price * quantity
 
-                    # 表示額を計算（内税なら税込価、外税なら本体価）
-                    if tax_display_type == "内税":
-                        displayed_amount = tax_included_amount
-                    elif tax_display_type == "外税":
-                        displayed_amount = base_price_total
-                    else:
-                        displayed_amount = None
+                    # 表示額を取得
+                    # 1. transactionsテーブルのdisplayed_amountを優先（レシート記載値）
+                    # 2. なければ計算で求める（後方互換性）
+                    displayed_amount = t.get("displayed_amount")
+                    if displayed_amount is None:
+                        if tax_display_type == "内税":
+                            displayed_amount = tax_included_amount
+                        elif tax_display_type == "外税":
+                            displayed_amount = base_price_total
 
                     # 税込単価を計算（税込価 ÷ 数量）
                     tax_included_unit_price = None
