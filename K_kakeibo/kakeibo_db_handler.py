@@ -143,6 +143,8 @@ class KakeiboDBHandler:
             "subtotal_amount": receipt_data.get("subtotal"),
             "tax_8_amount": receipt_data.get("tax_8_amount"),  # 8%消費税額
             "tax_10_amount": receipt_data.get("tax_10_amount"),  # 10%消費税額
+            "tax_8_subtotal": receipt_data.get("tax_8_subtotal"),  # 8%対象額（税抜）
+            "tax_10_subtotal": receipt_data.get("tax_10_subtotal"),  # 10%対象額（税抜）
             "image_path": f"99_Archive/{trans_date.strftime('%Y-%m')}/{file_name}",
             "drive_file_id": drive_file_id,
             "source_folder": source_folder,
