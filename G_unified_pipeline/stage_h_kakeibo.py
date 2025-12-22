@@ -82,7 +82,7 @@ class StageHKakeibo:
             situation_id = self._determine_situation(trans_date)
 
             # 3. 税額を按分計算
-            items_with_tax = self._calculate_and_distribute_tax(
+            items_with_tax, tax_subtotals = self._calculate_and_distribute_tax(
                 normalized_items,
                 stage_g_output.get("amounts", {})
             )
@@ -93,6 +93,7 @@ class StageHKakeibo:
                     **stage_g_output["shop_info"],
                     **stage_g_output["transaction_info"],
                     **stage_g_output.get("amounts", {}),
+                    **tax_subtotals,  # 税対象額を追加
                     "situation_id": situation_id
                 },
                 "items": items_with_tax,
@@ -334,7 +335,26 @@ class StageHKakeibo:
         self._distribute_tax_to_items(items_8, tax_8_amount, tax_type)
         self._distribute_tax_to_items(items_10, tax_10_amount, tax_type)
 
-        return normalized_items
+        # 税対象額を計算（税抜額）
+        total_8 = sum(item["raw_item"]["amount"] or 0 for item in items_8)
+        total_10 = sum(item["raw_item"]["amount"] or 0 for item in items_10)
+
+        # 税対象額を返す（内税の場合は税抜額、外税の場合も税抜額）
+        if tax_type == "included":
+            # 内税：税込額から税額を引いて税抜額を計算
+            tax_8_subtotal = total_8 - tax_8_amount if total_8 > 0 else 0
+            tax_10_subtotal = total_10 - tax_10_amount if total_10 > 0 else 0
+        else:
+            # 外税：表示額がそのまま税抜額
+            tax_8_subtotal = total_8
+            tax_10_subtotal = total_10
+
+        tax_subtotals = {
+            "tax_8_subtotal": tax_8_subtotal,
+            "tax_10_subtotal": tax_10_subtotal
+        }
+
+        return normalized_items, tax_subtotals
 
     def _distribute_tax_to_items(self, items: List[Dict], total_tax: int, tax_type: str):
         """
@@ -382,35 +402,57 @@ class StageHKakeibo:
                     item["normalized"]["base_price"] = tax_included_amount  # 5. 本体価
             return
 
-        # 各商品の表示額の比率で税額を按分
-        total_amount = sum(item["raw_item"].get("amount") or 0 for item in items)
-
-        if total_amount == 0:
-            # 全商品の amount が 0 or None の場合、均等割
-            logger.warning("All items have zero or null amount, distributing tax equally")
-            per_item_tax = total_tax // len(items)
-            for item in items:
-                quantity = item["raw_item"].get("quantity", 1)
-                item["normalized"]["quantity"] = quantity
-                item["normalized"]["displayed_amount"] = 0
-                item["normalized"]["tax_display_type"] = tax_type
-                item["normalized"]["tax_amount"] = per_item_tax
-                item["normalized"]["base_price"] = 0
-                item["normalized"]["tax_included_amount"] = 0
-            return
-
-        # 税額を按分計算
-        distributed_tax = []
+        # Step 1: 各商品の税込価を計算
+        tax_included_amounts = []
         for item in items:
-            item_amount = item["raw_item"].get("amount") or 0
-            # 比率で按分（切り捨て）
-            tax = int(total_tax * item_amount / total_amount)
-            distributed_tax.append(tax)
+            displayed_amount = item["raw_item"].get("amount") or 0
+            linked_discount = item["raw_item"].get("linked_discount", 0)
+            tax_included_amount = displayed_amount + linked_discount
+            tax_included_amounts.append(tax_included_amount)
 
-        # 端数を計算して最初の商品に加算
-        remainder = total_tax - sum(distributed_tax)
-        if remainder > 0:
-            distributed_tax[0] += remainder
+        # Step 2: 各商品の理論税額を計算（小数のまま保持）
+        theoretical_taxes_float = []
+        for i, item in enumerate(items):
+            tax_included_amount = tax_included_amounts[i]
+            tax_rate = item["normalized"].get("tax_rate", 10)
+            line_type = item["raw_item"].get("line_type", "ITEM")
+
+            # 割引行は税額0（商品行にすでに割引後の税額が含まれているため）
+            if line_type == "DISCOUNT":
+                theoretical_tax = 0.0
+            elif tax_type == "excluded":
+                # 外税：理論税額 = 税抜額 × 税率 / 100
+                theoretical_tax = tax_included_amount * tax_rate / 100
+            else:
+                # 内税：理論税額 = 税込価 - (税込価 / (1 + 税率/100))
+                theoretical_tax = tax_included_amount - (tax_included_amount / (1 + tax_rate / 100))
+
+            theoretical_taxes_float.append(theoretical_tax)
+
+        # Step 3: 理論税額の合計（小数）とレシート記載税額の差分
+        total_theoretical_tax = sum(theoretical_taxes_float)
+        remainder = total_tax - total_theoretical_tax
+
+        # Step 4: 各商品の理論税額を四捨五入し、端数を按分
+        theoretical_taxes_rounded = [round(tax) for tax in theoretical_taxes_float]
+        total_rounded = sum(theoretical_taxes_rounded)
+        final_remainder = total_tax - total_rounded
+
+        # Step 5: 最終端数を税込価の大きい順に1円ずつ配分
+        distributed_tax = theoretical_taxes_rounded.copy()
+
+        if final_remainder != 0:
+            # 税込価の絶対値でソート（インデックスを保持）
+            indexed_amounts = [(i, abs(tax_included_amounts[i])) for i in range(len(items))]
+            indexed_amounts.sort(key=lambda x: x[1], reverse=True)
+
+            # 端数を1円ずつ配分
+            for j in range(abs(final_remainder)):
+                idx = indexed_amounts[j % len(items)][0]
+                if final_remainder > 0:
+                    distributed_tax[idx] += 1
+                else:
+                    distributed_tax[idx] -= 1
 
         # 各商品に7要素を設定
         for i, item in enumerate(items):
@@ -422,17 +464,18 @@ class StageHKakeibo:
             # 割引は負の値なので加算すると減算になる
             tax_included_amount = displayed_amount + linked_discount
 
-            # 税率から税額と本体価を計算
+            # 按分された税額を使用
+            tax_amount = distributed_tax[i]
+
+            # 税率から本体価を計算
             tax_rate = item["normalized"].get("tax_rate", 10)
             if tax_type == "excluded":
                 # 外税：表示額 = 本体価、税込価 = 本体価 + 税額
                 base_price = displayed_amount + linked_discount
-                tax_amount = round(base_price * tax_rate / 100)
                 tax_included_amount = base_price + tax_amount
             else:
-                # 内税：税込価から本体価と税額を逆算
-                base_price = round(tax_included_amount * 100 / (100 + tax_rate))
-                tax_amount = tax_included_amount - base_price
+                # 内税：税込価 - 按分税額 = 本体価
+                base_price = tax_included_amount - tax_amount
 
             # 7要素を設定
             item["normalized"]["quantity"] = quantity  # 1. 数量

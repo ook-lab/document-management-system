@@ -505,15 +505,16 @@ def show_receipt_detail(log: dict):
                     for t in transactions.data
                 )
                 # 税率別の集計
+                # 税額合計（割引行を含む全トランザクションから計算）
                 total_tax_8 = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("tax_amount", 0)
+                    t.get("tax_amount", 0) or 0
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 8
+                    if t.get("tax_rate") == 8
                 )
                 total_tax_10 = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("tax_amount", 0)
+                    t.get("tax_amount", 0) or 0
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 10
+                    if t.get("tax_rate") == 10
                 )
                 # 税込合計（8%、10%それぞれ）
                 total_amount_8 = sum(

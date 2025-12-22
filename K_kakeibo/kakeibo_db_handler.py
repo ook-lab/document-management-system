@@ -74,10 +74,15 @@ class KakeiboDBHandler:
                     line_type=item.get("line_type", "ITEM"),
                     ocr_raw_text=item.get("line_text", ""),
                     product_name=item["product_name"],
-                    quantity=item.get("quantity", 1),
+                    quantity=normalized.get("quantity", item.get("quantity", 1)),
                     unit_price=item.get("unit_price"),
                     displayed_amount=displayed_amount,
-                    discount_text=item.get("discount_text")
+                    discount_text=item.get("discount_text"),
+                    base_price=normalized.get("base_price"),
+                    tax_amount=normalized.get("tax_amount"),
+                    tax_included_amount=normalized.get("tax_included_amount"),
+                    tax_display_type=normalized.get("tax_display_type"),
+                    tax_rate=normalized.get("tax_rate")
                 )
                 transaction_ids.append(transaction_id)
 
@@ -166,7 +171,12 @@ class KakeiboDBHandler:
         quantity: int,
         unit_price: int,
         displayed_amount: int,
-        discount_text: str = None
+        discount_text: str = None,
+        base_price: int = None,
+        tax_amount: int = None,
+        tax_included_amount: int = None,
+        tax_display_type: str = None,
+        tax_rate: int = None
     ) -> str:
         """トランザクション情報をDBに登録（子テーブル）"""
         data = {
@@ -179,7 +189,12 @@ class KakeiboDBHandler:
             "quantity": quantity,
             "unit_price": unit_price,
             "displayed_amount": displayed_amount,  # レシート記載の表示金額
-            "discount_text": discount_text
+            "discount_text": discount_text,
+            "base_price": base_price,  # 本体価（税抜）
+            "tax_amount": tax_amount,  # 税額
+            "tax_included_amount": tax_included_amount,  # 税込価
+            "tax_display_type": tax_display_type,  # 外税or内税
+            "tax_rate": tax_rate  # 税率（8 or 10）
         }
 
         result = self.db.client.table("60_rd_transactions").insert(data).execute()

@@ -22,7 +22,7 @@ class ReceiptReimporter:
     """レシート削除 & 再取り込み"""
 
     def __init__(self):
-        self.db = DatabaseClient()
+        self.db = DatabaseClient(use_service_role=True)
         self.drive = GoogleDriveConnector()
         self.pipeline = UnifiedDocumentPipeline()
         self.temp_dir = Path(TEMP_DIR)
@@ -99,6 +99,12 @@ class ReceiptReimporter:
             logger.info(f"📄 処理開始: {file_name}")
             logger.info(f"  ファイルID: {file_id}")
             logger.info(f"  ソース: {source_folder}")
+
+            # 既存のログエントリを削除（重複エラー防止）
+            try:
+                self.db.client.table("99_lg_image_proc_log").delete().eq("file_name", file_name).execute()
+            except Exception:
+                pass  # ログエントリが存在しない場合は無視
 
             # ファイルをダウンロード
             local_path = self.drive.download_file(file_id, file_name, self.temp_dir)
