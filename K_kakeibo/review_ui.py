@@ -240,6 +240,170 @@ def show_receipt_review_tab():
     show_receipt_detail(selected_log)
 
 
+def auto_classify_transaction(db, shop_name: str, product_name: str, official_name: str = "", general_name: str = ""):
+    """
+    辞書テーブルを参照して、分類・人物・名目を自動判定
+
+    優先順位:
+    1. 店舗名 + 商品名の完全一致
+    2. 店舗名のみ（店舗全体のデフォルト）
+    3. 商品名のみ
+    4. official_nameのみ
+    5. general_nameのみ
+
+    Returns:
+        dict: {"category": str, "person": str, "purpose": str} または None
+    """
+    try:
+        # 1. 店舗名 + 商品名の完全一致
+        if shop_name and product_name:
+            result = db.table("60_ms_transaction_dictionary").select("*") \
+                .eq("shop_name", shop_name) \
+                .eq("product_name", product_name) \
+                .order("priority") \
+                .limit(1) \
+                .execute()
+            if result.data:
+                match = result.data[0]
+                return {
+                    "category": match.get("category"),
+                    "person": match.get("person"),
+                    "purpose": match.get("purpose")
+                }
+
+        # 2. 店舗名のみ（店舗全体のデフォルト）
+        if shop_name:
+            result = db.table("60_ms_transaction_dictionary").select("*") \
+                .eq("shop_name", shop_name) \
+                .eq("rule_type", "shop_only") \
+                .order("priority") \
+                .limit(1) \
+                .execute()
+            if result.data:
+                match = result.data[0]
+                return {
+                    "category": match.get("category"),
+                    "person": match.get("person"),
+                    "purpose": match.get("purpose")
+                }
+
+        # 3. 商品名のみ
+        if product_name:
+            result = db.table("60_ms_transaction_dictionary").select("*") \
+                .eq("product_name", product_name) \
+                .is_("shop_name", "null") \
+                .order("priority") \
+                .limit(1) \
+                .execute()
+            if result.data:
+                match = result.data[0]
+                return {
+                    "category": match.get("category"),
+                    "person": match.get("person"),
+                    "purpose": match.get("purpose")
+                }
+
+        # 4. official_nameのみ
+        if official_name:
+            result = db.table("60_ms_transaction_dictionary").select("*") \
+                .eq("official_name", official_name) \
+                .order("priority") \
+                .limit(1) \
+                .execute()
+            if result.data:
+                match = result.data[0]
+                return {
+                    "category": match.get("category"),
+                    "person": match.get("person"),
+                    "purpose": match.get("purpose")
+                }
+
+        # 5. general_nameのみ
+        if general_name:
+            result = db.table("60_ms_transaction_dictionary").select("*") \
+                .eq("general_name", general_name) \
+                .order("priority") \
+                .limit(1) \
+                .execute()
+            if result.data:
+                match = result.data[0]
+                return {
+                    "category": match.get("category"),
+                    "person": match.get("person"),
+                    "purpose": match.get("purpose")
+                }
+
+        # マッチなし
+        return None
+
+    except Exception as e:
+        st.warning(f"自動判定エラー: {e}")
+        return None
+
+
+def save_to_dictionary(db, shop_name: str, product_name: str, official_name: str, general_name: str,
+                      category: str, person: str, purpose: str):
+    """
+    辞書テーブルに保存（または更新）
+
+    商品名をキーとして、分類・人物・名目を保存
+    既存レコードがあれば使用回数をインクリメント
+    """
+    try:
+        # 既存レコードを検索（shop_name + product_nameの組み合わせ）
+        existing = db.table("60_ms_transaction_dictionary").select("*") \
+            .eq("shop_name", shop_name) \
+            .eq("product_name", product_name) \
+            .execute()
+
+        if existing.data:
+            # 既存レコードを更新（使用回数をインクリメント）
+            record = existing.data[0]
+            db.table("60_ms_transaction_dictionary").update({
+                "category": category,
+                "person": person,
+                "purpose": purpose,
+                "official_name": official_name,
+                "general_name": general_name,
+                "usage_count": record.get("usage_count", 0) + 1,
+                "updated_at": "NOW()"
+            }).eq("id", record["id"]).execute()
+        else:
+            # 新規レコードを作成
+            # ルールタイプを判定
+            if shop_name and product_name:
+                rule_type = "shop_product"
+                priority = 10
+            elif shop_name:
+                rule_type = "shop_only"
+                priority = 20
+            elif official_name:
+                rule_type = "official"
+                priority = 30
+            elif general_name:
+                rule_type = "general"
+                priority = 40
+            else:
+                rule_type = "product"
+                priority = 50
+
+            db.table("60_ms_transaction_dictionary").insert({
+                "shop_name": shop_name,
+                "product_name": product_name,
+                "official_name": official_name,
+                "general_name": general_name,
+                "category": category,
+                "person": person,
+                "purpose": purpose,
+                "rule_type": rule_type,
+                "priority": priority,
+                "usage_count": 1
+            }).execute()
+
+    except Exception as e:
+        st.warning(f"辞書保存エラー: {e}")
+
+
 def show_receipt_detail(log: dict):
     """レシート詳細表示"""
 
@@ -428,9 +592,20 @@ def show_receipt_detail(log: dict):
                     if tax_included_amount and quantity:
                         tax_included_unit_price = tax_included_amount // quantity
 
+                    # 分類の階層表示（内部的には大中小の3階層、表示は最下層のみ）
+                    major = std.get("major_category") or ""
+                    middle = std.get("middle_category") or ""
+                    minor = std.get("minor_category") or ""
+
+                    # 表示用の分類（最下層のみ、なければ順に上位を表示）
+                    category_display = minor or middle or major or ""
+
                     df_data.append({
                         "_transaction_id": t["id"],  # 更新用（非表示）
                         "_std_id": std.get("id"),  # 更新用（非表示）
+                        "_major_category": major,  # 内部保持（非表示）
+                        "_middle_category": middle,  # 内部保持（非表示）
+                        "_minor_category": minor,  # 内部保持（非表示）
                         "商品名": t["product_name"],
                         "数量": quantity,
                         "表示額": displayed_amount if displayed_amount is not None else 0,
@@ -442,14 +617,99 @@ def show_receipt_detail(log: dict):
                         "単価": tax_included_unit_price if tax_included_unit_price is not None else 0,
                         "正式名": std.get("official_name") or "",
                         "物品名": t.get("item_name") or "",
-                        "大分類": std.get("major_category") or "",
-                        "小分類": std.get("minor_category") or "",
-                        "人物": std.get("person") or "",
-                        "名目": std.get("purpose") or "",
+                        "分類": category_display,
+                        "人物": std.get("person") or "家族",  # デフォルト: 家族
+                        "名目": std.get("purpose") or "日常",  # デフォルト: 日常
                         "要確認": "⚠️" if std.get("needs_review") else ""
                     })
 
                 df = pd.DataFrame(df_data)
+
+                # 人物と名目の選択肢を取得
+                person_options = ["家族", "パパ", "ママ", "絵麻", "育哉"]
+
+                # 名目の選択肢（DBから既存の値を取得 + デフォルト値）
+                existing_purposes = set()
+                for t in transactions.data:
+                    std = t.get("60_rd_standardized_items")
+                    if std and std.get("purpose"):
+                        existing_purposes.add(std.get("purpose"))
+                purpose_options = sorted(list(existing_purposes)) if existing_purposes else []
+                if "日常" not in purpose_options:
+                    purpose_options.insert(0, "日常")
+
+                # AI自動判定ボタン
+                st.divider()
+                col_ai1, col_ai2 = st.columns([3, 1])
+                with col_ai1:
+                    st.info("🤖 AI自動判定: 辞書テーブルを参照して、店舗名と商品名から分類・人物・名目を自動で設定します")
+                with col_ai2:
+                    if st.button("🤖 AI自動判定", type="secondary", key="ai_auto_classify"):
+                        # 店舗名を取得
+                        shop_name = receipt.get("shop_name", "")
+
+                        # 各商品に対してAI自動判定を実行
+                        auto_classified_count = 0
+                        for idx in df.index:
+                            product_name = df.loc[idx, "商品名"]
+                            official_name = df.loc[idx, "正式名"] or ""
+                            general_name = ""  # 現時点では未実装
+
+                            # AI自動判定
+                            result = auto_classify_transaction(
+                                db=db,
+                                shop_name=shop_name,
+                                product_name=product_name,
+                                official_name=official_name,
+                                general_name=general_name
+                            )
+
+                            if result:
+                                # 判定結果をdfに反映
+                                if result.get("category"):
+                                    df.loc[idx, "分類"] = result["category"]
+                                if result.get("person"):
+                                    df.loc[idx, "人物"] = result["person"]
+                                if result.get("purpose"):
+                                    df.loc[idx, "名目"] = result["purpose"]
+                                auto_classified_count += 1
+
+                        if auto_classified_count > 0:
+                            st.success(f"✅ {auto_classified_count}件の商品を自動判定しました。下の表で確認して、必要に応じて修正してください。")
+                            st.rerun()
+                        else:
+                            st.warning("辞書に該当するデータがありませんでした。手動で設定後、「辞書に保存」をチェックしてデータを更新してください。")
+
+                st.divider()
+
+                # 全行一括編集機能
+                with st.expander("🔧 全行一括編集", expanded=False):
+                    st.info("分類、人物、名目を全行に一括で適用できます。適用後、下の表で確認してから「データを更新」ボタンを押してください。")
+
+                    col1, col2, col3 = st.columns(3)
+
+                    with col1:
+                        bulk_category = st.text_input("分類（全行）", key="bulk_category", placeholder="例: 根菜")
+                        if st.button("✅ 分類を全行に適用", key="apply_bulk_category"):
+                            if bulk_category:
+                                for idx in df.index:
+                                    df.loc[idx, "分類"] = bulk_category
+                                st.success(f"分類を「{bulk_category}」に変更しました（表を確認後、下の「データを更新」ボタンを押してください）")
+
+                    with col2:
+                        bulk_person = st.selectbox("人物（全行）", options=person_options, index=0, key="bulk_person")
+                        if st.button("✅ 人物を全行に適用", key="apply_bulk_person"):
+                            for idx in df.index:
+                                df.loc[idx, "人物"] = bulk_person
+                            st.success(f"人物を「{bulk_person}」に変更しました（表を確認後、下の「データを更新」ボタンを押してください）")
+
+                    with col3:
+                        bulk_purpose_index = 0 if "日常" in purpose_options else 0
+                        bulk_purpose = st.selectbox("名目（全行）", options=purpose_options if purpose_options else ["日常"], index=bulk_purpose_index, key="bulk_purpose")
+                        if st.button("✅ 名目を全行に適用", key="apply_bulk_purpose"):
+                            for idx in df.index:
+                                df.loc[idx, "名目"] = bulk_purpose
+                            st.success(f"名目を「{bulk_purpose}」に変更しました（表を確認後、下の「データを更新」ボタンを押してください）")
 
                 # 編集可能なデータエディタ
                 edited_df = st.data_editor(
@@ -459,6 +719,9 @@ def show_receipt_detail(log: dict):
                     column_config={
                         "_transaction_id": None,  # 非表示
                         "_std_id": None,  # 非表示
+                        "_major_category": None,  # 非表示
+                        "_middle_category": None,  # 非表示
+                        "_minor_category": None,  # 非表示
                         "商品名": st.column_config.TextColumn("商品名", disabled=True),
                         "数量": st.column_config.NumberColumn("数量", min_value=1, step=1),
                         "表示額": st.column_config.NumberColumn("表示額", format="¥%d"),
@@ -468,35 +731,78 @@ def show_receipt_detail(log: dict):
                         "税額": st.column_config.NumberColumn("税額", format="¥%d"),
                         "税込価": st.column_config.NumberColumn("税込価", format="¥%d"),
                         "単価": st.column_config.NumberColumn("単価", format="¥%d", disabled=True),
+                        "分類": st.column_config.TextColumn("分類", width="medium"),
+                        "人物": st.column_config.SelectboxColumn("人物", options=person_options, default="家族"),
+                        "名目": st.column_config.SelectboxColumn("名目", options=purpose_options, default="日常") if purpose_options else st.column_config.TextColumn("名目"),
                     },
                     use_container_width=True
                 )
 
                 # 更新ボタン
-                if st.button("💾 データを更新", type="primary"):
+                col_update1, col_update2 = st.columns([3, 1])
+                with col_update1:
+                    save_to_dict = st.checkbox("辞書に保存（次回から自動判定に活用）", value=True, key="save_to_dict_check")
+                with col_update2:
+                    update_button = st.button("💾 データを更新", type="primary")
+
+                if update_button:
                     # 変更されたデータをDBに保存
                     updated_count = 0
                     for idx, row in edited_df.iterrows():
                         std_id = row["_std_id"]
+                        transaction_id = row["_transaction_id"]
                         if std_id:
                             # 本体単価を逆算（本体価 ÷ 数量）
                             quantity = row["数量"]
                             base_price = row["本体価"]
                             std_unit_price = base_price // quantity if quantity > 0 else 0
 
+                            # 分類の処理: 現時点では入力された分類を minor_category として保存
+                            # 将来的には階層構造のマスターテーブルから major/middle を自動判定
+                            category_value = row["分類"]
+
                             # 60_rd_standardized_itemsを更新
                             try:
                                 db.table("60_rd_standardized_items").update({
                                     "std_unit_price": std_unit_price,
                                     "tax_amount": row["税額"],
-                                    "std_amount": row["税込価"]
+                                    "std_amount": row["税込価"],
+                                    "minor_category": category_value,  # 分類を更新
+                                    "person": row["人物"],  # 人物を更新
+                                    "purpose": row["名目"],  # 名目を更新
                                 }).eq("id", std_id).execute()
                                 updated_count += 1
+
+                                # 辞書に保存（オプション）
+                                if save_to_dict and category_value and row["人物"] and row["名目"]:
+                                    # トランザクションデータから商品情報を取得
+                                    product_name = row["商品名"]
+                                    official_name = row["正式名"] or ""
+                                    general_name = ""  # 現時点では未実装
+
+                                    # 店舗名を取得
+                                    shop_name = receipt.get("shop_name", "")
+
+                                    # 辞書に保存
+                                    save_to_dictionary(
+                                        db=db,
+                                        shop_name=shop_name,
+                                        product_name=product_name,
+                                        official_name=official_name,
+                                        general_name=general_name,
+                                        category=category_value,
+                                        person=row["人物"],
+                                        purpose=row["名目"]
+                                    )
+
                             except Exception as e:
                                 st.error(f"更新エラー ({row['商品名']}): {e}")
 
                     if updated_count > 0:
-                        st.success(f"✅ {updated_count}件のデータを更新しました")
+                        msg = f"✅ {updated_count}件のデータを更新しました"
+                        if save_to_dict:
+                            msg += "（辞書に保存しました）"
+                        st.success(msg)
                         st.rerun()  # ページをリロードしてレシート情報サマリーも更新
 
                 # 合計金額・税額サマリー
@@ -902,28 +1208,35 @@ def show_receipt_detail(log: dict):
                                 )
 
                             with col_b:
-                                new_major_category = st.text_input(
-                                    "大分類",
-                                    value=std.get("major_category") or "",
-                                    key=f"major_{idx}"
-                                )
-
-                                new_minor_category = st.text_input(
-                                    "小分類",
-                                    value=std.get("minor_category") or "",
-                                    key=f"minor_{idx}"
+                                # 分類（最下層のみ表示）
+                                current_category = std.get("minor_category") or std.get("middle_category") or std.get("major_category") or ""
+                                new_category = st.text_input(
+                                    "分類",
+                                    value=current_category,
+                                    key=f"category_{idx}",
+                                    placeholder="例: 根菜"
                                 )
 
                             with col_c:
-                                new_person = st.text_input(
+                                # 人物（プルダウン）
+                                current_person = std.get("person") or "家族"
+                                person_index = person_options.index(current_person) if current_person in person_options else 0
+                                new_person = st.selectbox(
                                     "人物",
-                                    value=std.get("person") or "",
+                                    options=person_options,
+                                    index=person_index,
                                     key=f"person_{idx}"
                                 )
 
-                                new_purpose = st.text_input(
+                                # 名目（プルダウン）
+                                current_purpose = std.get("purpose") or "日常"
+                                if current_purpose not in purpose_options:
+                                    purpose_options.append(current_purpose)
+                                purpose_index = purpose_options.index(current_purpose) if current_purpose in purpose_options else 0
+                                new_purpose = st.selectbox(
                                     "名目",
-                                    value=std.get("purpose") or "",
+                                    options=purpose_options,
+                                    index=purpose_index,
                                     key=f"purpose_{idx}"
                                 )
 
@@ -941,8 +1254,7 @@ def show_receipt_detail(log: dict):
                                         "std_amount": new_amount,
                                         "tax_amount": new_tax_included,
                                         "official_name": new_official_name,
-                                        "major_category": new_major_category,
-                                        "minor_category": new_minor_category,
+                                        "minor_category": new_category,  # 分類を更新
                                         "person": new_person,
                                         "purpose": new_purpose
                                     }).eq("id", std["id"]).execute()
