@@ -790,6 +790,17 @@ def show_receipt_detail(log: dict):
                 html_table += '</table>'
                 st.markdown(html_table, unsafe_allow_html=True)
 
+                # CSVダウンロードボタンを追加
+                summary_df = pd.DataFrame(table_data)
+                csv_data = summary_df.to_csv(index=False, encoding='utf-8-sig')
+                st.download_button(
+                    label="📥 CSV形式でダウンロード",
+                    data=csv_data,
+                    file_name=f"receipt_summary_{receipt['shop_name']}_{receipt['transaction_date']}.csv",
+                    mime="text/csv",
+                    key="download_receipt_summary"
+                )
+
                 # 店名・日付（レシートから取得）
                 st.text(f"店名: {receipt['shop_name']}")
                 st.text(f"取引日: {receipt['transaction_date']}")
