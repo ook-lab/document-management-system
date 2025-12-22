@@ -1,27 +1,27 @@
 -- ====================================================================
 -- 値引き情報カラムの追加
 -- ====================================================================
--- 目的: 60_rd_transactions_new テーブルに値引き関連カラムを追加
+-- 目的: 60_rd_transactions テーブルに値引き関連カラムを追加
 -- 実行場所: Supabase SQL Editor
 -- ====================================================================
 
 BEGIN;
 
 -- 値引き金額カラムを追加
-ALTER TABLE "60_rd_transactions_new"
+ALTER TABLE "60_rd_transactions"
 ADD COLUMN IF NOT EXISTS discount_amount INTEGER DEFAULT 0;
 
 -- 値引き適用先カラムを追加（この値引きがどの商品に適用されるか）
-ALTER TABLE "60_rd_transactions_new"
-ADD COLUMN IF NOT EXISTS discount_applied_to UUID REFERENCES "60_rd_transactions_new"(id) ON DELETE SET NULL;
+ALTER TABLE "60_rd_transactions"
+ADD COLUMN IF NOT EXISTS discount_applied_to UUID REFERENCES "60_rd_transactions"(id) ON DELETE SET NULL;
 
 -- コメント追加
-COMMENT ON COLUMN "60_rd_transactions_new".discount_amount IS '値引き額（通常は負の値、例: -100）';
-COMMENT ON COLUMN "60_rd_transactions_new".discount_applied_to IS 'この値引きが適用される transaction_id（値引き行の場合のみ）';
+COMMENT ON COLUMN "60_rd_transactions".discount_amount IS '値引き額（通常は負の値、例: -100）';
+COMMENT ON COLUMN "60_rd_transactions".discount_applied_to IS 'この値引きが適用される transaction_id（値引き行の場合のみ）';
 
 -- インデックス追加
-CREATE INDEX IF NOT EXISTS idx_60_rd_trans_new_discount_applied
-    ON "60_rd_transactions_new"(discount_applied_to) WHERE discount_applied_to IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_60_rd_trans_discount_applied
+    ON "60_rd_transactions"(discount_applied_to) WHERE discount_applied_to IS NOT NULL;
 
 -- 完了メッセージ
 DO $$
