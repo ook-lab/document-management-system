@@ -96,12 +96,38 @@ class BaseProductIngestionPipeline(ABC):
         product_name = product.get("product_name", "")
         product_name_normalized = " ".join(product_name.replace("　", " ").split())
 
-        # 価格のパース
-        price_text = product.get("price", "")
-        try:
-            current_price = float(price_text.replace(",", "").replace("円", "").replace("¥", "").strip())
-        except (ValueError, AttributeError):
-            current_price = None
+        # 価格のパース（本体価格と税込価格の両方）
+        # 本体価格（税抜）
+        price = product.get("price")
+        current_price = None
+        if price is not None:
+            try:
+                if isinstance(price, (int, float)):
+                    current_price = float(price)
+                else:
+                    current_price = float(str(price).replace(",", "").replace("円", "").replace("¥", "").strip())
+            except (ValueError, AttributeError):
+                current_price = None
+
+        # 税込価格
+        price_tax_included = product.get("price_tax_included")
+        current_price_tax_included = None
+        if price_tax_included is not None:
+            try:
+                if isinstance(price_tax_included, (int, float)):
+                    current_price_tax_included = float(price_tax_included)
+                else:
+                    current_price_tax_included = float(str(price_tax_included).replace(",", "").replace("円", "").replace("¥", "").strip())
+            except (ValueError, AttributeError):
+                current_price_tax_included = None
+
+        # price_text: 元のテキスト形式を保持（本体価格 / 税込価格）
+        price_text_parts = []
+        if price is not None:
+            price_text_parts.append(f"本体¥{price}")
+        if price_tax_included is not None:
+            price_text_parts.append(f"税込¥{price_tax_included}")
+        price_text = " / ".join(price_text_parts) if price_text_parts else ""
 
         # メタデータ
         metadata = {
@@ -124,7 +150,7 @@ class BaseProductIngestionPipeline(ABC):
 
             # 価格情報
             "current_price": current_price,
-            "current_price_tax_included": current_price,
+            "current_price_tax_included": current_price_tax_included,
             "price_text": price_text,
 
             # 分類情報
