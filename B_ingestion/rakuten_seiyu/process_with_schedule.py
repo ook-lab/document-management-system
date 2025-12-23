@@ -175,16 +175,18 @@ class PoliteRakutenSeiyuPipeline:
                 logger.info("="*80)
 
                 try:
-                    # カテゴリーページにアクセス
-                    await self.pipeline.scraper.page.goto(cat['url'], wait_until="domcontentloaded")
-                    await self.polite_wait_between_pages()
+                    # カテゴリーの商品データを取得してSupabaseに保存
+                    result = await self.pipeline.process_category_all_pages(
+                        category_url=cat['url'],
+                        category_name=cat['name']
+                    )
 
-                    # ここで商品データを取得する処理を実装
-                    # （既存のスクレイピングロジックを呼び出す）
-                    # products = await self.pipeline.scrape_category_products(cat['url'])
-                    # await self.pipeline.save_products(products)
-
-                    logger.info(f"✅ カテゴリー {cat['name']} の処理完了")
+                    if result:
+                        logger.info(f"✅ カテゴリー {cat['name']} の処理完了")
+                        logger.info(f"   商品数: {result.get('total_products', 0)}件")
+                        logger.info(f"   新規: {result.get('new_products', 0)}件, 更新: {result.get('updated_products', 0)}件")
+                    else:
+                        logger.warning(f"⚠️ カテゴリー {cat['name']} の処理に問題がありました")
 
                     # 実行済みとしてマーク
                     self.manager.mark_as_run(self.store_name, cat["name"], today)
