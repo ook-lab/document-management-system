@@ -68,7 +68,7 @@ jobs:
       - name: 東急ストアスクレイピング
         if: ${{ github.event.inputs.store == 'all' || github.event.inputs.store == 'tokyu_store' || github.event_name == 'schedule' }}
         env:
-          TOKYU_STORE_EMAIL: ${{ secrets.TOKYU_STORE_EMAIL }}
+          TOKYU_STORE_LOGIN_ID: ${{ secrets.TOKYU_STORE_LOGIN_ID }}
           TOKYU_STORE_PASSWORD: ${{ secrets.TOKYU_STORE_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
@@ -80,7 +80,7 @@ jobs:
       - name: ダイエースクレイピング
         if: ${{ github.event.inputs.store == 'all' || github.event.inputs.store == 'daiei' || github.event_name == 'schedule' }}
         env:
-          DAIEI_EMAIL: ${{ secrets.DAIEI_EMAIL }}
+          DAIEI_LOGIN_ID: ${{ secrets.DAIEI_LOGIN_ID }}
           DAIEI_PASSWORD: ${{ secrets.DAIEI_PASSWORD }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}

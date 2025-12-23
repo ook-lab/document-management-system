@@ -93,9 +93,9 @@ GitHubリポジトリの `Settings > Secrets and variables > Actions` に以下�
 ```
 RAKUTEN_ID              # 楽天西友のログインID
 RAKUTEN_PASSWORD        # 楽天西友のパスワード
-TOKYU_STORE_EMAIL       # 東急ストアのメールアドレス
+TOKYU_STORE_LOGIN_ID    # 東急ストアのログインID（メールアドレス）
 TOKYU_STORE_PASSWORD    # 東急ストアのパスワード
-DAIEI_EMAIL             # ダイエーのメールアドレス
+DAIEI_LOGIN_ID          # ダイエーのログインID
 DAIEI_PASSWORD          # ダイエーのパスワード
 SUPABASE_URL            # Supabase URL
 SUPABASE_SERVICE_ROLE_KEY  # Supabase Service Role Key
