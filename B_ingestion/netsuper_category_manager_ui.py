@@ -9,6 +9,9 @@ import pandas as pd
 from datetime import datetime, timedelta, date
 from pathlib import Path
 import sys
+import subprocess
+import os
+import threading
 
 # プロジェクトルートをパスに追加
 root_dir = Path(__file__).parent.parent
@@ -30,6 +33,54 @@ if 'manager' not in st.session_state:
     st.session_state['manager'] = CategoryManager()
 
 manager = st.session_state['manager']
+
+# 店舗ごとのスクリプト設定
+STORE_SCRIPTS = {
+    "rakuten_seiyu": {
+        "module": "B_ingestion.rakuten_seiyu.process_with_schedule",
+        "display_name": "楽天西友ネットスーパー"
+    },
+    "tokyu_store": {
+        "module": "B_ingestion.tokyu_store.process_with_schedule",
+        "display_name": "東急ストア"
+    },
+    "daiei": {
+        "module": "B_ingestion.daiei.process_with_schedule",
+        "display_name": "ダイエーネットスーパー"
+    }
+}
+
+def run_manual_fetch(store_name: str, categories: list):
+    """選択されたカテゴリーの商品を今すぐ取り込む
+
+    Args:
+        store_name: 店舗名 (rakuten_seiyu, tokyu_store, daiei)
+        categories: 取り込むカテゴリー名のリスト
+    """
+    try:
+        # プロジェクトルートに移動してスクリプトを実行
+        script_module = STORE_SCRIPTS[store_name]["module"]
+
+        # Pythonスクリプトをサブプロセスで実行
+        # カテゴリーを環境変数として渡す
+        env = os.environ.copy()
+        env["MANUAL_CATEGORIES"] = ",".join(categories)
+
+        cmd = [sys.executable, "-m", script_module, "--manual"]
+
+        result = subprocess.run(
+            cmd,
+            cwd=root_dir,
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=3600  # 1時間タイムアウト
+        )
+
+        return result.returncode == 0, result.stdout, result.stderr
+
+    except Exception as e:
+        return False, "", str(e)
 
 # タブで店舗を切り替え
 tabs = st.tabs(["楽天西友", "東急ストア", "ダイエー", "設定"])
@@ -63,6 +114,56 @@ def show_store_categories(store_name: str, store_display_name: str):
             if cat.get("enabled", True) and manager.should_run_category(store_name, cat["name"], today)
         )
         st.metric("本日実行可能", runnable_count)
+
+    st.divider()
+
+    # 今すぐ取り込みセクション
+    st.subheader("🚀 商品データ取り込み")
+
+    col1, col2 = st.columns([3, 1])
+    with col1:
+        # カテゴリー選択（有効なカテゴリーのみ）
+        enabled_categories = [cat for cat in categories if cat.get("enabled", True)]
+        if enabled_categories:
+            selected_category_names = st.multiselect(
+                "取り込むカテゴリーを選択",
+                options=[cat["name"] for cat in enabled_categories],
+                default=None,
+                key=f"selected_categories_{store_name}"
+            )
+        else:
+            selected_category_names = []
+            st.info("有効なカテゴリーがありません")
+
+    with col2:
+        fetch_button_disabled = len(selected_category_names) == 0
+        if st.button(
+            "📥 今すぐ取り込み",
+            type="primary",
+            disabled=fetch_button_disabled,
+            key=f"fetch_{store_name}"
+        ):
+            if selected_category_names:
+                with st.spinner(f"{store_display_name} から商品データを取り込み中..."):
+                    success, stdout, stderr = run_manual_fetch(store_name, selected_category_names)
+
+                    if success:
+                        st.success(f"✅ {len(selected_category_names)}件のカテゴリーから商品データを取り込みました")
+                        # 実行済みとしてマーク
+                        for cat_name in selected_category_names:
+                            manager.mark_as_run(store_name, cat_name, datetime.now())
+                        st.rerun()
+                    else:
+                        st.error("❌ 取り込み中にエラーが発生しました")
+                        if stderr:
+                            with st.expander("エラー詳細"):
+                                st.code(stderr)
+                        if stdout:
+                            with st.expander("実行ログ"):
+                                st.code(stdout)
+
+    if selected_category_names:
+        st.caption(f"選択中: {len(selected_category_names)}件のカテゴリー")
 
     st.divider()
 

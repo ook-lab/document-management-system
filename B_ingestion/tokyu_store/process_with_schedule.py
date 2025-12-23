@@ -116,11 +116,21 @@ class PoliteTokyuStorePipeline:
         finally:
             await self.pipeline.close()
 
-    async def run_scheduled_categories(self):
-        """スケジュールに基づいてカテゴリーを処理"""
-        logger.info("="*80)
-        logger.info("東急ストアネットスーパー スケジュール実行開始")
-        logger.info("="*80)
+    async def run_scheduled_categories(self, manual_categories: List[str] = None):
+        """スケジュールに基づいてカテゴリーを処理
+
+        Args:
+            manual_categories: 手動実行時に指定されたカテゴリー名のリスト（Noneの場合はスケジュールに従う）
+        """
+        if manual_categories:
+            logger.info("="*80)
+            logger.info("東急ストアネットスーパー 手動実行開始")
+            logger.info(f"対象カテゴリー: {', '.join(manual_categories)}")
+            logger.info("="*80)
+        else:
+            logger.info("="*80)
+            logger.info("東急ストアネットスーパー スケジュール実行開始")
+            logger.info("="*80)
 
         # スクレイパー起動
         success = await self.pipeline.start()
@@ -137,13 +147,20 @@ class PoliteTokyuStorePipeline:
                 logger.warning("  python -m B_ingestion.tokyu_store.process_with_schedule --init")
                 return
 
-            # 今日実行すべきカテゴリーをフィルタリング
+            # 実行すべきカテゴリーをフィルタリング
             today = datetime.now()
             runnable_categories = []
 
-            for cat in categories:
-                if self.manager.should_run_category(self.store_name, cat["name"], today):
-                    runnable_categories.append(cat)
+            if manual_categories:
+                # 手動実行時: 指定されたカテゴリーのみ
+                for cat in categories:
+                    if cat["name"] in manual_categories:
+                        runnable_categories.append(cat)
+            else:
+                # スケジュール実行時: 今日実行すべきカテゴリー
+                for cat in categories:
+                    if self.manager.should_run_category(self.store_name, cat["name"], today):
+                        runnable_categories.append(cat)
 
             logger.info(f"📊 総カテゴリー数: {len(categories)}件")
             logger.info(f"✅ 本日実行対象: {len(runnable_categories)}件")
@@ -200,6 +217,7 @@ async def main():
 
     parser = argparse.ArgumentParser(description="東急ストアスクレイピング（スケジュール管理対応）")
     parser.add_argument("--init", action="store_true", help="カテゴリーを初期化（初回実行時のみ）")
+    parser.add_argument("--manual", action="store_true", help="手動実行モード（環境変数MANUAL_CATEGORIESからカテゴリーを取得）")
     parser.add_argument("--headless", action="store_true", default=True, help="ヘッドレスモード")
     parser.add_argument("--zip-code", default="158-0094", help="配達エリア郵便番号")
     args = parser.parse_args()
@@ -221,8 +239,21 @@ async def main():
     if args.init:
         # 初期化モード
         await pipeline.initialize_categories()
+    elif args.manual:
+        # 手動実行モード
+        manual_categories_str = os.getenv("MANUAL_CATEGORIES", "")
+        if not manual_categories_str:
+            logger.error("❌ 環境変数 MANUAL_CATEGORIES が設定されていません")
+            return
+
+        manual_categories = [cat.strip() for cat in manual_categories_str.split(",") if cat.strip()]
+        if not manual_categories:
+            logger.error("❌ カテゴリーが指定されていません")
+            return
+
+        await pipeline.run_scheduled_categories(manual_categories=manual_categories)
     else:
-        # 通常実行モード
+        # 通常実行モード（スケジュール）
         await pipeline.run_scheduled_categories()
 
 
