@@ -1442,19 +1442,31 @@ def show_daily_inbox():
     st.subheader("📥 日次承認インボックス")
     st.info("新規商品の分類結果を確認・承認します")
 
-    # 承認待ち商品を信頼度別に取得
-    try:
-        # まず全ての承認待ち商品を取得
-        all_pending = db.table('80_rd_products').select(
-            'id, product_name, product_name_normalized, general_name, category_id, classification_confidence, organization'
-        ).eq('needs_approval', True).execute()
+    # 初期化: セッション状態でデータを保持してリロードを最小化
+    if 'pending_products_data' not in st.session_state or st.session_state.get('refresh_pending_products', False):
+        try:
+            # データ取得（初回または明示的なリフレッシュ時のみ）
+            all_pending = db.table('80_rd_products').select(
+                'id, product_name, product_name_normalized, general_name, category_id, classification_confidence, organization'
+            ).eq('needs_approval', True).execute()
 
+            st.session_state['pending_products_data'] = all_pending.data
+            st.session_state['refresh_pending_products'] = False
+        except Exception as e:
+            st.error(f"データ取得エラー: {e}")
+            return
+
+    # セッション状態からデータを取得
+    all_pending_data = st.session_state.get('pending_products_data', [])
+
+    # 承認待ち商品を信頼度別に分類
+    try:
         # Pythonで信頼度別に分類（NULL対応）
         high_data = []
         medium_data = []
         low_data = []
 
-        for product in all_pending.data:
+        for product in all_pending_data:
             confidence = product.get('classification_confidence')
             if confidence is not None and confidence >= 0.9:
                 high_data.append(product)
@@ -1542,6 +1554,8 @@ def render_product_approval_table(products, title, icon):
                         "general_name": row['general_name']
                     }).eq('id', row['id']).execute()
                 st.success(f"{len(checked_rows)}件の修正を反映しました（未承認のまま）")
+                # データをリフレッシュ
+                st.session_state['refresh_pending_products'] = True
                 st.rerun()
             else:
                 st.warning("反映する項目を選択してください")
@@ -1559,6 +1573,8 @@ def render_product_approval_table(products, title, icon):
                         "needs_approval": False
                     }).eq('id', row['id']).execute()
                 st.success(f"{len(checked_rows)}件を修正して承認しました")
+                # データをリフレッシュ
+                st.session_state['refresh_pending_products'] = True
                 st.rerun()
             else:
                 st.warning("承認する項目を選択してください")
@@ -1569,21 +1585,33 @@ def show_bulk_clustering():
     st.subheader("✅ クラスタ一括承認")
     st.info("Geminiが自動生成したクラスタを確認・承認します")
 
-    try:
-        # 承認待ちクラスタを取得
-        clusters = db.table('99_tmp_gemini_clustering').select(
-            '*'
-        ).eq('approval_status', 'pending').execute()
+    # 初期化: セッション状態でデータを保持してリロードを最小化
+    if 'clustering_data' not in st.session_state or st.session_state.get('refresh_clustering', False):
+        try:
+            # データ取得（初回または明示的なリフレッシュ時のみ）
+            clusters = db.table('99_tmp_gemini_clustering').select(
+                '*'
+            ).eq('approval_status', 'pending').execute()
 
-        if not clusters.data:
-            st.success("承認待ちのクラスタはありません")
+            st.session_state['clustering_data'] = clusters.data
+            st.session_state['refresh_clustering'] = False
+        except Exception as e:
+            st.error(f"データ取得エラー: {e}")
             return
 
+    # セッション状態からデータを取得
+    clusters_data = st.session_state.get('clustering_data', [])
+
+    if not clusters_data:
+        st.success("承認待ちのクラスタはありません")
+        return
+
+    try:
         # カテゴリマスタを取得
         categories = db.table('60_ms_categories').select('id, name').execute()
         category_map = {cat["name"]: cat["id"] for cat in categories.data}
 
-        st.markdown(f"### 全{len(clusters.data)}クラスタ")
+        st.markdown(f"### 全{len(clusters_data)}クラスタ")
 
         df = pd.DataFrame([{
             "id": c["id"],
@@ -1593,7 +1621,7 @@ def show_bulk_clustering():
             "商品数": len(c["product_ids"]),
             "信頼度": f"{c['confidence_avg']:.1%}",
             "商品例": ", ".join(c["product_names"][:3]) + "..."
-        } for c in clusters.data])
+        } for c in clusters_data])
 
         edited_df = st.data_editor(
             df,
@@ -1626,7 +1654,7 @@ def show_bulk_clustering():
 
                 for _, row in approved_rows.iterrows():
                     # クラスタ情報を取得
-                    cluster = next(c for c in clusters.data if c["id"] == row["id"])
+                    cluster = next(c for c in clusters_data if c["id"] == row["id"])
                     general_name = cluster["general_name"]
                     product_ids = cluster["product_ids"]
                     product_names = cluster["product_names"]
@@ -1668,6 +1696,9 @@ def show_bulk_clustering():
                     }).eq('id', row["id"]).execute()
 
                 st.success(f"{len(approved_rows)}件のクラスタを承認しました")
+                # データをリフレッシュ
+                st.session_state['refresh_clustering'] = True
+                st.session_state['refresh_pending_products'] = True  # 商品データも更新
                 st.rerun()
 
     except Exception as e:
