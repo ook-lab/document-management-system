@@ -1413,11 +1413,12 @@ def show_product_classification_tab():
     st.header("🏷️ 商品分類管理")
 
     # サブタブ
-    subtab1, subtab2, subtab3, subtab4 = st.tabs([
+    subtab1, subtab2, subtab3, subtab4, subtab5 = st.tabs([
         "📥 日次承認インボックス",
         "🔍 承認済み商品の検索・編集",
         "✅ クラスタ承認",
-        "🌳 カテゴリ管理"
+        "🌳 カテゴリ管理",
+        "⚙️ ルール管理"
     ])
 
     with subtab1:
@@ -1431,6 +1432,9 @@ def show_product_classification_tab():
 
     with subtab4:
         show_category_tree()
+
+    with subtab5:
+        show_rule_management()
 
 
 def show_daily_inbox():
@@ -1672,72 +1676,98 @@ def show_bulk_clustering():
 
 def show_category_tree():
     """カテゴリツリー編集"""
-    st.subheader("🌳 カテゴリツリー管理")
-    st.info("カテゴリの階層構造を管理します")
+    st.subheader("🌳 カテゴリ管理")
+    st.info("1次分類（商品カテゴリー）、2次分類（費目）、名目を管理します")
+
+    # 3つのサブタブ
+    cat_tab1, cat_tab2, cat_tab3 = st.tabs([
+        "📦 1次分類（商品カテゴリー）",
+        "💰 2次分類（費目）",
+        "🎯 名目"
+    ])
+
+    with cat_tab1:
+        show_product_category_management()
+
+    with cat_tab2:
+        show_expense_category_management()
+
+    with cat_tab3:
+        show_purpose_management()
+
+
+def show_product_category_management():
+    """1次分類（商品カテゴリー）管理"""
+    st.markdown("### 📦 1次分類（商品カテゴリー）")
+    st.info("商品の物理的カテゴリー（文房具、ゲームソフト、食材など）")
 
     try:
         # カテゴリ取得
-        categories = db.table('60_ms_categories').select('*').order('name').execute()
+        categories = db.table('60_ms_product_categories').select('*').order('name').execute()
 
-        # ツリー構築
-        def build_tree(parent_id=None, level=0):
-            items = []
-            for cat in categories.data:
-                if cat.get("parent_id") == parent_id:
-                    items.append({
-                        "id": cat["id"],
-                        "name": cat["name"],
-                        "level": level,
-                        "is_expense": cat.get("is_expense", True),
-                        "parent_id": parent_id
-                    })
-                    items.extend(build_tree(cat["id"], level + 1))
-            return items
+        if not categories.data:
+            st.warning("カテゴリがありません。新規追加してください。")
+        else:
+            # ツリー構築
+            def build_tree(parent_id=None, level=0):
+                items = []
+                for cat in categories.data:
+                    if cat.get("parent_id") == parent_id:
+                        items.append({
+                            "id": cat["id"],
+                            "name": cat["name"],
+                            "level": level,
+                            "description": cat.get("description", ""),
+                            "parent_id": parent_id
+                        })
+                        items.extend(build_tree(cat["id"], level + 1))
+                return items
 
-        tree = build_tree()
+            tree = build_tree()
 
-        # ツリー表示
-        st.markdown("### 現在のカテゴリツリー")
+            # ツリー表示
+            st.markdown("#### 現在のカテゴリツリー")
 
-        for item in tree:
-            indent = "　" * item["level"] * 2
-            icon = "📁" if item["level"] == 0 else "📄"
-            expense_mark = "💰" if item["is_expense"] else "🔄"
+            for item in tree:
+                indent = "　" * item["level"] * 2
+                icon = "📁" if item["level"] == 0 else "📄"
 
-            col1, col2 = st.columns([4, 1])
-            with col1:
-                st.markdown(f"{indent}{icon} {item['name']} {expense_mark}")
-            with col2:
-                if st.button("🗑️", key=f"del_{item['id']}", help="削除"):
-                    db.table('60_ms_categories').delete().eq('id', item['id']).execute()
-                    st.success("削除しました")
-                    st.rerun()
+                col1, col2 = st.columns([4, 1])
+                with col1:
+                    desc_text = f" ({item['description']})" if item['description'] else ""
+                    st.markdown(f"{indent}{icon} {item['name']}{desc_text}")
+                with col2:
+                    if st.button("🗑️", key=f"del_prod_{item['id']}", help="削除"):
+                        db.table('60_ms_product_categories').delete().eq('id', item['id']).execute()
+                        st.success("削除しました")
+                        st.rerun()
 
         st.divider()
 
         # 新規追加フォーム
-        st.markdown("### 新規カテゴリ追加")
+        st.markdown("#### 新規カテゴリ追加")
 
         col1, col2, col3 = st.columns(3)
 
         with col1:
-            new_name = st.text_input("カテゴリ名")
+            new_name = st.text_input("カテゴリ名", key="new_prod_cat_name", placeholder="例: 野菜")
 
         with col2:
             parent_options = {"（親なし）": None}
-            parent_options.update({cat["name"]: cat["id"] for cat in categories.data})
-            selected_parent = st.selectbox("親カテゴリ", options=list(parent_options.keys()))
+            if categories.data:
+                parent_options.update({cat["name"]: cat["id"] for cat in categories.data})
+            selected_parent = st.selectbox("親カテゴリ", options=list(parent_options.keys()), key="new_prod_cat_parent")
 
         with col3:
-            is_expense = st.checkbox("支出カテゴリ", value=True)
+            new_desc = st.text_input("説明（任意）", key="new_prod_cat_desc", placeholder="例: 生鮮野菜")
 
-        if st.button("追加", type="primary"):
+        if st.button("追加", type="primary", key="add_prod_cat"):
             if new_name:
                 parent_id = parent_options[selected_parent]
-                db.table('60_ms_categories').insert({
+                db.table('60_ms_product_categories').insert({
                     "name": new_name,
-                    "is_expense": is_expense,
-                    "parent_id": parent_id
+                    "parent_id": parent_id,
+                    "description": new_desc if new_desc else None
                 }).execute()
                 st.success(f"カテゴリ「{new_name}」を追加しました")
                 st.rerun()
@@ -1746,6 +1776,324 @@ def show_category_tree():
 
     except Exception as e:
         st.error(f"エラー: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
+def show_expense_category_management():
+    """2次分類（費目）管理"""
+    st.markdown("### 💰 2次分類（費目）")
+    st.info("家計簿の費目（食費、教育費、娯楽費など）")
+
+    try:
+        # 費目取得
+        expense_cats = db.table('60_ms_expense_categories').select('*').order('display_order').execute()
+
+        if expense_cats.data:
+            st.markdown("#### 現在の費目一覧")
+
+            # テーブル表示
+            df_data = []
+            for cat in expense_cats.data:
+                df_data.append({
+                    "id": cat["id"],
+                    "名前": cat["name"],
+                    "説明": cat.get("description", ""),
+                    "表示順": cat.get("display_order", 100)
+                })
+
+            df = pd.DataFrame(df_data)
+
+            # データエディタで表示・編集
+            edited_df = st.data_editor(
+                df,
+                hide_index=True,
+                column_config={
+                    "id": None,  # 非表示
+                    "名前": st.column_config.TextColumn("名前", width="medium"),
+                    "説明": st.column_config.TextColumn("説明", width="large"),
+                    "表示順": st.column_config.NumberColumn("表示順", width="small")
+                },
+                num_rows="dynamic",  # 行の追加・削除を許可
+                use_container_width=True,
+                key="expense_cat_editor"
+            )
+
+            # 更新ボタン
+            if st.button("💾 変更を保存", key="save_expense_cats"):
+                for idx, row in edited_df.iterrows():
+                    cat_id = row.get("id")
+                    if cat_id:
+                        # 既存データを更新
+                        db.table('60_ms_expense_categories').update({
+                            "name": row["名前"],
+                            "description": row["説明"],
+                            "display_order": int(row["表示順"])
+                        }).eq("id", cat_id).execute()
+                st.success("変更を保存しました")
+                st.rerun()
+
+        st.divider()
+
+        # 新規追加フォーム
+        st.markdown("#### 新規費目追加")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            new_name = st.text_input("費目名", key="new_exp_cat_name", placeholder="例: 娯楽費")
+
+        with col2:
+            new_desc = st.text_input("説明（任意）", key="new_exp_cat_desc", placeholder="例: ゲーム、趣味など")
+
+        with col3:
+            new_order = st.number_input("表示順", min_value=1, value=100, key="new_exp_cat_order")
+
+        if st.button("追加", type="primary", key="add_exp_cat"):
+            if new_name:
+                db.table('60_ms_expense_categories').insert({
+                    "name": new_name,
+                    "description": new_desc if new_desc else None,
+                    "display_order": new_order
+                }).execute()
+                st.success(f"費目「{new_name}」を追加しました")
+                st.rerun()
+            else:
+                st.warning("費目名を入力してください")
+
+    except Exception as e:
+        st.error(f"エラー: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
+def show_purpose_management():
+    """名目管理"""
+    st.markdown("### 🎯 名目")
+    st.info("状況に応じて拡張可能な名目（日常、旅行、学校行事など）")
+
+    try:
+        # 名目取得
+        purposes = db.table('60_ms_purposes').select('*').order('display_order').execute()
+
+        if purposes.data:
+            st.markdown("#### 現在の名目一覧")
+
+            # テーブル表示
+            df_data = []
+            for purpose in purposes.data:
+                df_data.append({
+                    "id": purpose["id"],
+                    "名前": purpose["name"],
+                    "説明": purpose.get("description", ""),
+                    "表示順": purpose.get("display_order", 100)
+                })
+
+            df = pd.DataFrame(df_data)
+
+            # データエディタで表示・編集
+            edited_df = st.data_editor(
+                df,
+                hide_index=True,
+                column_config={
+                    "id": None,  # 非表示
+                    "名前": st.column_config.TextColumn("名前", width="medium"),
+                    "説明": st.column_config.TextColumn("説明", width="large"),
+                    "表示順": st.column_config.NumberColumn("表示順", width="small")
+                },
+                num_rows="dynamic",  # 行の追加・削除を許可
+                use_container_width=True,
+                key="purpose_editor"
+            )
+
+            # 更新ボタン
+            if st.button("💾 変更を保存", key="save_purposes"):
+                for idx, row in edited_df.iterrows():
+                    purpose_id = row.get("id")
+                    if purpose_id:
+                        # 既存データを更新
+                        db.table('60_ms_purposes').update({
+                            "name": row["名前"],
+                            "description": row["説明"],
+                            "display_order": int(row["表示順"])
+                        }).eq("id", purpose_id).execute()
+                st.success("変更を保存しました")
+                st.rerun()
+
+        st.divider()
+
+        # 新規追加フォーム
+        st.markdown("#### 新規名目追加")
+
+        col1, col2, col3 = st.columns(3)
+
+        with col1:
+            new_name = st.text_input("名目名", key="new_purpose_name", placeholder="例: 習い事")
+
+        with col2:
+            new_desc = st.text_input("説明（任意）", key="new_purpose_desc", placeholder="例: 習い事・塾など")
+
+        with col3:
+            new_order = st.number_input("表示順", min_value=1, value=100, key="new_purpose_order")
+
+        if st.button("追加", type="primary", key="add_purpose"):
+            if new_name:
+                db.table('60_ms_purposes').insert({
+                    "name": new_name,
+                    "description": new_desc if new_desc else None,
+                    "display_order": new_order
+                }).execute()
+                st.success(f"名目「{new_name}」を追加しました")
+                st.rerun()
+            else:
+                st.warning("名目名を入力してください")
+
+    except Exception as e:
+        st.error(f"エラー: {e}")
+        import traceback
+        st.code(traceback.format_exc())
+
+
+def show_rule_management():
+    """2次分類決定ルール管理"""
+    st.subheader("⚙️ 2次分類決定ルール")
+    st.info("名目、人物、1次分類から2次分類（費目）を決定するルールを管理します")
+
+    try:
+        # ルール一覧を取得（ビューを使用）
+        rules = db.table("v_expense_category_rules").select("*").execute()
+
+        if rules.data:
+            st.markdown("### 現在のルール一覧")
+            st.caption("優先度が高い順に表示（100=最優先）")
+
+            # テーブル表示
+            df_data = []
+            for rule in rules.data:
+                df_data.append({
+                    "id": rule["id"],
+                    "名目": rule.get("purpose") or "（任意）",
+                    "人物": rule.get("person") or "（任意）",
+                    "1次分類": rule.get("product_category") or "（任意）",
+                    "→ 費目": rule["expense_category"],
+                    "優先度": rule["priority"],
+                    "作成者": rule.get("created_by") or "手動"
+                })
+
+            df = pd.DataFrame(df_data)
+
+            # データエディタで表示
+            st.dataframe(
+                df,
+                hide_index=True,
+                column_config={
+                    "id": None,  # 非表示
+                    "名目": st.column_config.TextColumn("名目", width="small"),
+                    "人物": st.column_config.TextColumn("人物", width="small"),
+                    "1次分類": st.column_config.TextColumn("1次分類", width="medium"),
+                    "→ 費目": st.column_config.TextColumn("→ 費目", width="medium"),
+                    "優先度": st.column_config.NumberColumn("優先度", width="small"),
+                    "作成者": st.column_config.TextColumn("作成者", width="small")
+                },
+                use_container_width=True
+            )
+
+            # 削除機能
+            st.markdown("#### ルールの削除")
+            rule_to_delete = st.selectbox(
+                "削除するルールを選択",
+                options=[f"{r['名目']} + {r['人物']} + {r['1次分類']} → {r['→ 費目']}" for r in df_data],
+                key="rule_to_delete"
+            )
+
+            if st.button("🗑️ 選択したルールを削除", key="delete_rule"):
+                # 選択されたルールのIDを取得
+                selected_idx = [f"{r['名目']} + {r['人物']} + {r['1次分類']} → {r['→ 費目']}" for r in df_data].index(rule_to_delete)
+                rule_id = df_data[selected_idx]["id"]
+
+                db.table("60_ms_expense_category_rules").delete().eq("id", rule_id).execute()
+                st.success("ルールを削除しました")
+                st.rerun()
+
+        st.divider()
+
+        # 新規ルール追加フォーム
+        st.markdown("### 新規ルール追加")
+
+        # 選択肢を取得
+        purposes = db.table("60_ms_purposes").select("id, name").order("display_order").execute()
+        purpose_options = {"（任意）": None}
+        if purposes.data:
+            purpose_options.update({p["name"]: p["id"] for p in purposes.data})
+
+        product_cats = db.table("60_ms_product_categories").select("id, name").order("name").execute()
+        product_cat_options = {"（任意）": None}
+        if product_cats.data:
+            product_cat_options.update({c["name"]: c["id"] for c in product_cats.data})
+
+        expense_cats = db.table("60_ms_expense_categories").select("id, name").order("display_order").execute()
+        expense_cat_options = {}
+        if expense_cats.data:
+            expense_cat_options.update({c["name"]: c["id"] for c in expense_cats.data})
+
+        person_options_list = ["（任意）", "家族", "パパ", "ママ", "絵麻", "育哉"]
+
+        # フォーム
+        col1, col2, col3, col4 = st.columns(4)
+
+        with col1:
+            selected_purpose = st.selectbox("名目", options=list(purpose_options.keys()), key="new_rule_purpose")
+
+        with col2:
+            selected_person = st.selectbox("人物", options=person_options_list, key="new_rule_person")
+
+        with col3:
+            selected_product_cat = st.selectbox("1次分類", options=list(product_cat_options.keys()), key="new_rule_product_cat")
+
+        with col4:
+            selected_expense_cat = st.selectbox("→ 費目（必須）", options=list(expense_cat_options.keys()), key="new_rule_expense_cat")
+
+        # 優先度を自動計算
+        priority = 50  # デフォルト
+        if selected_purpose != "（任意）" and selected_person != "（任意）" and selected_product_cat != "（任意）":
+            priority = 80  # 全て指定
+        elif selected_purpose != "（任意）" and (selected_person != "（任意）" or selected_product_cat != "（任意）"):
+            priority = 90  # 名目 + (人物 or 1次分類)
+        elif selected_purpose != "（任意）":
+            priority = 100  # 名目のみ
+        elif selected_person != "（任意）" and selected_product_cat != "（任意）":
+            priority = 50  # 人物 + 1次分類
+        elif selected_product_cat != "（任意）":
+            priority = 30  # 1次分類のみ
+
+        st.info(f"優先度: {priority} （自動計算）")
+
+        if st.button("➕ ルールを追加", type="primary", key="add_rule"):
+            if not selected_expense_cat or selected_expense_cat not in expense_cat_options:
+                st.warning("費目を選択してください")
+            else:
+                # ルールを挿入
+                purpose_id = purpose_options[selected_purpose]
+                person_value = None if selected_person == "（任意）" else selected_person
+                product_cat_id = product_cat_options[selected_product_cat]
+                expense_cat_id = expense_cat_options[selected_expense_cat]
+
+                db.table("60_ms_expense_category_rules").insert({
+                    "purpose_id": purpose_id,
+                    "person": person_value,
+                    "product_category_id": product_cat_id,
+                    "expense_category_id": expense_cat_id,
+                    "priority": priority,
+                    "created_by": "manual"
+                }).execute()
+
+                st.success(f"ルールを追加しました: {selected_purpose} + {selected_person} + {selected_product_cat} → {selected_expense_cat}")
+                st.rerun()
+
+    except Exception as e:
+        st.error(f"エラー: {e}")
+        import traceback
+        st.code(traceback.format_exc())
 
 
 def show_approved_products_search():
