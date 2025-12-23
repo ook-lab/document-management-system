@@ -6,9 +6,20 @@ set -e
 
 # プロジェクトルートの.envファイルを読み込む
 if [ -f "../.env" ]; then
-    export $(grep -v '^#' ../.env | grep -v '^$' | xargs)
+    set -a
+    source ../.env
+    set +a
 else
     echo "エラー: ../.env ファイルが見つかりません"
+    exit 1
+fi
+
+# 環境変数の確認
+echo "SUPABASE_URL: ${SUPABASE_URL:0:30}..." # 最初の30文字のみ表示
+echo "SUPABASE_KEY: ${SUPABASE_KEY:0:30}..." # 最初の30文字のみ表示
+
+if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
+    echo "エラー: SUPABASE_URL または SUPABASE_KEY が設定されていません"
     exit 1
 fi
 
