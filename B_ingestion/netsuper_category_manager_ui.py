@@ -147,24 +147,27 @@ def show_store_categories(store_name: str, store_display_name: str):
                 with st.spinner(f"{store_display_name} から商品データを取り込み中..."):
                     success, stdout, stderr = run_manual_fetch(store_name, selected_category_names)
 
-                    if success:
-                        st.success(f"✅ {len(selected_category_names)}件のカテゴリーから商品データを取り込みました")
-                        # 実行済みとしてマーク
-                        for cat_name in selected_category_names:
-                            manager.mark_as_run(store_name, cat_name, datetime.now())
-                        # 成功時もログを表示
-                        if stdout:
-                            with st.expander("📄 実行ログを表示"):
-                                st.code(stdout)
+                # 実行結果を表示（rerunの前に表示する）
+                if success:
+                    st.success(f"✅ {len(selected_category_names)}件のカテゴリーから商品データを取り込みました")
+                    # 実行済みとしてマーク
+                    for cat_name in selected_category_names:
+                        manager.mark_as_run(store_name, cat_name, datetime.now())
+                    # 成功時もログを表示
+                    if stdout:
+                        with st.expander("📄 実行ログを表示", expanded=True):
+                            st.code(stdout, language="log")
+                    # rerunボタンを表示（自動rerunしない）
+                    if st.button("🔄 画面を更新", key=f"reload_{store_name}"):
                         st.rerun()
-                    else:
-                        st.error("❌ 取り込み中にエラーが発生しました")
-                        if stderr:
-                            with st.expander("エラー詳細"):
-                                st.code(stderr)
-                        if stdout:
-                            with st.expander("実行ログ"):
-                                st.code(stdout)
+                else:
+                    st.error("❌ 取り込み中にエラーが発生しました")
+                    if stderr:
+                        with st.expander("❌ エラー詳細", expanded=True):
+                            st.code(stderr, language="log")
+                    if stdout:
+                        with st.expander("📄 実行ログ"):
+                            st.code(stdout, language="log")
 
     if selected_category_names:
         st.caption(f"選択中: {len(selected_category_names)}件のカテゴリー")
