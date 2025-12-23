@@ -95,83 +95,19 @@ def main():
 
 def show_receipt_review_tab():
     """レシートレビュータブ"""
-    # サイドバー：Google Driveから取り込み
+    # サイドバー：自動取り込み情報
     st.sidebar.header("📥 レシート取り込み")
 
-    with st.sidebar.expander("Google Driveから取り込む"):
-        st.markdown("**00_Inbox_Easy** から最新のレシート画像を取り込みます")
+    with st.sidebar.expander("ℹ️ 自動取り込みについて"):
+        st.markdown("""
+        **レシートは自動的に取り込まれます**
 
-        col1, col2 = st.columns(2)
+        - Google Drive の Inbox フォルダに画像を配置すると、1時間ごとに自動処理されます
+        - 処理成功 → Archive フォルダに移動
+        - 処理失敗 → Error フォルダに移動
 
-        with col1:
-            limit = st.number_input("取り込み件数", min_value=1, max_value=10, value=3, key="import_limit")
-
-        with col2:
-            if st.button("🚀 取り込み開始", key="start_import"):
-                with st.spinner("レシート画像を取り込み中..."):
-                    import subprocess
-                    import sys
-                    from pathlib import Path
-
-                    try:
-                        # Pythonスクリプトのパスを取得
-                        script_path = Path(__file__).parent / "reimport_receipts_from_drive.py"
-
-                        # プロジェクトルートディレクトリを取得
-                        project_root = Path(__file__).parent.parent
-
-                        # 環境変数にPYTHONPATHを設定
-                        import os
-                        env = os.environ.copy()
-                        env['PYTHONPATH'] = str(project_root)
-
-                        # Streamlit CloudのSecretsから環境変数を渡す
-                        if "KAKEIBO_INBOX_EASY_FOLDER_ID" in st.secrets:
-                            env['KAKEIBO_INBOX_EASY_FOLDER_ID'] = st.secrets["KAKEIBO_INBOX_EASY_FOLDER_ID"]
-                            st.info(f"✅ INBOX_EASY_FOLDER_ID を設定: {st.secrets['KAKEIBO_INBOX_EASY_FOLDER_ID'][:20]}...")
-                        else:
-                            st.warning("⚠️ INBOX_EASY_FOLDER_ID がSecretsに見つかりません")
-
-                        if "KAKEIBO_INBOX_HARD_FOLDER_ID" in st.secrets:
-                            env['KAKEIBO_INBOX_HARD_FOLDER_ID'] = st.secrets["KAKEIBO_INBOX_HARD_FOLDER_ID"]
-                            st.info(f"✅ INBOX_HARD_FOLDER_ID を設定: {st.secrets['KAKEIBO_INBOX_HARD_FOLDER_ID'][:20]}...")
-                        else:
-                            st.warning("⚠️ INBOX_HARD_FOLDER_ID がSecretsに見つかりません")
-
-                        # subprocess でスクリプトを実行
-                        result = subprocess.run(
-                            [sys.executable, str(script_path), f"--limit={limit}"],
-                            capture_output=True,
-                            text=True,
-                            timeout=600,
-                            env=env,
-                            cwd=str(project_root)
-                        )
-
-                        # 標準出力を表示
-                        if result.stdout:
-                            st.text("=== 実行ログ ===")
-                            st.code(result.stdout, language="log")
-
-                        # 標準エラー出力を表示
-                        if result.stderr:
-                            st.warning("=== エラー/警告 ===")
-                            st.code(result.stderr, language="log")
-
-                        if result.returncode == 0:
-                            st.success(f"✅ 処理が完了しました！（終了コード: {result.returncode}）")
-                            st.info("数秒待ってからページをリロードしてください")
-                            if st.button("🔄 今すぐリロード"):
-                                st.rerun()
-                        else:
-                            st.error(f"❌ エラーが発生しました（終了コード: {result.returncode}）")
-
-                    except subprocess.TimeoutExpired:
-                        st.warning("⏱️ タイムアウトしました。処理に時間がかかっています。")
-                    except Exception as e:
-                        st.error(f"エラー: {e}")
-                        import traceback
-                        st.code(traceback.format_exc())
+        手動で取り込む場合は、GitHubの Actions タブから実行できます。
+        """)
 
         st.divider()
 

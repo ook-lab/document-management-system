@@ -240,34 +240,42 @@ streamlit
 
 ## 使い方
 
-### 自動処理（定期実行）
+### 自動処理（GitHub Actions - 推奨）
 
-#### 1回だけ実行（テスト）
+**レシートは自動的に取り込まれます**
+
+Google Drive の Inbox フォルダに画像を配置すると、GitHub Actions が1時間ごとに自動処理します。
+
+#### GitHub Actions のセットアップ
+
+1. **リポジトリの Settings > Secrets and variables > Actions に以下のSecretsを追加:**
+
+   ```
+   GCP_SERVICE_ACCOUNT         # service_account.json の内容（JSON形式）
+   KAKEIBO_INBOX_EASY_FOLDER_ID   # Inbox_Easy フォルダID
+   KAKEIBO_INBOX_HARD_FOLDER_ID   # Inbox_Hard フォルダID
+   KAKEIBO_ARCHIVE_FOLDER_ID      # Archive フォルダID
+   KAKEIBO_ERROR_FOLDER_ID        # Error フォルダID
+   GOOGLE_AI_API_KEY              # Gemini API キー
+   SUPABASE_URL                   # Supabase プロジェクトURL
+   SUPABASE_SERVICE_ROLE_KEY      # Supabase Service Role キー
+   ```
+
+2. **定期実行スケジュール:**
+   - 毎時0分に自動実行（`.github/workflows/import-receipts.yml`）
+   - 処理成功 → Archive フォルダに移動
+   - 処理失敗 → Error フォルダに移動
+
+3. **手動実行:**
+   - GitHub の Actions タブから「Import Receipts from Google Drive」を選択
+   - 「Run workflow」ボタンをクリック
+   - 処理件数を指定して実行
+
+#### ローカルでテスト実行
+
 ```bash
-python -m K_kakeibo.main --once
-```
-
-#### 定期実行モード（5分ごと監視）
-```bash
-python -m K_kakeibo.main
-```
-
-#### バックグラウンド実行（推奨）
-
-**Mac/Linux:**
-```bash
-# cronに登録
-crontab -e
-
-# 5分ごとに実行
-*/5 * * * * cd /path/to/project && /path/to/venv/bin/python -m K_kakeibo.main --once
-```
-
-**Windows:**
-```powershell
-# タスクスケジューラに登録
-# トリガー: 5分ごと
-# 操作: python.exe -m K_kakeibo.main --once
+# 最大10件を処理
+python K_kakeibo/reimport_receipts_from_drive.py --limit=10
 ```
 
 ### 手動レビューUI

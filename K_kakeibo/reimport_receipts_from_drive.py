@@ -17,7 +17,13 @@ from loguru import logger
 
 from A_common.connectors.google_drive import GoogleDriveConnector
 from G_unified_pipeline import UnifiedDocumentPipeline
-from K_kakeibo.config import INBOX_EASY_FOLDER_ID, INBOX_HARD_FOLDER_ID, TEMP_DIR
+from K_kakeibo.config import (
+    INBOX_EASY_FOLDER_ID,
+    INBOX_HARD_FOLDER_ID,
+    ARCHIVE_FOLDER_ID,
+    ERROR_FOLDER_ID,
+    TEMP_DIR
+)
 
 
 class ReceiptReimporter:
@@ -28,6 +34,8 @@ class ReceiptReimporter:
         self.pipeline = UnifiedDocumentPipeline()
         self.temp_dir = Path(TEMP_DIR)
         self.temp_dir.mkdir(parents=True, exist_ok=True)
+        self.archive_folder_id = ARCHIVE_FOLDER_ID
+        self.error_folder_id = ERROR_FOLDER_ID
 
     def list_receipt_images(self, folder_id: str) -> List[Dict]:
         """
@@ -119,15 +127,51 @@ class ReceiptReimporter:
                 logger.success(f"✅ 処理成功: {file_name}")
                 logger.info(f"  receipt_id: {result.get('receipt_id')}")
                 logger.info(f"  transaction_ids: {len(result.get('transaction_ids', []))}件")
+
+                # 処理成功 → Archive フォルダに移動
+                if self.archive_folder_id:
+                    move_success = self.drive.move_file(file_id, self.archive_folder_id)
+                    if move_success:
+                        logger.info(f"📁 ファイルをArchiveに移動: {file_name}")
+                    else:
+                        logger.warning(f"⚠️ ファイル移動失敗（処理は成功）: {file_name}")
+                else:
+                    logger.warning("ARCHIVE_FOLDER_ID が設定されていないため、ファイルを移動できません")
+
                 return {'success': True, 'file_name': file_name, 'result': result}
             else:
                 error_msg = result.get('error', 'unknown error')
                 logger.error(f"❌ 処理失敗: {file_name} - {error_msg}")
+
+                # 処理失敗 → Error フォルダに移動
+                if self.error_folder_id:
+                    move_success = self.drive.move_file(file_id, self.error_folder_id)
+                    if move_success:
+                        logger.info(f"📁 ファイルをErrorに移動: {file_name}")
+                    else:
+                        logger.warning(f"⚠️ ファイル移動失敗: {file_name}")
+                else:
+                    logger.warning("ERROR_FOLDER_ID が設定されていないため、ファイルを移動できません")
+
                 return {'success': False, 'file_name': file_name, 'error': error_msg}
 
         except Exception as e:
             logger.error(f"❌ 処理エラー: {file_name} - {e}")
             logger.exception(e)
+
+            # 例外発生 → Error フォルダに移動
+            if self.error_folder_id:
+                try:
+                    move_success = self.drive.move_file(file_id, self.error_folder_id)
+                    if move_success:
+                        logger.info(f"📁 ファイルをErrorに移動: {file_name}")
+                    else:
+                        logger.warning(f"⚠️ ファイル移動失敗: {file_name}")
+                except Exception as move_error:
+                    logger.error(f"ファイル移動中にエラー: {move_error}")
+            else:
+                logger.warning("ERROR_FOLDER_ID が設定されていないため、ファイルを移動できません")
+
             return {'success': False, 'file_name': file_name, 'error': str(e)}
 
         finally:
