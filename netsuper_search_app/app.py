@@ -35,7 +35,17 @@ query_params = st.query_params
 default_query = query_params.get("q", "")
 
 # 検索欄
-search_query = st.text_input("🔍 商品名を入力", value=default_query, placeholder="例: 牛乳、卵、パン")
+st.subheader("🔍 商品を検索")
+col1, col2 = st.columns([4, 1])
+with col1:
+    search_query = st.text_input("商品名", value=default_query, placeholder="例: 牛乳、卵、パン", label_visibility="collapsed")
+with col2:
+    search_button = st.button("検索", type="primary", use_container_width=True)
+
+# 検索ボタンが押されたらクエリパラメータを更新
+if search_button and search_query:
+    st.query_params.update(q=search_query)
+    st.rerun()
 
 if search_query:
     # 80_rd_productsから検索
@@ -49,15 +59,15 @@ if search_query:
         ).ilike(
             'product_name',
             f'%{search_query}%'
-        ).not_.is_(
-            'current_price_tax_included',
-            'null'
         ).order(
             'current_price_tax_included',
             desc=False
         ).limit(20).execute()
 
         products = result.data
+
+        # current_price_tax_includedがnullまたは0の商品を除外
+        products = [p for p in products if p.get('current_price_tax_included') and float(p.get('current_price_tax_included', 0)) > 0]
 
         if products:
             st.success(f"✅ {len(products)}件の商品が見つかりました")
