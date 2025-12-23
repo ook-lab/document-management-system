@@ -147,6 +147,9 @@ def show_store_categories(store_name: str, store_display_name: str):
                 with st.spinner(f"{store_display_name} から商品データを取り込み中..."):
                     success, stdout, stderr = run_manual_fetch(store_name, selected_category_names)
 
+                # デバッグ情報
+                st.info(f"実行結果: success={success}, stdout文字数={len(stdout) if stdout else 0}, stderr文字数={len(stderr) if stderr else 0}")
+
                 # 実行結果を表示（rerunの前に表示する）
                 if success:
                     st.success(f"✅ {len(selected_category_names)}件のカテゴリーから商品データを取り込みました")
@@ -157,6 +160,8 @@ def show_store_categories(store_name: str, store_display_name: str):
                     if stdout:
                         with st.expander("📄 実行ログを表示", expanded=True):
                             st.code(stdout, language="log")
+                    else:
+                        st.warning("⚠️ 実行ログが空です（stdoutなし）")
                     # rerunボタンを表示（自動rerunしない）
                     if st.button("🔄 画面を更新", key=f"reload_{store_name}"):
                         st.rerun()
@@ -165,9 +170,13 @@ def show_store_categories(store_name: str, store_display_name: str):
                     if stderr:
                         with st.expander("❌ エラー詳細", expanded=True):
                             st.code(stderr, language="log")
+                    else:
+                        st.warning("⚠️ エラーログが空です（stderrなし）")
                     if stdout:
                         with st.expander("📄 実行ログ"):
                             st.code(stdout, language="log")
+                    else:
+                        st.warning("⚠️ 実行ログも空です（stdoutなし）")
 
     if selected_category_names:
         st.caption(f"選択中: {len(selected_category_names)}件のカテゴリー")
