@@ -6,7 +6,7 @@ Streamlitを使用して、カテゴリーごとの実行スケジュールを�
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 from pathlib import Path
 import sys
 
@@ -73,10 +73,14 @@ def show_store_categories(store_name: str, store_display_name: str):
     df_data = []
     for cat in categories:
         next_run = manager.get_next_run_date(store_name, cat["name"])
+
+        # 文字列の日付をdatetimeオブジェクトに変換
+        start_date = datetime.strptime(cat["start_date"], "%Y-%m-%d").date()
+
         df_data.append({
             "名前": cat["name"],
             "有効": cat.get("enabled", True),
-            "開始日": cat["start_date"],
+            "開始日": start_date,
             "インターバル（日）": cat["interval_days"],
             "前回実行": cat.get("last_run", "未実行"),
             "次回実行予定": next_run or "—",
@@ -115,12 +119,19 @@ def show_store_categories(store_name: str, store_display_name: str):
             # 変更内容を反映
             for idx, row in edited_df.iterrows():
                 category_name = row["名前"]
+                # 日付オブジェクトを文字列に変換
+                start_date_value = row["開始日"]
+                if isinstance(start_date_value, (datetime, date)):
+                    start_date_str = start_date_value.strftime("%Y-%m-%d")
+                else:
+                    start_date_str = start_date_value
+
                 manager.update_category(
                     store_name,
                     category_name,
                     {
                         "enabled": row["有効"],
-                        "start_date": row["開始日"].strftime("%Y-%m-%d") if isinstance(row["開始日"], datetime) else row["開始日"],
+                        "start_date": start_date_str,
                         "interval_days": int(row["インターバル（日）"]),
                         "notes": row["備考"]
                     }
