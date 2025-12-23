@@ -105,7 +105,7 @@ def show_store_categories(store_name: str, store_display_name: str):
             "備考": st.column_config.TextColumn("備考", width="large")
         },
         hide_index=True,
-        width=None,
+        use_container_width=True,
         key=f"editor_{store_name}"
     )
 
