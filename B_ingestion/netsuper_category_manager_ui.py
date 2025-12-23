@@ -110,7 +110,7 @@ def show_store_categories(store_name: str, store_display_name: str):
     )
 
     # ボタン行
-    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+    col1, col2, col3 = st.columns([2, 1, 1])
 
     with col1:
         if st.button("💾 変更を保存", type="primary", key=f"save_{store_name}"):
@@ -131,48 +131,13 @@ def show_store_categories(store_name: str, store_display_name: str):
             st.rerun()
 
     with col2:
-        # 2分後に実行ボタン
-        # 選択可能なカテゴリーのリストを作成
-        enabled_category_names = [cat["name"] for cat in categories if cat.get("enabled", True)]
-
-        if enabled_category_names:
-            # セッション状態で選択を保持
-            if f"selected_for_2min_{store_name}" not in st.session_state:
-                st.session_state[f"selected_for_2min_{store_name}"] = []
-
-            selected_for_2min = st.multiselect(
-                "2分後実行するカテゴリー",
-                options=enabled_category_names,
-                default=st.session_state[f"selected_for_2min_{store_name}"],
-                key=f"multiselect_2min_{store_name}"
-            )
-            st.session_state[f"selected_for_2min_{store_name}"] = selected_for_2min
-
-            if st.button("⏱️ 2分後に実行", disabled=len(selected_for_2min) == 0, key=f"set_2min_{store_name}"):
-                # 2分後の日時を計算
-                two_min_later = datetime.now() + timedelta(minutes=2)
-                next_run_str = two_min_later.strftime("%Y-%m-%d %H:%M")
-
-                # 選択されたカテゴリーの次回実行日時を更新
-                for cat_name in selected_for_2min:
-                    manager.update_category(
-                        store_name,
-                        cat_name,
-                        {"next_run_datetime": next_run_str}
-                    )
-
-                st.success(f"✅ {len(selected_for_2min)}件のカテゴリーを2分後（{next_run_str}）に実行するよう設定しました")
-                st.info("💡 GitHub Actionsが毎日午前2時に実行され、設定時刻を過ぎているカテゴリーが処理されます")
-                st.rerun()
-
-    with col3:
         if st.button("🔄 最終実行日をリセット", key=f"reset_{store_name}"):
             for cat in categories:
                 manager.update_category(store_name, cat["name"], {"last_run_datetime": None})
             st.success("✅ すべてのカテゴリーの最終実行日をリセットしました")
             st.rerun()
 
-    with col4:
+    with col3:
         if st.button("✅ すべて有効化", key=f"enable_all_{store_name}"):
             for cat in categories:
                 manager.update_category(store_name, cat["name"], {"enabled": True})
@@ -196,10 +161,20 @@ def show_store_categories(store_name: str, store_display_name: str):
            - 計算式: `(実行日 + インターバル日数 + 1日) の 午前1時`
            - 例: 12/24実行、インターバル7日 → 次回は 1/1 01:00
 
-        3. **2分後に実行ボタン**
-           - カテゴリーを選択して押すと、次回実行日時が「現在+2分」に設定される
-           - 次回のGitHub Actions実行時（毎日午前2時）に処理される
-           - つまり、翌日午前2時に実行される
+        3. **手動実行（ローカルのターミナルから）**
+           ```bash
+           # 楽天西友 - 特定カテゴリーを手動実行
+           MANUAL_CATEGORIES="野菜,果物" python -m B_ingestion.rakuten_seiyu.process_with_schedule --manual
+
+           # 東急ストア - 特定カテゴリーを手動実行
+           MANUAL_CATEGORIES="野菜,果物" python -m B_ingestion.tokyu_store.process_with_schedule --manual
+
+           # ダイエー - 特定カテゴリーを手動実行
+           MANUAL_CATEGORIES="野菜・果物" python -m B_ingestion.daiei.process_with_schedule --manual
+
+           # スケジュール通りに実行（オプション指定なし）
+           python -m B_ingestion.rakuten_seiyu.process_with_schedule
+           ```
 
         ### 例
 
@@ -207,9 +182,8 @@ def show_store_categories(store_name: str, store_display_name: str):
           - 12/28 午前2時のGitHub Actions実行時に処理
           - 次回実行日時が自動的に 1/5 01:00 に更新
 
-        - **即時実行したい場合**:
+        - **翌日午前2時に実行したい場合**:
           - 次回実行日時を過去の日時（例: 2025-12-23 00:00）に設定
-          - または「2分後に実行」ボタンを押す
           - 翌日午前2時のGitHub Actions実行時に処理される
         """)
 
