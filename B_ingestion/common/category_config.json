@@ -456,12 +456,156 @@
   "daiei": [
     {
       "name": "野菜・果物",
-      "url": "https://daiei.eorder.ne.jp/category/",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1001",
       "enabled": true,
       "start_date": "2025-12-23",
       "interval_days": 14,
       "last_run": null,
       "notes": ""
+    },
+    {
+      "name": "肉・加工品",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1002",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "魚",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1003",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "惣菜・弁当",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1004",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "パン・乳製品",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1005",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "冷凍食品・アイス",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1006",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "冷蔵食品",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1007",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "調味料・即席食品",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1008",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "米・乾物",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1009",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "菓子",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1010",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "飲料",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1011",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "酒類",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1012",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "医薬品",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1013",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "健康美容・医薬部外",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1014",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "住まい・暮らし",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1015",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "ベビー・衣料",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1016",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 14,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "広告の品",
+      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=4&classS=1",
+      "enabled": true,
+      "start_date": "2025-12-23",
+      "interval_days": 7,
+      "last_run": null,
+      "notes": "特売品・広告商品"
     }
   ]
 }
