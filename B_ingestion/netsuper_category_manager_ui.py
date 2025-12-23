@@ -156,12 +156,17 @@ def show_store_categories(store_name: str, store_display_name: str):
                     # 実行済みとしてマーク
                     for cat_name in selected_category_names:
                         manager.mark_as_run(store_name, cat_name, datetime.now())
-                    # 成功時もログを表示
-                    if stdout:
+                    # 成功時もログを表示（stdoutとstderrの両方）
+                    if stdout or stderr:
                         with st.expander("📄 実行ログを表示", expanded=True):
-                            st.code(stdout, language="log")
+                            if stdout:
+                                st.text("=== STDOUT ===")
+                                st.code(stdout, language="log")
+                            if stderr:
+                                st.text("=== STDERR (ログ出力) ===")
+                                st.code(stderr, language="log")
                     else:
-                        st.warning("⚠️ 実行ログが空です（stdoutなし）")
+                        st.warning("⚠️ 実行ログが空です（stdout/stderrなし）")
                     # rerunボタンを表示（自動rerunしない）
                     if st.button("🔄 画面を更新", key=f"reload_{store_name}"):
                         st.rerun()
