@@ -6,7 +6,7 @@ set -e
 
 # プロジェクトルートの.envファイルを読み込む
 if [ -f "../.env" ]; then
-    source ../.env
+    export $(grep -v '^#' ../.env | grep -v '^$' | xargs)
 else
     echo "エラー: ../.env ファイルが見つかりません"
     exit 1
