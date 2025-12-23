@@ -6,12 +6,9 @@ Streamlitを使用して、カテゴリーごとの実行スケジュールを�
 
 import streamlit as st
 import pandas as pd
-from datetime import datetime, timedelta, date
+from datetime import datetime, timedelta
 from pathlib import Path
 import sys
-import subprocess
-import os
-import threading
 
 # プロジェクトルートをパスに追加
 root_dir = Path(__file__).parent.parent
@@ -33,54 +30,6 @@ if 'manager' not in st.session_state:
     st.session_state['manager'] = CategoryManager()
 
 manager = st.session_state['manager']
-
-# 店舗ごとのスクリプト設定
-STORE_SCRIPTS = {
-    "rakuten_seiyu": {
-        "module": "B_ingestion.rakuten_seiyu.process_with_schedule",
-        "display_name": "楽天西友ネットスーパー"
-    },
-    "tokyu_store": {
-        "module": "B_ingestion.tokyu_store.process_with_schedule",
-        "display_name": "東急ストア"
-    },
-    "daiei": {
-        "module": "B_ingestion.daiei.process_with_schedule",
-        "display_name": "ダイエーネットスーパー"
-    }
-}
-
-def run_manual_fetch(store_name: str, categories: list):
-    """選択されたカテゴリーの商品を今すぐ取り込む
-
-    Args:
-        store_name: 店舗名 (rakuten_seiyu, tokyu_store, daiei)
-        categories: 取り込むカテゴリー名のリスト
-    """
-    try:
-        # プロジェクトルートに移動してスクリプトを実行
-        script_module = STORE_SCRIPTS[store_name]["module"]
-
-        # Pythonスクリプトをサブプロセスで実行
-        # カテゴリーを環境変数として渡す
-        env = os.environ.copy()
-        env["MANUAL_CATEGORIES"] = ",".join(categories)
-
-        cmd = [sys.executable, "-m", script_module, "--manual"]
-
-        result = subprocess.run(
-            cmd,
-            cwd=root_dir,
-            capture_output=True,
-            text=True,
-            env=env,
-            timeout=3600  # 1時間タイムアウト
-        )
-
-        return result.returncode == 0, result.stdout, result.stderr
-
-    except Exception as e:
-        return False, "", str(e)
 
 # タブで店舗を切り替え
 tabs = st.tabs(["楽天西友", "東急ストア", "ダイエー", "設定"])
@@ -108,83 +57,12 @@ def show_store_categories(store_name: str, store_display_name: str):
         disabled_count = len(categories) - enabled_count
         st.metric("無効", disabled_count)
     with col4:
-        today = datetime.now()
+        now = datetime.now()
         runnable_count = sum(
             1 for cat in categories
-            if cat.get("enabled", True) and manager.should_run_category(store_name, cat["name"], today)
+            if cat.get("enabled", True) and manager.should_run_category(store_name, cat["name"], now)
         )
-        st.metric("本日実行可能", runnable_count)
-
-    st.divider()
-
-    # 今すぐ取り込みセクション
-    st.subheader("🚀 商品データ取り込み")
-
-    col1, col2 = st.columns([3, 1])
-    with col1:
-        # カテゴリー選択（有効なカテゴリーのみ）
-        enabled_categories = [cat for cat in categories if cat.get("enabled", True)]
-        if enabled_categories:
-            selected_category_names = st.multiselect(
-                "取り込むカテゴリーを選択",
-                options=[cat["name"] for cat in enabled_categories],
-                default=None,
-                key=f"selected_categories_{store_name}"
-            )
-        else:
-            selected_category_names = []
-            st.info("有効なカテゴリーがありません")
-
-    with col2:
-        fetch_button_disabled = len(selected_category_names) == 0
-        if st.button(
-            "📥 今すぐ取り込み",
-            type="primary",
-            disabled=fetch_button_disabled,
-            key=f"fetch_{store_name}"
-        ):
-            if selected_category_names:
-                with st.spinner(f"{store_display_name} から商品データを取り込み中..."):
-                    success, stdout, stderr = run_manual_fetch(store_name, selected_category_names)
-
-                # デバッグ情報
-                st.info(f"実行結果: success={success}, stdout文字数={len(stdout) if stdout else 0}, stderr文字数={len(stderr) if stderr else 0}")
-
-                # 実行結果を表示（rerunの前に表示する）
-                if success:
-                    st.success(f"✅ {len(selected_category_names)}件のカテゴリーから商品データを取り込みました")
-                    # 実行済みとしてマーク
-                    for cat_name in selected_category_names:
-                        manager.mark_as_run(store_name, cat_name, datetime.now())
-                    # 成功時もログを表示（stdoutとstderrの両方）
-                    if stdout or stderr:
-                        with st.expander("📄 実行ログを表示", expanded=True):
-                            if stdout:
-                                st.text("=== STDOUT ===")
-                                st.code(stdout, language="log")
-                            if stderr:
-                                st.text("=== STDERR (ログ出力) ===")
-                                st.code(stderr, language="log")
-                    else:
-                        st.warning("⚠️ 実行ログが空です（stdout/stderrなし）")
-                    # rerunボタンを表示（自動rerunしない）
-                    if st.button("🔄 画面を更新", key=f"reload_{store_name}"):
-                        st.rerun()
-                else:
-                    st.error("❌ 取り込み中にエラーが発生しました")
-                    if stderr:
-                        with st.expander("❌ エラー詳細", expanded=True):
-                            st.code(stderr, language="log")
-                    else:
-                        st.warning("⚠️ エラーログが空です（stderrなし）")
-                    if stdout:
-                        with st.expander("📄 実行ログ"):
-                            st.code(stdout, language="log")
-                    else:
-                        st.warning("⚠️ 実行ログも空です（stdoutなし）")
-
-    if selected_category_names:
-        st.caption(f"選択中: {len(selected_category_names)}件のカテゴリー")
+        st.metric("実行可能", runnable_count)
 
     st.divider()
 
@@ -194,18 +72,12 @@ def show_store_categories(store_name: str, store_display_name: str):
     # データフレームに変換
     df_data = []
     for cat in categories:
-        next_run = manager.get_next_run_date(store_name, cat["name"])
-
-        # 文字列の日付をdatetimeオブジェクトに変換
-        start_date = datetime.strptime(cat["start_date"], "%Y-%m-%d").date()
-
         df_data.append({
             "名前": cat["name"],
             "有効": cat.get("enabled", True),
-            "開始日": start_date,
-            "インターバル（日）": cat["interval_days"],
-            "前回実行": cat.get("last_run", "未実行"),
-            "次回実行予定": next_run or "—",
+            "次回実行日時": cat.get("next_run_datetime", ""),
+            "インターバル（日）": cat.get("interval_days", 7),
+            "前回実行日時": cat.get("last_run_datetime", "未実行"),
             "備考": cat.get("notes", "")
         })
 
@@ -217,7 +89,11 @@ def show_store_categories(store_name: str, store_display_name: str):
         column_config={
             "名前": st.column_config.TextColumn("カテゴリー名", disabled=True, width="medium"),
             "有効": st.column_config.CheckboxColumn("有効", width="small"),
-            "開始日": st.column_config.DateColumn("開始日", format="YYYY-MM-DD", width="small"),
+            "次回実行日時": st.column_config.TextColumn(
+                "次回実行日時",
+                help="YYYY-MM-DD HH:MM形式で入力（例: 2025-12-24 14:30）",
+                width="medium"
+            ),
             "インターバル（日）": st.column_config.NumberColumn(
                 "インターバル（日）",
                 min_value=1,
@@ -225,35 +101,28 @@ def show_store_categories(store_name: str, store_display_name: str):
                 step=1,
                 width="small"
             ),
-            "前回実行": st.column_config.TextColumn("前回実行", disabled=True, width="small"),
-            "次回実行予定": st.column_config.TextColumn("次回実行予定", disabled=True, width="small"),
+            "前回実行日時": st.column_config.TextColumn("前回実行日時", disabled=True, width="medium"),
             "備考": st.column_config.TextColumn("備考", width="large")
         },
         hide_index=True,
-        use_container_width=True,
+        width=None,
         key=f"editor_{store_name}"
     )
 
-    # 保存ボタン
-    col1, col2, col3 = st.columns([2, 1, 1])
+    # ボタン行
+    col1, col2, col3, col4 = st.columns([2, 1, 1, 1])
+
     with col1:
         if st.button("💾 変更を保存", type="primary", key=f"save_{store_name}"):
             # 変更内容を反映
             for idx, row in edited_df.iterrows():
                 category_name = row["名前"]
-                # 日付オブジェクトを文字列に変換
-                start_date_value = row["開始日"]
-                if isinstance(start_date_value, (datetime, date)):
-                    start_date_str = start_date_value.strftime("%Y-%m-%d")
-                else:
-                    start_date_str = start_date_value
-
                 manager.update_category(
                     store_name,
                     category_name,
                     {
                         "enabled": row["有効"],
-                        "start_date": start_date_str,
+                        "next_run_datetime": row["次回実行日時"],
                         "interval_days": int(row["インターバル（日）"]),
                         "notes": row["備考"]
                     }
@@ -262,13 +131,48 @@ def show_store_categories(store_name: str, store_display_name: str):
             st.rerun()
 
     with col2:
+        # 2分後に実行ボタン
+        # 選択可能なカテゴリーのリストを作成
+        enabled_category_names = [cat["name"] for cat in categories if cat.get("enabled", True)]
+
+        if enabled_category_names:
+            # セッション状態で選択を保持
+            if f"selected_for_2min_{store_name}" not in st.session_state:
+                st.session_state[f"selected_for_2min_{store_name}"] = []
+
+            selected_for_2min = st.multiselect(
+                "2分後実行するカテゴリー",
+                options=enabled_category_names,
+                default=st.session_state[f"selected_for_2min_{store_name}"],
+                key=f"multiselect_2min_{store_name}"
+            )
+            st.session_state[f"selected_for_2min_{store_name}"] = selected_for_2min
+
+            if st.button("⏱️ 2分後に実行", disabled=len(selected_for_2min) == 0, key=f"set_2min_{store_name}"):
+                # 2分後の日時を計算
+                two_min_later = datetime.now() + timedelta(minutes=2)
+                next_run_str = two_min_later.strftime("%Y-%m-%d %H:%M")
+
+                # 選択されたカテゴリーの次回実行日時を更新
+                for cat_name in selected_for_2min:
+                    manager.update_category(
+                        store_name,
+                        cat_name,
+                        {"next_run_datetime": next_run_str}
+                    )
+
+                st.success(f"✅ {len(selected_for_2min)}件のカテゴリーを2分後（{next_run_str}）に実行するよう設定しました")
+                st.info("💡 GitHub Actionsが毎日午前2時に実行され、設定時刻を過ぎているカテゴリーが処理されます")
+                st.rerun()
+
+    with col3:
         if st.button("🔄 最終実行日をリセット", key=f"reset_{store_name}"):
             for cat in categories:
-                manager.update_category(store_name, cat["name"], {"last_run": None})
+                manager.update_category(store_name, cat["name"], {"last_run_datetime": None})
             st.success("✅ すべてのカテゴリーの最終実行日をリセットしました")
             st.rerun()
 
-    with col3:
+    with col4:
         if st.button("✅ すべて有効化", key=f"enable_all_{store_name}"):
             for cat in categories:
                 manager.update_category(store_name, cat["name"], {"enabled": True})
@@ -278,29 +182,35 @@ def show_store_categories(store_name: str, store_display_name: str):
     st.divider()
 
     # 実行日・インターバルの説明
-    with st.expander("ℹ️ 実行日・インターバルの仕組み"):
+    with st.expander("ℹ️ 次回実行日時・インターバルの仕組み"):
         st.markdown("""
-        ### 実行日の計算ルール
+        ### 実行の仕組み
 
-        1. **開始日が未来の場合**
-           - 開始日が1回目の実行日
-           - 2回目以降は、前回実行日 + インターバル日数
+        1. **次回実行日時**
+           - 手動で自由に設定可能（YYYY-MM-DD HH:MM形式）
+           - GitHub Actionsが毎日午前2時に実行
+           - 「現在時刻 >= 次回実行日時」のカテゴリーが処理される
 
-        2. **開始日が今日または過去の場合**
-           - まだ一度も実行していない場合: 開始日 + インターバル日数が1回目の実行日
-           - すでに実行済みの場合: 前回実行日 + インターバル日数が次回実行日
+        2. **実行後の自動更新**
+           - 実行後、次回実行日時が自動更新される
+           - 計算式: `(実行日 + インターバル日数 + 1日) の 午前1時`
+           - 例: 12/24実行、インターバル7日 → 次回は 1/1 01:00
+
+        3. **2分後に実行ボタン**
+           - カテゴリーを選択して押すと、次回実行日時が「現在+2分」に設定される
+           - 次回のGitHub Actions実行時（毎日午前2時）に処理される
+           - つまり、翌日午前2時に実行される
 
         ### 例
 
-        - 開始日: 2025-12-25、インターバル: 7日
-          - 2025-12-25 に実行される（開始日が未来のため）
-          - 次回: 2026-01-01（前回 + 7日）
+        - **通常運用**: 次回実行日時 = 2025-12-28 01:00、インターバル = 7日
+          - 12/28 午前2時のGitHub Actions実行時に処理
+          - 次回実行日時が自動的に 1/5 01:00 に更新
 
-        - 開始日: 2025-12-20（過去）、インターバル: 3日、前回実行: なし
-          - 次回: 2025-12-23（開始日 + 3日）
-
-        - 開始日: 2025-12-20（過去）、インターバル: 3日、前回実行: 2025-12-22
-          - 次回: 2025-12-25（前回実行 + 3日）
+        - **即時実行したい場合**:
+          - 次回実行日時を過去の日時（例: 2025-12-23 00:00）に設定
+          - または「2分後に実行」ボタンを押す
+          - 翌日午前2時のGitHub Actions実行時に処理される
         """)
 
 # 各タブに店舗を表示
@@ -351,10 +261,16 @@ with tabs[3]:
         )
 
     with col2:
-        default_start = st.date_input(
-            "デフォルト開始日",
-            value=datetime.now(),
-            key="default_start"
+        # 日時入力（日付と時間）
+        default_date = st.date_input(
+            "デフォルト次回実行日",
+            value=datetime.now() + timedelta(days=1),
+            key="default_date"
+        )
+        default_time = st.time_input(
+            "デフォルト次回実行時刻",
+            value=datetime.strptime("01:00", "%H:%M").time(),
+            key="default_time"
         )
 
     with col3:
@@ -370,13 +286,17 @@ with tabs[3]:
         )
 
     if st.button("🔄 選択した店舗のすべてのカテゴリーに一括適用"):
+        # 日付と時刻を結合
+        default_datetime = datetime.combine(default_date, default_time)
+        next_run_str = default_datetime.strftime("%Y-%m-%d %H:%M")
+
         categories = manager.get_all_categories(target_store)
         for cat in categories:
             manager.update_category(
                 target_store,
                 cat["name"],
                 {
-                    "start_date": default_start.strftime("%Y-%m-%d"),
+                    "next_run_datetime": next_run_str,
                     "interval_days": default_interval
                 }
             )

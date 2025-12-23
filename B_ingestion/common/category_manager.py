@@ -1,7 +1,7 @@
 """
 ネットスーパーカテゴリー実行スケジュール管理
 
-カテゴリーごとに実行日とインターバルを指定し、
+カテゴリーごとに次回実行日時とインターバルを指定し、
 実行すべきかどうかを判定する機能を提供します。
 """
 
@@ -36,12 +36,43 @@ class CategoryManager:
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     self.config = json.load(f)
                 logger.info(f"設定ファイルを読み込みました: {self.config_path}")
+                # 旧フォーマットから新フォーマットへ自動変換
+                self._migrate_old_format()
             except Exception as e:
                 logger.error(f"設定ファイル読み込みエラー: {e}")
                 self.config = {}
         else:
             logger.warning(f"設定ファイルが見つかりません: {self.config_path}")
             self.config = {}
+
+    def _migrate_old_format(self):
+        """旧フォーマット（start_date）から新フォーマット（next_run_datetime）へ変換"""
+        migrated = False
+        for store_name, categories in self.config.items():
+            for category in categories:
+                # start_dateがあり、next_run_datetimeがない場合
+                if "start_date" in category and "next_run_datetime" not in category:
+                    # start_date（日付のみ）を next_run_datetime（日時）に変換
+                    # 午前1時を設定
+                    start_date = category["start_date"]
+                    category["next_run_datetime"] = f"{start_date} 01:00"
+                    del category["start_date"]
+                    migrated = True
+                    logger.info(f"カテゴリー {category['name']} を新フォーマットに変換しました")
+
+                # last_runをlast_run_datetimeに変換
+                if "last_run" in category and "last_run_datetime" not in category:
+                    last_run = category["last_run"]
+                    if last_run:
+                        category["last_run_datetime"] = f"{last_run} 01:00"
+                    else:
+                        category["last_run_datetime"] = None
+                    del category["last_run"]
+                    migrated = True
+
+        if migrated:
+            self.save_config()
+            logger.info("設定ファイルを新フォーマットに変換しました")
 
     def save_config(self):
         """設定ファイルに保存"""
@@ -58,7 +89,7 @@ class CategoryManager:
         store_name: str,
         categories: List[Dict[str, str]],
         default_interval_days: int = 7,
-        default_start_date: Optional[str] = None
+        default_next_run: Optional[str] = None
     ):
         """
         店舗のカテゴリーを初期化
@@ -67,10 +98,12 @@ class CategoryManager:
             store_name: 店舗名（例: "rakuten_seiyu"）
             categories: カテゴリーリスト [{"name": "xxx", "url": "xxx"}, ...]
             default_interval_days: デフォルトのインターバル日数
-            default_start_date: デフォルトの開始日（YYYY-MM-DD）、指定しない場合は今日
+            default_next_run: デフォルトの次回実行日時（YYYY-MM-DD HH:MM）、指定しない場合は明日午前1時
         """
-        if default_start_date is None:
-            default_start_date = datetime.now().strftime("%Y-%m-%d")
+        if default_next_run is None:
+            # デフォルト: 明日の午前1時
+            tomorrow = datetime.now() + timedelta(days=1)
+            default_next_run = tomorrow.strftime("%Y-%m-%d") + " 01:00"
 
         if store_name not in self.config:
             self.config[store_name] = []
@@ -83,9 +116,9 @@ class CategoryManager:
                     "name": category["name"],
                     "url": category.get("url", ""),
                     "enabled": True,
-                    "start_date": default_start_date,
+                    "next_run_datetime": default_next_run,
                     "interval_days": default_interval_days,
-                    "last_run": None,
+                    "last_run_datetime": None,
                     "notes": ""
                 })
 
@@ -96,28 +129,23 @@ class CategoryManager:
         self,
         store_name: str,
         category_name: str,
-        today: Optional[datetime] = None
+        now: Optional[datetime] = None
     ) -> bool:
         """
-        カテゴリーを今日実行すべきかどうかを判定
+        カテゴリーを今実行すべきかどうかを判定
 
-        ロジック:
-        1. enabled が False なら False
-        2. start_date が未来なら、今日 == start_date かチェック
-        3. start_date が今日または過去の場合:
-           - last_run が None なら、start_date から interval_days 経過しているかチェック
-           - last_run がある場合、last_run から interval_days 経過しているかチェック
+        ロジック: 現在時刻 >= next_run_datetime なら True
 
         Args:
             store_name: 店舗名
             category_name: カテゴリー名
-            today: 今日の日付（指定しない場合は現在日時）
+            now: 現在時刻（指定しない場合は現在時刻）
 
         Returns:
             実行すべきなら True
         """
-        if today is None:
-            today = datetime.now()
+        if now is None:
+            now = datetime.now()
 
         if store_name not in self.config:
             logger.warning(f"店舗 {store_name} が設定ファイルに存在しません")
@@ -133,95 +161,79 @@ class CategoryManager:
             logger.info(f"カテゴリー {category_name} は無効化されています")
             return False
 
-        # 日付を解析
-        start_date = datetime.strptime(category["start_date"], "%Y-%m-%d")
-        interval_days = category["interval_days"]
-        last_run_str = category.get("last_run")
+        # 次回実行日時を取得
+        next_run_str = category.get("next_run_datetime")
+        if not next_run_str:
+            logger.warning(f"カテゴリー {category_name} の次回実行日時が設定されていません")
+            return False
 
-        # start_date が未来の場合
-        if start_date.date() > today.date():
-            # 今日が start_date なら実行
-            should_run = today.date() == start_date.date()
-            if should_run:
-                logger.info(f"カテゴリー {category_name}: 初回実行日（start_date）です")
-            return should_run
+        # 日時をパース
+        try:
+            next_run = datetime.strptime(next_run_str, "%Y-%m-%d %H:%M")
+        except ValueError as e:
+            logger.error(f"次回実行日時のパースエラー: {next_run_str}, {e}")
+            return False
 
-        # start_date が今日または過去の場合
-        if last_run_str is None:
-            # まだ一度も実行していない場合、start_date から interval_days 経過しているかチェック
-            next_run_date = start_date + timedelta(days=interval_days)
-            should_run = today.date() >= next_run_date.date()
-            if should_run:
-                logger.info(f"カテゴリー {category_name}: 初回実行（start_date + interval から {(today.date() - next_run_date.date()).days}日経過）")
-            return should_run
-        else:
-            # 前回実行日から interval_days 経過しているかチェック
-            last_run = datetime.strptime(last_run_str, "%Y-%m-%d")
-            next_run_date = last_run + timedelta(days=interval_days)
-            should_run = today.date() >= next_run_date.date()
-            if should_run:
-                logger.info(f"カテゴリー {category_name}: 実行可能（前回実行から {(today.date() - last_run.date()).days}日経過）")
-            return should_run
+        # 判定
+        should_run = now >= next_run
+        if should_run:
+            logger.info(f"カテゴリー {category_name}: 実行可能（次回実行日時: {next_run_str}）")
+
+        return should_run
 
     def mark_as_run(
         self,
         store_name: str,
         category_name: str,
-        run_date: Optional[datetime] = None
+        run_datetime: Optional[datetime] = None
     ):
         """
-        カテゴリーを実行済みとしてマーク
+        カテゴリーを実行済みとしてマークし、次回実行日時を更新
+
+        次回実行日時 = (実行日 + interval_days + 1日) の 午前1時
 
         Args:
             store_name: 店舗名
             category_name: カテゴリー名
-            run_date: 実行日（指定しない場合は今日）
+            run_datetime: 実行日時（指定しない場合は現在時刻）
         """
-        if run_date is None:
-            run_date = datetime.now()
+        if run_datetime is None:
+            run_datetime = datetime.now()
 
         category = self._find_category(store_name, category_name)
         if category is not None:
-            category["last_run"] = run_date.strftime("%Y-%m-%d")
+            # 最終実行日時を記録
+            category["last_run_datetime"] = run_datetime.strftime("%Y-%m-%d %H:%M")
+
+            # 次回実行日時を計算: (実行日 + interval_days + 1) の 01:00
+            interval_days = category.get("interval_days", 7)
+            next_run_date = run_datetime.date() + timedelta(days=interval_days + 1)
+            next_run_datetime = datetime.combine(next_run_date, datetime.min.time().replace(hour=1))
+            category["next_run_datetime"] = next_run_datetime.strftime("%Y-%m-%d %H:%M")
+
             self.save_config()
-            logger.info(f"カテゴリー {category_name} を実行済みとしてマークしました（{category['last_run']}）")
+            logger.info(f"カテゴリー {category_name} を実行済みとしてマークしました")
+            logger.info(f"  最終実行: {category['last_run_datetime']}")
+            logger.info(f"  次回実行: {category['next_run_datetime']}")
         else:
             logger.warning(f"カテゴリー {category_name} が見つかりません（店舗: {store_name}）")
 
-    def get_next_run_date(
+    def get_next_run_datetime(
         self,
         store_name: str,
         category_name: str
     ) -> Optional[str]:
         """
-        カテゴリーの次回実行予定日を取得
+        カテゴリーの次回実行予定日時を取得
 
         Returns:
-            次回実行予定日（YYYY-MM-DD形式）、または None
+            次回実行予定日時（YYYY-MM-DD HH:MM形式）、または None
         """
         category = self._find_category(store_name, category_name)
         if category is None:
             return None
 
-        start_date = datetime.strptime(category["start_date"], "%Y-%m-%d")
-        interval_days = category["interval_days"]
-        last_run_str = category.get("last_run")
-
-        today = datetime.now()
-
-        # start_date が未来の場合
-        if start_date.date() > today.date():
-            return start_date.strftime("%Y-%m-%d")
-
-        # last_run がない場合
-        if last_run_str is None:
-            next_run = start_date + timedelta(days=interval_days)
-            return next_run.strftime("%Y-%m-%d")
-
-        # last_run がある場合
-        last_run = datetime.strptime(last_run_str, "%Y-%m-%d")
-        next_run = last_run + timedelta(days=interval_days)
-        return next_run.strftime("%Y-%m-%d")
+        return category.get("next_run_datetime")
 
     def _find_category(
         self,
@@ -254,7 +266,7 @@ class CategoryManager:
         Args:
             store_name: 店舗名
             category_name: カテゴリー名
-            updates: 更新する内容（enabled, start_date, interval_days など）
+            updates: 更新する内容（enabled, next_run_datetime, interval_days など）
         """
         category = self._find_category(store_name, category_name)
         if category is not None:
@@ -280,9 +292,9 @@ if __name__ == "__main__":
         "rakuten_seiyu",
         sample_categories,
         default_interval_days=7,
-        default_start_date="2025-12-25"
+        default_next_run="2025-12-25 01:00"
     )
 
     # 実行判定テスト
     print("野菜を実行すべきか:", manager.should_run_category("rakuten_seiyu", "野菜"))
-    print("次回実行予定日:", manager.get_next_run_date("rakuten_seiyu", "野菜"))
+    print("次回実行予定日時:", manager.get_next_run_datetime("rakuten_seiyu", "野菜"))
