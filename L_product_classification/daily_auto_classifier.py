@@ -210,9 +210,9 @@ class DailyAutoClassifier:
             # Step 2: Tier 2辞書lookup
             category_id = await self.tier2_lookup(
                 general_name,
-                source_type="online_shop",
+                source_type="online_supermarket",
                 workspace="shopping",
-                doc_type="online shop",
+                doc_type="online_grocery_item",
                 organization=product.get("organization")
             )
 

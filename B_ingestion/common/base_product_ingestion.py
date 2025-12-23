@@ -112,9 +112,9 @@ class BaseProductIngestionPipeline(ABC):
         # データ構築
         data = {
             # 基本情報
-            "source_type": "online_shop",
+            "source_type": "online_supermarket",
             "workspace": "shopping",
-            "doc_type": "online shop",
+            "doc_type": "online_grocery_item",
             "organization": self.organization_name,
 
             # 商品情報
