@@ -11,9 +11,25 @@ Google Drive から家計簿レシートを取得して統合パイプライン�
 """
 
 import asyncio
+import sys
 from pathlib import Path
 from typing import List, Dict
-from loguru import logger
+from dotenv import load_dotenv
+
+# プロジェクトルートをパスに追加
+root_dir = Path(__file__).parent.parent
+sys.path.insert(0, str(root_dir))
+
+# .envファイルを読み込み
+load_dotenv(root_dir / ".env")
+
+# ロギング設定
+try:
+    from loguru import logger
+except ImportError:
+    import logging
+    logging.basicConfig(level=logging.INFO, format='%(asctime)s | %(levelname)-8s | %(message)s')
+    logger = logging.getLogger(__name__)
 
 from A_common.connectors.google_drive import GoogleDriveConnector
 from G_unified_pipeline import UnifiedDocumentPipeline
@@ -261,6 +277,20 @@ class ReceiptReimporter:
         logger.info(f"Easy:   {stats['easy']}件")
         logger.info(f"Hard:   {stats['hard']}件")
         logger.info("="*80)
+
+        # 80_rd_productsへの自動同期
+        if stats['success'] > 0:
+            logger.info("\n" + "="*80)
+            logger.info("80_rd_products への商品同期を開始...")
+            logger.info("="*80)
+            try:
+                from sync_receipt_products_to_master import ReceiptProductSync
+                syncer = ReceiptProductSync()
+                syncer.sync_products()
+                logger.info("✅ 商品同期完了")
+            except Exception as e:
+                logger.error(f"❌ 商品同期エラー: {e}")
+                logger.warning("商品同期は失敗しましたが、レシート取り込みは成功しています")
 
 
 async def main():

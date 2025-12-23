@@ -50,12 +50,14 @@ if search_button and search_query:
 if search_query:
     # 80_rd_productsから検索
     try:
+        organizations = ['楽天西友ネットスーパー', '東急ストア ネットスーパー', 'ダイエーネットスーパー']
+
         # ネットスーパー3社の商品のみ検索
         result = db.table('80_rd_products').select(
             'id, product_name, organization, current_price_tax_included, image_url, metadata'
         ).in_(
             'organization',
-            ['楽天西友ネットスーパー', '東急ストア ネットスーパー', 'ダイエーネットスーパー']
+            organizations
         ).ilike(
             'product_name',
             f'%{search_query}%'

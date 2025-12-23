@@ -94,9 +94,9 @@
       "name": "卵・牛乳・乳製品",
       "url": "https://netsuper.rakuten.co.jp/seiyu/search/110007/?l-id=_leftnavi_110007&sort=1",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-01",
       "interval_days": 7,
-      "last_run": null,
+      "last_run": "2025-12-24",
       "notes": ""
     },
     {
@@ -294,9 +294,9 @@
       "name": "牛乳・乳製品・卵",
       "url": "https://ns.tokyu-bell.jp/shop/c/cC50",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-01",
       "interval_days": 7,
-      "last_run": null,
+      "last_run": "2025-12-24",
       "notes": ""
     },
     {
