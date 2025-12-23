@@ -69,6 +69,44 @@ class BaseProductIngestionPipeline(ABC):
 
         return {row['jan_code'] for row in result.data if row.get('jan_code')}
 
+    async def check_existing_products_by_name(self, products: List[Dict]) -> Dict[tuple, str]:
+        """
+        既存商品のチェック（商品名+組織で重複排除）
+        JANコードがない商品用
+
+        Args:
+            products: 商品データのリスト（product_nameとjan_codeを含む）
+
+        Returns:
+            (product_name, organization) -> product_id のマッピング
+        """
+        # JANコードがない商品のみを抽出
+        no_jan_products = [p for p in products if not p.get('jan_code')]
+
+        if not no_jan_products:
+            return {}
+
+        # 商品名のリストを作成
+        product_names = list(set([p.get('product_name') for p in no_jan_products if p.get('product_name')]))
+
+        if not product_names:
+            return {}
+
+        # 該当する商品名と組織の組み合わせで既存レコードを検索
+        result = self.db.client.table('80_rd_products').select(
+            'id, product_name, organization'
+        ).in_('product_name', product_names).eq(
+            'organization', self.organization_name
+        ).is_('jan_code', 'null').execute()
+
+        # (product_name, organization) -> id のマッピングを作成
+        existing_map = {}
+        for row in result.data:
+            key = (row['product_name'], row['organization'])
+            existing_map[key] = row['id']
+
+        return existing_map
+
     def _prepare_product_data(
         self,
         product: Dict,
@@ -218,6 +256,9 @@ class BaseProductIngestionPipeline(ABC):
         jan_codes = [p.get("jan_code") for p in products if p.get("jan_code")]
         existing_jan_codes = await self.check_existing_products(jan_codes)
 
+        # JANコードがない商品の既存チェック（商品名+組織）
+        existing_by_name = await self.check_existing_products_by_name(products)
+
         insert_count = 0
         update_count = 0
 
@@ -225,13 +266,21 @@ class BaseProductIngestionPipeline(ABC):
             # 商品データ準備（分類は後で実施）
             product_data = self._prepare_product_data(product, category_name)
             jan_code = product.get("jan_code")
+            product_name = product.get("product_name")
 
             try:
                 if jan_code and jan_code in existing_jan_codes:
-                    # 既存商品を更新
+                    # JANコードで既存商品を更新
                     self.db.client.table('80_rd_products').update(
                         product_data
                     ).eq('jan_code', jan_code).execute()
+                    update_count += 1
+                elif not jan_code and (product_name, self.organization_name) in existing_by_name:
+                    # JANコードなし商品を商品名+組織で更新
+                    existing_id = existing_by_name[(product_name, self.organization_name)]
+                    self.db.client.table('80_rd_products').update(
+                        product_data
+                    ).eq('id', existing_id).execute()
                     update_count += 1
                 else:
                     # 新規商品を挿入
