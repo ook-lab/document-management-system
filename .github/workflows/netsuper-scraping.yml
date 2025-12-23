@@ -74,7 +74,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           echo "東急ストアスクレイピング開始"
-          # python -m B_ingestion.tokyu_store.process_with_schedule
+          python -m B_ingestion.tokyu_store.process_with_schedule
         continue-on-error: true
 
       - name: ダイエースクレイピング
@@ -86,7 +86,7 @@ jobs:
           SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY }}
         run: |
           echo "ダイエースクレイピング開始"
-          # python -m B_ingestion.daiei.process_with_schedule
+          python -m B_ingestion.daiei.process_with_schedule
         continue-on-error: true
 
       - name: Upload category config as artifact

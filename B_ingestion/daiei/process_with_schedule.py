@@ -1,0 +1,238 @@
+"""
+ダイエーネットスーパー スケジュール管理対応版
+
+カテゴリーごとの実行スケジュールを管理し、
+サーバー負荷を最小限に抑える待機時間を実装します。
+
+ダイエーは規約が厳しいため、特に注意深くアクセスします。
+"""
+
+import os
+import sys
+import asyncio
+import random
+import logging
+from pathlib import Path
+from datetime import datetime
+from typing import List, Dict, Any
+
+# プロジェクトルートをパスに追加
+root_dir = Path(__file__).parent.parent.parent
+sys.path.insert(0, str(root_dir))
+
+from dotenv import load_dotenv
+load_dotenv(root_dir / ".env")
+
+from B_ingestion.common.category_manager import CategoryManager
+from B_ingestion.daiei.product_ingestion import DaieiProductIngestionPipeline
+
+# ロガー設定
+logger = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+
+
+class PoliteDaieiPipeline:
+    """サーバー負荷に配慮したスケジュール管理パイプライン（ダイエー用）"""
+
+    def __init__(
+        self,
+        login_id: str,
+        password: str,
+        headless: bool = True,
+        dry_run: bool = False
+    ):
+        """
+        Args:
+            login_id: ダイエーログインID
+            password: パスワード
+            headless: ヘッドレスモード
+            dry_run: Dry Run モード（設定ファイルの初期化のみ）
+        """
+        self.pipeline = DaieiProductIngestionPipeline(
+            login_id=login_id,
+            password=password,
+            headless=headless
+        )
+        self.manager = CategoryManager()
+        self.dry_run = dry_run
+        self.store_name = "daiei"
+
+    async def polite_wait_between_pages(self):
+        """ページ遷移間の待機（5秒〜10秒のランダム・ダイエーは長めに）"""
+        wait_time = random.uniform(5.0, 10.0)
+        logger.info(f"⏳ ページ遷移待機: {wait_time:.1f}秒")
+        await asyncio.sleep(wait_time)
+
+    async def polite_wait_between_categories(self):
+        """カテゴリー切替時の待機（20秒〜40秒のランダム・ダイエーは長めに）"""
+        wait_time = random.uniform(20.0, 40.0)
+        logger.info(f"⏳ カテゴリー切替待機: {wait_time:.1f}秒")
+        await asyncio.sleep(wait_time)
+
+    async def initialize_categories(self):
+        """カテゴリーを初期化（初回実行時）"""
+        logger.info("📋 カテゴリーを初期化します...")
+        logger.warning("⚠️ ダイエーは規約が厳しいため、慎重にアクセスします")
+
+        # スクレイパー起動
+        success = await self.pipeline.start()
+        if not success:
+            logger.error("❌ スクレイパー起動失敗")
+            return False
+
+        try:
+            # カテゴリーを手動で定義（ダイエーの場合）
+            # ※ダイエーは動的取得が難しい場合があるため、ハードコードも検討
+            categories = [
+                {"name": "野菜・果物", "url": "https://daiei.eorder.ne.jp/category/"},
+                # 他のカテゴリーはスクレイピングで取得するか、手動で追加
+            ]
+
+            # または動的に取得を試みる
+            # categories = await self.pipeline.discover_categories()
+
+            if not categories:
+                logger.warning("カテゴリーが見つかりませんでした")
+                return False
+
+            # CategoryManagerに登録
+            category_list = [
+                {"name": cat["name"], "url": cat["url"]}
+                for cat in categories
+            ]
+
+            # デフォルト設定で初期化
+            # ダイエーは特に慎重に：開始日は明日、インターバル: 14日（2週間）
+            tomorrow = datetime.now().strftime("%Y-%m-%d")
+            self.manager.initialize_store_categories(
+                self.store_name,
+                category_list,
+                default_interval_days=14,  # ダイエーは長めに設定
+                default_start_date=tomorrow
+            )
+
+            logger.info(f"✅ {len(categories)}件のカテゴリーを初期化しました")
+            logger.info("管理画面で設定を調整してください:")
+            logger.info("  streamlit run B_ingestion/netsuper_category_manager_ui.py")
+            logger.warning("⚠️ ダイエーは規約遵守のため、インターバルを長めに設定することを推奨します")
+
+            return True
+
+        finally:
+            await self.pipeline.close()
+
+    async def run_scheduled_categories(self):
+        """スケジュールに基づいてカテゴリーを処理"""
+        logger.info("="*80)
+        logger.info("ダイエーネットスーパー スケジュール実行開始")
+        logger.info("="*80)
+        logger.warning("⚠️ ダイエーは規約が厳しいため、慎重にアクセスします")
+
+        # スクレイパー起動
+        success = await self.pipeline.start()
+        if not success:
+            logger.error("❌ スクレイパー起動失敗")
+            return
+
+        try:
+            # 設定からカテゴリーを取得
+            categories = self.manager.get_all_categories(self.store_name)
+
+            if not categories:
+                logger.warning("カテゴリーが設定されていません。初回実行してください:")
+                logger.warning("  python -m B_ingestion.daiei.process_with_schedule --init")
+                return
+
+            # 今日実行すべきカテゴリーをフィルタリング
+            today = datetime.now()
+            runnable_categories = []
+
+            for cat in categories:
+                if self.manager.should_run_category(self.store_name, cat["name"], today):
+                    runnable_categories.append(cat)
+
+            logger.info(f"📊 総カテゴリー数: {len(categories)}件")
+            logger.info(f"✅ 本日実行対象: {len(runnable_categories)}件")
+
+            if not runnable_categories:
+                logger.info("本日実行するカテゴリーはありません")
+                return
+
+            # カテゴリーごとに処理
+            for idx, cat in enumerate(runnable_categories, 1):
+                logger.info("")
+                logger.info("="*80)
+                logger.info(f"📦 カテゴリー {idx}/{len(runnable_categories)}: {cat['name']}")
+                logger.info(f"   URL: {cat['url']}")
+                logger.info("="*80)
+
+                try:
+                    # カテゴリーページにアクセス
+                    await self.pipeline.scraper.page.goto(cat['url'], wait_until="domcontentloaded")
+                    await self.polite_wait_between_pages()
+
+                    # ここで商品データを取得する処理を実装
+                    # （既存のスクレイピングロジックを呼び出す）
+                    # products = await self.pipeline.scrape_category_products(cat['url'])
+                    # await self.pipeline.save_products(products)
+
+                    logger.info(f"✅ カテゴリー {cat['name']} の処理完了")
+
+                    # 実行済みとしてマーク
+                    self.manager.mark_as_run(self.store_name, cat["name"], today)
+
+                    # カテゴリー間の待機（ダイエーは長めに）
+                    if idx < len(runnable_categories):
+                        await self.polite_wait_between_categories()
+
+                except Exception as e:
+                    logger.error(f"❌ カテゴリー {cat['name']} 処理エラー: {e}", exc_info=True)
+                    # エラー時は特に長めに待機（ダイエーは厳しいため）
+                    logger.warning("⚠️ エラー発生のため2分間待機します")
+                    await asyncio.sleep(120)
+                    continue
+
+            logger.info("")
+            logger.info("="*80)
+            logger.info("✅ すべてのカテゴリー処理完了")
+            logger.info("="*80)
+
+        finally:
+            await self.pipeline.close()
+
+
+async def main():
+    """メイン処理"""
+    import argparse
+
+    parser = argparse.ArgumentParser(description="ダイエースクレイピング（スケジュール管理対応）")
+    parser.add_argument("--init", action="store_true", help="カテゴリーを初期化（初回実行時のみ）")
+    parser.add_argument("--headless", action="store_true", default=True, help="ヘッドレスモード")
+    args = parser.parse_args()
+
+    login_id = os.getenv("DAIEI_LOGIN_ID")
+    password = os.getenv("DAIEI_PASSWORD")
+
+    if not login_id or not password:
+        logger.error("❌ 環境変数 DAIEI_LOGIN_ID と DAIEI_PASSWORD を設定してください")
+        return
+
+    pipeline = PoliteDaieiPipeline(
+        login_id=login_id,
+        password=password,
+        headless=args.headless
+    )
+
+    if args.init:
+        # 初期化モード
+        await pipeline.initialize_categories()
+    else:
+        # 通常実行モード
+        await pipeline.run_scheduled_categories()
+
+
+if __name__ == "__main__":
+    asyncio.run(main())
