@@ -39,7 +39,7 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # タイトル
 st.title("🛒 ネットスーパー横断検索")
-st.markdown("**楽天西友・東急ストア・ダイエー**の商品を一括検索！安い順に表示します")
+st.markdown("**楽天西友・東急ストア・ダイエー**の商品を一括検索！類似度の高い順に表示します")
 
 # URLのクエリパラメータから検索キーワードを取得
 query_params = st.query_params
@@ -76,23 +76,17 @@ if search_query:
             # vector型として渡すために文字列形式に変換
             embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
 
-        organizations = ['楽天西友ネットスーパー', '東急ストア ネットスーパー', 'ダイエーネットスーパー']
-
         # ベクトル類似度検索（200件取得）
         # PostgreSQLのRPC関数を呼び出す
         result = db.rpc('search_products_by_embedding', {
             'query_embedding': embedding_str,
-            'match_count': 200,
-            'filter_organizations': organizations
+            'match_count': 200
         }).execute()
 
         products = result.data
 
-        # current_price_tax_includedがnullまたは0の商品を除外
-        products = [p for p in products if p.get('current_price_tax_included') and float(p.get('current_price_tax_included', 0)) > 0]
-
-        # 価格順にソート（安い順）
-        products.sort(key=lambda x: float(x.get('current_price_tax_included', 0)))
+        # 類似度順にソート（高い順）
+        products.sort(key=lambda x: float(x.get('similarity', 0)), reverse=True)
 
         # 上位20件のみ表示
         display_products = products[:20]
