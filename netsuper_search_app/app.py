@@ -73,13 +73,15 @@ if search_query:
         # 検索クエリをベクトル化
         with st.spinner("検索中..."):
             query_embedding = generate_query_embedding(search_query)
+            # vector型として渡すために文字列形式に変換
+            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
 
         organizations = ['楽天西友ネットスーパー', '東急ストア ネットスーパー', 'ダイエーネットスーパー']
 
         # ベクトル類似度検索（200件取得）
         # PostgreSQLのRPC関数を呼び出す
         result = db.rpc('search_products_by_embedding', {
-            'query_embedding': query_embedding,
+            'query_embedding': embedding_str,
             'match_count': 200,
             'filter_organizations': organizations
         }).execute()
