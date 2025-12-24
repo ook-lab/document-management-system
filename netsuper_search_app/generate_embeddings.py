@@ -27,6 +27,7 @@ sys.path.insert(0, str(root_dir))
 load_dotenv(root_dir / ".env")
 
 from supabase import create_client
+from A_common.database.client import DatabaseClient
 
 # ロギング設定
 try:
@@ -43,13 +44,8 @@ class ProductEmbeddingGenerator:
     """商品データのベクトル化"""
 
     def __init__(self):
-        # Supabase接続
-        self.supabase_url = os.getenv("SUPABASE_URL")
-        self.supabase_key = os.getenv("SUPABASE_KEY")
-        if not self.supabase_url or not self.supabase_key:
-            raise ValueError("環境変数 SUPABASE_URL と SUPABASE_KEY を設定してください")
-
-        self.db = create_client(self.supabase_url, self.supabase_key)
+        # Supabase接続（service roleキーを使用）
+        self.db = DatabaseClient(use_service_role=True)
 
         # OpenAI接続
         self.openai_api_key = os.getenv("OPENAI_API_KEY")
@@ -71,7 +67,7 @@ class ProductEmbeddingGenerator:
         """
         logger.info("embeddingがない商品を取得中...")
 
-        query = self.db.table('80_rd_products').select('id, product_name').is_('embedding', 'null')
+        query = self.db.client.table('80_rd_products').select('id, product_name').is_('embedding', 'null')
 
         if limit:
             query = query.limit(limit)
@@ -107,7 +103,7 @@ class ProductEmbeddingGenerator:
         """
         # vector型として保存するために文字列形式に変換
         embedding_str = '[' + ','.join(map(str, embedding)) + ']'
-        self.db.table('80_rd_products').update({
+        self.db.client.table('80_rd_products').update({
             'embedding': embedding_str
         }).eq('id', product_id).execute()
 
