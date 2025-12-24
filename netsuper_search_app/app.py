@@ -2,12 +2,14 @@
 3ネットスーパー横断商品検索アプリ
 
 楽天西友、東急ストア、ダイエーの商品を横断検索
+ベクトル検索で意味的に類似した商品を検索
 安い順に表示
 """
 
 import streamlit as st
 import os
 from supabase import create_client
+from openai import OpenAI
 
 # ページ設定
 st.set_page_config(
@@ -25,6 +27,15 @@ if not SUPABASE_URL or not SUPABASE_KEY:
     st.stop()
 
 db = create_client(SUPABASE_URL, SUPABASE_KEY)
+
+# OpenAI接続
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+if not OPENAI_API_KEY:
+    st.error("環境変数 OPENAI_API_KEY を設定してください")
+    st.stop()
+
+openai_client = OpenAI(api_key=OPENAI_API_KEY)
 
 # タイトル
 st.title("🛒 ネットスーパー横断検索")
@@ -47,35 +58,48 @@ if search_button and search_query:
     st.query_params.update(q=search_query)
     st.rerun()
 
+def generate_query_embedding(query: str) -> list:
+    """検索クエリをベクトル化"""
+    response = openai_client.embeddings.create(
+        model="text-embedding-3-small",
+        input=query
+    )
+    return response.data[0].embedding
+
+
 if search_query:
-    # 80_rd_productsから検索
+    # ベクトル検索
     try:
+        # 検索クエリをベクトル化
+        with st.spinner("検索中..."):
+            query_embedding = generate_query_embedding(search_query)
+
         organizations = ['楽天西友ネットスーパー', '東急ストア ネットスーパー', 'ダイエーネットスーパー']
 
-        # ネットスーパー3社の商品のみ検索
-        result = db.table('80_rd_products').select(
-            'id, product_name, organization, current_price_tax_included, image_url, metadata'
-        ).in_(
-            'organization',
-            organizations
-        ).ilike(
-            'product_name',
-            f'%{search_query}%'
-        ).order(
-            'current_price_tax_included',
-            desc=False
-        ).limit(20).execute()
+        # ベクトル類似度検索（200件取得）
+        # PostgreSQLのRPC関数を呼び出す
+        result = db.rpc('search_products_by_embedding', {
+            'query_embedding': query_embedding,
+            'match_count': 200,
+            'filter_organizations': organizations
+        }).execute()
 
         products = result.data
 
         # current_price_tax_includedがnullまたは0の商品を除外
         products = [p for p in products if p.get('current_price_tax_included') and float(p.get('current_price_tax_included', 0)) > 0]
 
-        if products:
-            st.success(f"✅ {len(products)}件の商品が見つかりました")
+        # 価格順にソート（安い順）
+        products.sort(key=lambda x: float(x.get('current_price_tax_included', 0)))
+
+        # 上位20件のみ表示
+        display_products = products[:20]
+
+        if display_products:
+            st.success(f"✅ {len(display_products)}件の商品を表示中（検索結果: {len(products)}件）")
 
             # 商品一覧表示
-            for i, product in enumerate(products, 1):
+            for i, product in enumerate(display_products, 1):
                 with st.container():
                     col1, col2 = st.columns([1, 4])
 
@@ -111,6 +135,10 @@ if search_query:
                             product_url = metadata.get('raw_data', {}).get('url')
                             if product_url:
                                 st.markdown(f"[🔗 商品ページを開く]({product_url})")
+
+                        # 類似度スコア（デバッグ用、必要に応じて表示）
+                        if product.get('similarity'):
+                            st.caption(f"類似度: {product['similarity']:.3f}")
 
                     st.divider()
         else:
