@@ -45,7 +45,7 @@ class BulkClusteringUI:
 
             # Tier 1: 各商品名 → general_name のマッピング
             for product_name in set(product_names):  # 重複排除
-                self.db.client.table('70_ms_product_normalization').upsert({
+                self.db.client.table('MASTER_Product_generalize').upsert({
                     "raw_keyword": product_name,
                     "general_name": general_name,
                     "confidence_score": cluster_data["confidence_avg"],
@@ -53,7 +53,7 @@ class BulkClusteringUI:
                 }).execute()
 
             # Tier 2: general_name + context → category_id
-            self.db.client.table('70_ms_product_classification').upsert({
+            self.db.client.table('MASTER_Product_classify').upsert({
                 "general_name": general_name,
                 "source_type": "online_shop",
                 "workspace": "shopping",
@@ -64,9 +64,9 @@ class BulkClusteringUI:
                 "confidence_score": cluster_data["confidence_avg"]
             }).execute()
 
-            # 80_rd_productsを更新
+            # Rawdata_NETSUPER_itemsを更新
             for product_id in product_ids:
-                self.db.client.table('80_rd_products').update({
+                self.db.client.table('Rawdata_NETSUPER_items').update({
                     "general_name": general_name,
                     "category_id": category_id,
                     "needs_approval": False,

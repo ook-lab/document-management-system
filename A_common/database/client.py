@@ -47,7 +47,7 @@ class DatabaseClient:
             既存の文書レコード、存在しない場合は None
         """
         try:
-            response = self.client.table('10_rd_source_docs').select('*').eq('source_id', source_id).execute()
+            response = self.client.table('Rawdata_FILE_AND_MAIL').select('*').eq('source_id', source_id).execute()
             if response.data:
                 return response.data[0]
             return None
@@ -564,7 +564,7 @@ class DatabaseClient:
             ドキュメントのリスト（更新日時降順）
         """
         try:
-            query = self.client.table('10_rd_source_docs').select('*')
+            query = self.client.table('Rawdata_FILE_AND_MAIL').select('*')
 
             # File typeフィルタを適用
             if file_type:
@@ -639,7 +639,7 @@ class DatabaseClient:
                 update_data['reviewed_by'] = reviewed_by
 
             response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -670,7 +670,7 @@ class DatabaseClient:
             }
 
             response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -691,7 +691,7 @@ class DatabaseClient:
         try:
             # 未レビューの件数（review_status = 'pending' または NULL）
             unreviewed_response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .select('*', count='exact')
                 .in_('review_status', ['pending', None])
                 .execute()
@@ -700,7 +700,7 @@ class DatabaseClient:
 
             # レビュー済みの件数（review_status = 'reviewed'）
             reviewed_response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .select('*', count='exact')
                 .eq('review_status', 'reviewed')
                 .execute()
@@ -737,7 +737,7 @@ class DatabaseClient:
         """
         try:
             # 全ドキュメントからworkspaceを取得
-            response = self.client.table('10_rd_source_docs').select('workspace').execute()
+            response = self.client.table('Rawdata_FILE_AND_MAIL').select('workspace').execute()
 
             workspaces = set()
             for doc in response.data:
@@ -759,7 +759,7 @@ class DatabaseClient:
         """
         try:
             # 全ドキュメントからdoc_typeを取得
-            response = self.client.table('10_rd_source_docs').select('doc_type').execute()
+            response = self.client.table('Rawdata_FILE_AND_MAIL').select('doc_type').execute()
 
             doc_types = set()
             for doc in response.data:
@@ -781,7 +781,7 @@ class DatabaseClient:
         """
         try:
             # workspaceとdoc_typeの組み合わせを取得
-            response = self.client.table('10_rd_source_docs').select('workspace, doc_type').execute()
+            response = self.client.table('Rawdata_FILE_AND_MAIL').select('workspace, doc_type').execute()
 
             hierarchy = {}
             for doc in response.data:
@@ -817,7 +817,7 @@ class DatabaseClient:
             ドキュメント、存在しない場合は None
         """
         try:
-            response = self.client.table('10_rd_source_docs').select('*').eq('id', doc_id).execute()
+            response = self.client.table('Rawdata_FILE_AND_MAIL').select('*').eq('id', doc_id).execute()
             if response.data:
                 return response.data[0]
             return None
@@ -851,7 +851,7 @@ class DatabaseClient:
                 update_data['doc_type'] = new_doc_type
 
             response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -938,7 +938,7 @@ class DatabaseClient:
             logger.info(f"[record_correction] source_documents 更新開始: doc_id={doc_id}")
 
             document_response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -1002,7 +1002,7 @@ class DatabaseClient:
             }
 
             document_response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .update(update_data)
                 .eq('id', doc_id)
                 .execute()
@@ -1062,7 +1062,7 @@ class DatabaseClient:
         try:
             # source_idが存在するすべてのドキュメントを取得
             response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .select('source_id')
                 .not_.is_('source_id', 'null')
                 .execute()
@@ -1093,7 +1093,7 @@ class DatabaseClient:
         try:
             # content_hashが一致するドキュメントを検索
             response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .select('id, file_name, content_hash')
                 .eq('content_hash', content_hash)
                 .limit(1)
@@ -1129,7 +1129,7 @@ class DatabaseClient:
         try:
             # ドキュメントを削除（ON DELETE CASCADEにより関連データも削除される）
             response = (
-                self.client.table('10_rd_source_docs')
+                self.client.table('Rawdata_FILE_AND_MAIL')
                 .delete()
                 .eq('id', doc_id)
                 .execute()

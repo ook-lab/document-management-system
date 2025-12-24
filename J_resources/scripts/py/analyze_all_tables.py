@@ -47,7 +47,7 @@ tables = [
     'emails',
     'hypothetical_questions',
     '99_lg_reprocess_queue',
-    '10_rd_source_docs',
+    'Rawdata_FILE_AND_MAIL',
     '99_lg_process_logs',
     '10_ix_search_index'
 ]

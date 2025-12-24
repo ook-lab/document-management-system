@@ -92,7 +92,7 @@ def approve_all_clusters():
         try:
             # Tier 1: 各商品名 → general_name のマッピング
             for product_name in set(product_names):  # 重複排除
-                db.client.table('70_ms_product_normalization').upsert({
+                db.client.table('MASTER_Product_generalize').upsert({
                     "raw_keyword": product_name,
                     "general_name": general_name,
                     "confidence_score": confidence,
@@ -100,7 +100,7 @@ def approve_all_clusters():
                 }, on_conflict="raw_keyword,general_name").execute()
 
             # Tier 2: general_name + context → category_id
-            db.client.table('70_ms_product_classification').upsert({
+            db.client.table('MASTER_Product_classify').upsert({
                 "general_name": general_name,
                 "source_type": "online_shop",
                 "workspace": "shopping",
@@ -111,9 +111,9 @@ def approve_all_clusters():
                 "confidence_score": confidence
             }, on_conflict="general_name,source_type,workspace,doc_type,organization").execute()
 
-            # 80_rd_productsを更新
+            # Rawdata_NETSUPER_itemsを更新
             for product_id in product_ids:
-                db.client.table('80_rd_products').update({
+                db.client.table('Rawdata_NETSUPER_items').update({
                     "general_name": general_name,
                     "category_id": category_id,
                     "needs_approval": False,
@@ -137,7 +137,7 @@ def approve_all_clusters():
     logger.info(f"{'='*80}")
 
     # 結果確認
-    result = db.client.table('80_rd_products').select(
+    result = db.client.table('Rawdata_NETSUPER_items').select(
         'id', count='exact'
     ).eq('needs_approval', False).execute()
 

@@ -29,7 +29,7 @@ async def main():
 
     # 全ドキュメントを取得
     print("\n[Step 1] ドキュメント取得中...")
-    result = db.client.table('10_rd_source_docs').select('id,file_name,attachment_text').execute()
+    result = db.client.table('Rawdata_FILE_AND_MAIL').select('id,file_name,attachment_text').execute()
     documents = result.data if result.data else []
 
     total = len(documents)

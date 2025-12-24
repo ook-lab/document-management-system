@@ -28,9 +28,9 @@ def check_and_report_migration_status():
     logger.info("マイグレーション状態チェック")
     logger.info("=" * 80)
 
-    # 1. 80_rd_products のカラムチェック
-    logger.info("\n[1] 80_rd_products テーブルのカラムチェック")
-    result = db.client.table('80_rd_products').select('*').limit(1).execute()
+    # 1. Rawdata_NETSUPER_items のカラムチェック
+    logger.info("\n[1] Rawdata_NETSUPER_items テーブルのカラムチェック")
+    result = db.client.table('Rawdata_NETSUPER_items').select('*').limit(1).execute()
     if result.data:
         columns = list(result.data[0].keys())
         logger.info(f"現在のカラム数: {len(columns)}")
@@ -53,8 +53,8 @@ def check_and_report_migration_status():
     logger.info("\n[2] 新規テーブルの存在チェック")
 
     tables_to_check = [
-        '70_ms_product_normalization',
-        '70_ms_product_classification',
+        'MASTER_Product_generalize',
+        'MASTER_Product_classify',
         '99_tmp_gemini_clustering',
         '99_lg_gemini_classification_log'
     ]
@@ -75,13 +75,13 @@ def check_and_report_migration_status():
 
     # 3. 商品データの確認
     logger.info("\n[3] 商品データの確認")
-    result = db.client.table('80_rd_products').select('id', count='exact').execute()
+    result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').execute()
     logger.info(f"全商品数: {result.count} 件")
 
     if missing_columns:  # general_nameがない場合は未分類数を数えられない
         logger.info("未分類商品数: （カラム不足のため確認不可）")
     else:
-        result = db.client.table('80_rd_products').select('id', count='exact').is_('general_name', 'null').execute()
+        result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('general_name', 'null').execute()
         logger.info(f"未分類商品数: {result.count} 件")
 
     logger.info("\n" + "=" * 80)

@@ -3,17 +3,17 @@
 -- ====================================================================
 -- 目的: 新しい3層構造のテーブルを作成（既存テーブルは維持）
 -- 実行場所: Supabase SQL Editor
--- 前提条件: 既存の 60_rd_transactions テーブルが存在すること
+-- 前提条件: 既存の Rawdata_RECEIPT_items テーブルが存在すること
 -- ====================================================================
 
 BEGIN;
 
 -- ====================================================================
--- 1. 親テーブル: 60_rd_receipts (レシート管理台帳)
+-- 1. 親テーブル: Rawdata_RECEIPT_shops (レシート管理台帳)
 -- ====================================================================
 -- 役割: レシート1枚単位の「管理属性」と「正解データ」を保持
 
-CREATE TABLE IF NOT EXISTS "60_rd_receipts" (
+CREATE TABLE IF NOT EXISTS "Rawdata_RECEIPT_shops" (
     -- ID
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
 
@@ -45,37 +45,37 @@ CREATE TABLE IF NOT EXISTS "60_rd_receipts" (
 );
 
 -- インデックス作成
-CREATE INDEX IF NOT EXISTS idx_60_rd_receipts_date
-    ON "60_rd_receipts"(transaction_date DESC);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_RECEIPT_shops_date
+    ON "Rawdata_RECEIPT_shops"(transaction_date DESC);
 
-CREATE INDEX IF NOT EXISTS idx_60_rd_receipts_shop
-    ON "60_rd_receipts" USING gin(shop_name gin_trgm_ops);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_RECEIPT_shops_shop
+    ON "Rawdata_RECEIPT_shops" USING gin(shop_name gin_trgm_ops);
 
-CREATE INDEX IF NOT EXISTS idx_60_rd_receipts_drive_id
-    ON "60_rd_receipts"(drive_file_id);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_RECEIPT_shops_drive_id
+    ON "Rawdata_RECEIPT_shops"(drive_file_id);
 
-CREATE INDEX IF NOT EXISTS idx_60_rd_receipts_unverified
-    ON "60_rd_receipts"(is_verified) WHERE is_verified = FALSE;
+CREATE INDEX IF NOT EXISTS idx_Rawdata_RECEIPT_shops_unverified
+    ON "Rawdata_RECEIPT_shops"(is_verified) WHERE is_verified = FALSE;
 
-CREATE INDEX IF NOT EXISTS idx_60_rd_receipts_workspace
-    ON "60_rd_receipts"(workspace);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_RECEIPT_shops_workspace
+    ON "Rawdata_RECEIPT_shops"(workspace);
 
 -- コメント
-COMMENT ON TABLE "60_rd_receipts" IS 'レシート管理台帳 - レシート1枚単位の管理情報';
-COMMENT ON COLUMN "60_rd_receipts".total_amount_check IS 'レシート印字の合計金額（検算用）';
-COMMENT ON COLUMN "60_rd_receipts".subtotal_amount IS '小計（割引計算の基準）';
-COMMENT ON COLUMN "60_rd_receipts".is_verified IS '人間による確認完了フラグ';
+COMMENT ON TABLE "Rawdata_RECEIPT_shops" IS 'レシート管理台帳 - レシート1枚単位の管理情報';
+COMMENT ON COLUMN "Rawdata_RECEIPT_shops".total_amount_check IS 'レシート印字の合計金額（検算用）';
+COMMENT ON COLUMN "Rawdata_RECEIPT_shops".subtotal_amount IS '小計（割引計算の基準）';
+COMMENT ON COLUMN "Rawdata_RECEIPT_shops".is_verified IS '人間による確認完了フラグ';
 
 -- ====================================================================
--- 2. 子テーブル: 60_rd_transactions_new (OCRテキスト正規化)
+-- 2. 子テーブル: Rawdata_RECEIPT_items_new (OCRテキスト正規化)
 -- ====================================================================
 -- 役割: OCRの読み取り結果と、人間が読める文字への修正を保持
--- 注意: 既存の60_rd_transactionsと名前が衝突するため、一旦 _new サフィックスで作成
+-- 注意: 既存のRawdata_RECEIPT_itemsと名前が衝突するため、一旦 _new サフィックスで作成
 
-CREATE TABLE IF NOT EXISTS "60_rd_transactions_new" (
+CREATE TABLE IF NOT EXISTS "Rawdata_RECEIPT_items_new" (
     -- ID
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    receipt_id UUID NOT NULL REFERENCES "60_rd_receipts"(id) ON DELETE CASCADE,
+    receipt_id UUID NOT NULL REFERENCES "Rawdata_RECEIPT_shops"(id) ON DELETE CASCADE,
 
     -- 行メタ情報
     line_number INTEGER NOT NULL,         -- レシート内の行番号（文脈解析用）
@@ -105,26 +105,26 @@ CREATE TABLE IF NOT EXISTS "60_rd_transactions_new" (
 
 -- インデックス作成
 CREATE INDEX IF NOT EXISTS idx_60_rd_trans_new_receipt
-    ON "60_rd_transactions_new"(receipt_id);
+    ON "Rawdata_RECEIPT_items_new"(receipt_id);
 
 CREATE INDEX IF NOT EXISTS idx_60_rd_trans_new_line
-    ON "60_rd_transactions_new"(receipt_id, line_number);
+    ON "Rawdata_RECEIPT_items_new"(receipt_id, line_number);
 
 CREATE INDEX IF NOT EXISTS idx_60_rd_trans_new_type
-    ON "60_rd_transactions_new"(line_type);
+    ON "Rawdata_RECEIPT_items_new"(line_type);
 
 CREATE INDEX IF NOT EXISTS idx_60_rd_trans_new_low_confidence
-    ON "60_rd_transactions_new"(ocr_confidence) WHERE ocr_confidence < 0.8;
+    ON "Rawdata_RECEIPT_items_new"(ocr_confidence) WHERE ocr_confidence < 0.8;
 
 CREATE INDEX IF NOT EXISTS idx_60_rd_trans_new_created
-    ON "60_rd_transactions_new"(created_at DESC);
+    ON "Rawdata_RECEIPT_items_new"(created_at DESC);
 
 -- コメント
-COMMENT ON TABLE "60_rd_transactions_new" IS 'OCRテキスト正規化 - 読み取り結果の文字修正';
-COMMENT ON COLUMN "60_rd_transactions_new".ocr_raw_text IS 'AIが見たままの文字列（証拠保全）';
-COMMENT ON COLUMN "60_rd_transactions_new".ocr_confidence IS 'AIの読み取り自信度 (0.0000-1.0000)';
-COMMENT ON COLUMN "60_rd_transactions_new".line_number IS 'レシート内の行番号（文脈解析用）';
-COMMENT ON COLUMN "60_rd_transactions_new".line_type IS '行の種類（ITEM, DISCOUNT, SUB_TOTAL, TAX等）';
+COMMENT ON TABLE "Rawdata_RECEIPT_items_new" IS 'OCRテキスト正規化 - 読み取り結果の文字修正';
+COMMENT ON COLUMN "Rawdata_RECEIPT_items_new".ocr_raw_text IS 'AIが見たままの文字列（証拠保全）';
+COMMENT ON COLUMN "Rawdata_RECEIPT_items_new".ocr_confidence IS 'AIの読み取り自信度 (0.0000-1.0000)';
+COMMENT ON COLUMN "Rawdata_RECEIPT_items_new".line_number IS 'レシート内の行番号（文脈解析用）';
+COMMENT ON COLUMN "Rawdata_RECEIPT_items_new".line_type IS '行の種類（ITEM, DISCOUNT, SUB_TOTAL, TAX等）';
 
 -- ====================================================================
 -- 3. 孫テーブル: 60_rd_standardized_items (家計簿・情報正規化)
@@ -134,15 +134,15 @@ COMMENT ON COLUMN "60_rd_transactions_new".line_type IS '行の種類（ITEM, DI
 CREATE TABLE IF NOT EXISTS "60_rd_standardized_items" (
     -- ID
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    transaction_id UUID NOT NULL REFERENCES "60_rd_transactions_new"(id) ON DELETE CASCADE,
-    receipt_id UUID NOT NULL REFERENCES "60_rd_receipts"(id) ON DELETE CASCADE,  -- 冗長化（JOIN削減）
+    transaction_id UUID NOT NULL REFERENCES "Rawdata_RECEIPT_items_new"(id) ON DELETE CASCADE,
+    receipt_id UUID NOT NULL REFERENCES "Rawdata_RECEIPT_shops"(id) ON DELETE CASCADE,  -- 冗長化（JOIN削減）
 
     -- 正規化された商品情報
     official_name TEXT,                   -- マスタ辞書から引いた正式名称
 
     -- 家計簿分類
-    category_id UUID REFERENCES "60_ms_categories"(id),     -- 費目（食費、日用品など）
-    situation_id UUID REFERENCES "60_ms_situations"(id),    -- シチュエーション（日常、旅行など）
+    category_id UUID REFERENCES "MASTER_Categories_expense"(id),     -- 費目（食費、日用品など）
+    situation_id UUID REFERENCES "MASTER_Categories_purpose"(id),    -- シチュエーション（日常、旅行など）
     major_category TEXT,                  -- 大分類（自由記入）
     minor_category TEXT,                  -- 小分類（自由記入）
     purpose TEXT,                         -- 購入目的（より詳細なタグ）
@@ -199,34 +199,34 @@ COMMENT ON COLUMN "60_rd_standardized_items".needs_review IS '手動確認が必
 -- ====================================================================
 
 -- 親テーブル
-ALTER TABLE "60_rd_receipts" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "Rawdata_RECEIPT_shops" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow authenticated users full access to receipts"
-    ON "60_rd_receipts"
+    ON "Rawdata_RECEIPT_shops"
     FOR ALL
     TO authenticated
     USING (true)
     WITH CHECK (true);
 
 CREATE POLICY "Allow service role full access to receipts"
-    ON "60_rd_receipts"
+    ON "Rawdata_RECEIPT_shops"
     FOR ALL
     TO service_role
     USING (true)
     WITH CHECK (true);
 
 -- 子テーブル
-ALTER TABLE "60_rd_transactions_new" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "Rawdata_RECEIPT_items_new" ENABLE ROW LEVEL SECURITY;
 
 CREATE POLICY "Allow authenticated users full access to transactions_new"
-    ON "60_rd_transactions_new"
+    ON "Rawdata_RECEIPT_items_new"
     FOR ALL
     TO authenticated
     USING (true)
     WITH CHECK (true);
 
 CREATE POLICY "Allow service role full access to transactions_new"
-    ON "60_rd_transactions_new"
+    ON "Rawdata_RECEIPT_items_new"
     FOR ALL
     TO service_role
     USING (true)
@@ -257,8 +257,8 @@ DO $$
 BEGIN
     RAISE NOTICE '✅ フェーズ1完了: 3テーブルのスキーマ作成完了';
     RAISE NOTICE '✅ 作成されたテーブル:';
-    RAISE NOTICE '   - 60_rd_receipts (親: レシート管理台帳)';
-    RAISE NOTICE '   - 60_rd_transactions_new (子: OCRテキスト正規化)';
+    RAISE NOTICE '   - Rawdata_RECEIPT_shops (親: レシート管理台帳)';
+    RAISE NOTICE '   - Rawdata_RECEIPT_items_new (子: OCRテキスト正規化)';
     RAISE NOTICE '   - 60_rd_standardized_items (孫: 家計簿・情報正規化)';
     RAISE NOTICE '';
     RAISE NOTICE '次のステップ: フェーズ2（データ移行）を実行してください';
@@ -276,7 +276,7 @@ SELECT
     table_type
 FROM information_schema.tables
 WHERE table_schema = 'public'
-  AND table_name IN ('60_rd_receipts', '60_rd_transactions_new', '60_rd_standardized_items')
+  AND table_name IN ('Rawdata_RECEIPT_shops', 'Rawdata_RECEIPT_items_new', '60_rd_standardized_items')
 ORDER BY table_name;
 
 -- 各テーブルのカラム数確認
@@ -285,6 +285,6 @@ SELECT
     COUNT(*) AS column_count
 FROM information_schema.columns
 WHERE table_schema = 'public'
-  AND table_name IN ('60_rd_receipts', '60_rd_transactions_new', '60_rd_standardized_items')
+  AND table_name IN ('Rawdata_RECEIPT_shops', 'Rawdata_RECEIPT_items_new', '60_rd_standardized_items')
 GROUP BY table_name
 ORDER BY table_name;

@@ -1,7 +1,7 @@
 """
 既存商品データをOpenAIでベクトル化
 
-80_rd_productsテーブルの商品名をOpenAI APIでベクトル化し、
+Rawdata_NETSUPER_itemsテーブルの商品名をOpenAI APIでベクトル化し、
 embeddingカラムに保存します。
 
 使用モデル: text-embedding-3-small (1536次元)
@@ -67,7 +67,7 @@ class ProductEmbeddingGenerator:
         """
         logger.info("embeddingがない商品を取得中...")
 
-        query = self.db.client.table('80_rd_products').select('id, product_name').is_('embedding', 'null')
+        query = self.db.client.table('Rawdata_NETSUPER_items').select('id, product_name').is_('embedding', 'null')
 
         if limit:
             query = query.limit(limit)
@@ -103,7 +103,7 @@ class ProductEmbeddingGenerator:
         """
         # vector型として保存するために文字列形式に変換
         embedding_str = '[' + ','.join(map(str, embedding)) + ']'
-        self.db.client.table('80_rd_products').update({
+        self.db.client.table('Rawdata_NETSUPER_items').update({
             'embedding': embedding_str
         }).eq('id', product_id).execute()
 

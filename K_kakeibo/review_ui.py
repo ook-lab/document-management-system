@@ -113,8 +113,8 @@ def show_receipt_review_tab():
 
         if st.button("📊 データ件数を確認"):
             try:
-                receipts = db.table("60_rd_receipts").select("*", count="exact").execute()
-                transactions = db.table("60_rd_transactions").select("*", count="exact").execute()
+                receipts = db.table("Rawdata_RECEIPT_shops").select("*", count="exact").execute()
+                transactions = db.table("Rawdata_RECEIPT_items").select("*", count="exact").execute()
                 st.success(f"レシート: {receipts.count}件、商品: {transactions.count}件")
             except Exception as e:
                 st.error(f"エラー: {e}")
@@ -195,7 +195,7 @@ def determine_expense_category(db, product_category: str, person: str, purpose: 
         # 1次分類IDを取得
         product_category_id = None
         if product_category:
-            result = db.table("60_ms_product_categories").select("id") \
+            result = db.table("MASTER_Categories_product").select("id") \
                 .eq("name", product_category) \
                 .limit(1) \
                 .execute()
@@ -205,7 +205,7 @@ def determine_expense_category(db, product_category: str, person: str, purpose: 
         # 名目IDを取得
         purpose_id = None
         if purpose:
-            result = db.table("60_ms_purposes").select("id") \
+            result = db.table("MASTER_Categories_purpose").select("id") \
                 .eq("name", purpose) \
                 .limit(1) \
                 .execute()
@@ -214,8 +214,8 @@ def determine_expense_category(db, product_category: str, person: str, purpose: 
 
         # ルールを検索（優先度の高い順）
         # SQLでNULL比較を正しく処理
-        query = db.table("60_ms_expense_category_rules") \
-            .select("expense_category_id, 60_ms_expense_categories(name)") \
+        query = db.table("MASTER_Rules_expense_mapping") \
+            .select("expense_category_id, MASTER_Categories_expense(name)") \
             .order("priority", desc=True) \
             .limit(1)
 
@@ -254,7 +254,7 @@ def determine_expense_category(db, product_category: str, person: str, purpose: 
 
         if result.data:
             # JOINした結果から費目名を取得
-            expense_category_data = result.data[0].get("60_ms_expense_categories")
+            expense_category_data = result.data[0].get("MASTER_Categories_expense")
             if expense_category_data:
                 return expense_category_data.get("name")
 
@@ -282,7 +282,7 @@ def auto_classify_transaction(db, shop_name: str, product_name: str, official_na
     try:
         # 1. 店舗名 + 商品名の完全一致
         if shop_name and product_name:
-            result = db.table("60_ms_transaction_dictionary").select("*") \
+            result = db.table("MASTER_Rules_transaction_dict").select("*") \
                 .eq("shop_name", shop_name) \
                 .eq("product_name", product_name) \
                 .order("priority") \
@@ -298,7 +298,7 @@ def auto_classify_transaction(db, shop_name: str, product_name: str, official_na
 
         # 2. 店舗名のみ（店舗全体のデフォルト）
         if shop_name:
-            result = db.table("60_ms_transaction_dictionary").select("*") \
+            result = db.table("MASTER_Rules_transaction_dict").select("*") \
                 .eq("shop_name", shop_name) \
                 .eq("rule_type", "shop_only") \
                 .order("priority") \
@@ -314,7 +314,7 @@ def auto_classify_transaction(db, shop_name: str, product_name: str, official_na
 
         # 3. 商品名のみ
         if product_name:
-            result = db.table("60_ms_transaction_dictionary").select("*") \
+            result = db.table("MASTER_Rules_transaction_dict").select("*") \
                 .eq("product_name", product_name) \
                 .is_("shop_name", "null") \
                 .order("priority") \
@@ -330,7 +330,7 @@ def auto_classify_transaction(db, shop_name: str, product_name: str, official_na
 
         # 4. official_nameのみ
         if official_name:
-            result = db.table("60_ms_transaction_dictionary").select("*") \
+            result = db.table("MASTER_Rules_transaction_dict").select("*") \
                 .eq("official_name", official_name) \
                 .order("priority") \
                 .limit(1) \
@@ -345,7 +345,7 @@ def auto_classify_transaction(db, shop_name: str, product_name: str, official_na
 
         # 5. general_nameのみ
         if general_name:
-            result = db.table("60_ms_transaction_dictionary").select("*") \
+            result = db.table("MASTER_Rules_transaction_dict").select("*") \
                 .eq("general_name", general_name) \
                 .order("priority") \
                 .limit(1) \
@@ -376,7 +376,7 @@ def save_to_dictionary(db, shop_name: str, product_name: str, official_name: str
     """
     try:
         # 既存レコードを検索（shop_name + product_nameの組み合わせ）
-        existing = db.table("60_ms_transaction_dictionary").select("*") \
+        existing = db.table("MASTER_Rules_transaction_dict").select("*") \
             .eq("shop_name", shop_name) \
             .eq("product_name", product_name) \
             .execute()
@@ -384,7 +384,7 @@ def save_to_dictionary(db, shop_name: str, product_name: str, official_name: str
         if existing.data:
             # 既存レコードを更新（使用回数をインクリメント）
             record = existing.data[0]
-            db.table("60_ms_transaction_dictionary").update({
+            db.table("MASTER_Rules_transaction_dict").update({
                 "category": category,
                 "person": person,
                 "purpose": purpose,
@@ -412,7 +412,7 @@ def save_to_dictionary(db, shop_name: str, product_name: str, official_name: str
                 rule_type = "product"
                 priority = 50
 
-            db.table("60_ms_transaction_dictionary").insert({
+            db.table("MASTER_Rules_transaction_dict").insert({
                 "shop_name": shop_name,
                 "product_name": product_name,
                 "official_name": official_name,
@@ -468,7 +468,7 @@ def show_receipt_detail(log: dict):
 
         if log["status"] == "success" and log.get("receipt_id"):
             # レシート情報を取得
-            receipt_result = db.table("60_rd_receipts") \
+            receipt_result = db.table("Rawdata_RECEIPT_shops") \
                 .select("*") \
                 .eq("id", log["receipt_id"]) \
                 .execute()
@@ -505,21 +505,14 @@ def show_receipt_detail(log: dict):
 
             # トランザクションを取得（JOINは使わず2段階クエリ）
             try:
-                transactions = db.table("60_rd_transactions") \
+                transactions = db.table("Rawdata_RECEIPT_items") \
                     .select("*") \
                     .eq("receipt_id", log["receipt_id"]) \
                     .order("line_number") \
                     .execute()
 
-                # 各transactionに対してstandardized_itemsを取得して結合
-                if transactions.data:
-                    for t in transactions.data:
-                        std_items = db.table("60_rd_standardized_items") \
-                            .select("*") \
-                            .eq("transaction_id", t["id"]) \
-                            .execute()
-                        # standardized_itemsデータを配列として追加（最初の1件のみ）
-                        t["60_rd_standardized_items"] = std_items.data[0] if std_items.data else None
+                # Note: standardized data is now stored directly in Rawdata_RECEIPT_items
+                # No need to fetch from separate table
 
             except Exception as e:
                 st.error(f"トランザクション取得エラー: {str(e)}")
@@ -553,49 +546,22 @@ def show_receipt_detail(log: dict):
                         st.json(first_t)
                         st.write("---")
 
-                        # 直接60_rd_standardized_itemsテーブルをクエリ
-                        st.write("**🔍 直接クエリ: 60_rd_standardized_items**")
-                        transaction_id = first_t.get('id')
-                        if transaction_id:
-                            try:
-                                std_items = db.table("60_rd_standardized_items") \
-                                    .select("*") \
-                                    .eq("transaction_id", transaction_id) \
-                                    .execute()
-                                st.write(f"取得件数: {len(std_items.data) if std_items.data else 0}")
-                                if std_items.data and len(std_items.data) > 0:
-                                    st.json(std_items.data[0])
-                                else:
-                                    st.write("⚠️ データが見つかりません")
-                            except Exception as e:
-                                st.write(f"❌ エラー: {e}")
-                        st.write("---")
-
-                        # データ構造情報
+                        # データ構造情報（standardized data is now in the same record）
                         st.write(f"**商品名**: {first_t.get('product_name')}")
-                        st.write(f"**60_rd_standardized_items type**: {type(first_t.get('60_rd_standardized_items'))}")
-                        st.write(f"**60_rd_standardized_items value**: {first_t.get('60_rd_standardized_items')}")
-
-                        std_test = first_t.get("60_rd_standardized_items") or {}
-                        st.write(f"**std (processed)**: {std_test}")
-                        if std_test:
-                            st.write(f"**std_unit_price**: {std_test.get('std_unit_price')}")
-                            st.write(f"**tax_amount**: {std_test.get('tax_amount')}")
-                            st.write(f"**std_amount**: {std_test.get('std_amount')}")
-                        else:
-                            st.write("⚠️ standardized_itemsデータが空です")
+                        st.write(f"**std_unit_price**: {first_t.get('std_unit_price')}")
+                        st.write(f"**tax_amount**: {first_t.get('tax_amount')}")
+                        st.write(f"**std_amount**: {first_t.get('std_amount')}")
 
                 # DataFrameに変換（7要素構造 + ID情報）
                 df_data = []
                 for t in transactions.data:
-                    # standardized_itemsデータを取得（辞書またはNone）
-                    std = t.get("60_rd_standardized_items") or {}
+                    # Note: standardized data is now directly in t (no separate table)
 
                     # 7要素データを取得
                     quantity = t.get("quantity") or 1
-                    std_unit_price = std.get('std_unit_price')  # 本体単価（1個あたりの税抜価格）
-                    tax_amount = std.get('tax_amount')  # 税額
-                    tax_included_amount = std.get('std_amount')  # 税込価
+                    std_unit_price = t.get('std_unit_price')  # 本体単価（1個あたりの税抜価格）
+                    tax_amount = t.get('tax_amount')  # 税額
+                    tax_included_amount = t.get('std_amount')  # 税込価
 
                     # 本体価を計算（本体単価 × 数量 = 税抜総額）
                     base_price_total = None
@@ -618,16 +584,16 @@ def show_receipt_detail(log: dict):
                         tax_included_unit_price = tax_included_amount // quantity
 
                     # 分類の階層表示（内部的には大中小の3階層、表示は最下層のみ）
-                    major = std.get("major_category") or ""
-                    middle = std.get("middle_category") or ""
-                    minor = std.get("minor_category") or ""
+                    major = t.get("major_category") or ""
+                    middle = t.get("middle_category") or ""
+                    minor = t.get("minor_category") or ""
 
                     # 表示用の分類（最下層のみ、なければ順に上位を表示）
                     category_display = minor or middle or major or ""
 
                     # 人物と名目を取得
-                    person_value = std.get("person") or "家族"  # デフォルト: 家族
-                    purpose_value = std.get("purpose") or "日常"  # デフォルト: 日常
+                    person_value = t.get("person") or "家族"  # デフォルト: 家族
+                    purpose_value = t.get("purpose") or "日常"  # デフォルト: 日常
 
                     # 2次分類（費目）を自動判定
                     expense_category = determine_expense_category(
@@ -639,7 +605,7 @@ def show_receipt_detail(log: dict):
 
                     df_data.append({
                         "_transaction_id": t["id"],  # 更新用（非表示）
-                        "_std_id": std.get("id"),  # 更新用（非表示）
+                        "_std_id": t.get("id"),  # 更新用（非表示、now same as transaction_id）
                         "_major_category": major,  # 内部保持（非表示）
                         "_middle_category": middle,  # 内部保持（非表示）
                         "_minor_category": minor,  # 内部保持（非表示）
@@ -668,22 +634,22 @@ def show_receipt_detail(log: dict):
 
                 # 名目の選択肢（DBから取得）
                 try:
-                    purposes_result = db.table("60_ms_purposes").select("name").order("display_order").execute()
+                    purposes_result = db.table("MASTER_Categories_purpose").select("name").order("display_order").execute()
                     purpose_options = [p["name"] for p in purposes_result.data] if purposes_result.data else ["日常"]
                 except:
                     # テーブルがまだ存在しない場合のフォールバック
                     existing_purposes = set()
                     for t in transactions.data:
-                        std = t.get("60_rd_standardized_items")
-                        if std and std.get("purpose"):
-                            existing_purposes.add(std.get("purpose"))
+                        purpose = t.get("purpose")
+                        if purpose:
+                            existing_purposes.add(purpose)
                     purpose_options = sorted(list(existing_purposes)) if existing_purposes else []
                     if "日常" not in purpose_options:
                         purpose_options.insert(0, "日常")
 
                 # 費目の選択肢（DBから取得）
                 try:
-                    expense_cats_result = db.table("60_ms_expense_categories").select("name").order("display_order").execute()
+                    expense_cats_result = db.table("MASTER_Categories_expense").select("name").order("display_order").execute()
                     expense_category_options = [c["name"] for c in expense_cats_result.data] if expense_cats_result.data else []
                 except:
                     expense_category_options = []
@@ -823,16 +789,16 @@ def show_receipt_detail(log: dict):
                             # 将来的には階層構造のマスターテーブルから major/middle を自動判定
                             category_value = row["分類"]
 
-                            # 60_rd_standardized_itemsを更新
+                            # Rawdata_RECEIPT_itemsを更新
                             try:
-                                db.table("60_rd_standardized_items").update({
+                                db.table("Rawdata_RECEIPT_items").update({
                                     "std_unit_price": std_unit_price,
                                     "tax_amount": row["税額"],
                                     "std_amount": row["税込価"],
                                     "minor_category": category_value,  # 分類を更新
                                     "person": row["人物"],  # 人物を更新
                                     "purpose": row["名目"],  # 名目を更新
-                                }).eq("id", std_id).execute()
+                                }).eq("id", transaction_id).execute()
                                 updated_count += 1
 
                                 # 辞書に保存（オプション）
@@ -869,7 +835,7 @@ def show_receipt_detail(log: dict):
 
                 # 合計金額・税額サマリー
                 total = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    t.get("std_amount", 0) or 0
                     for t in transactions.data
                 )
                 # 税率別の集計
@@ -886,18 +852,18 @@ def show_receipt_detail(log: dict):
                 )
                 # 税込合計（8%、10%それぞれ）
                 total_amount_8 = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    t.get("std_amount", 0) or 0
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 8
+                    if t.get("tax_rate") == 8
                 )
                 total_amount_10 = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    t.get("std_amount", 0) or 0
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 10
+                    if t.get("tax_rate") == 10
                 )
 
                 # 税額サマリー取得（レシート記載値との比較）
-                # 60_rd_receiptsテーブルから税率別の小計・税額を取得
+                # Rawdata_RECEIPT_shopsテーブルから税率別の小計・税額を取得
                 try:
                     # レシート記載の税額と小計を取得
                     receipt_tax_8 = receipt.get('tax_8_amount')
@@ -928,38 +894,38 @@ def show_receipt_detail(log: dict):
 
                 # 計算値を集計（税抜・税込両方）
                 calc_subtotal_excluding_tax = sum(  # 税抜合計（外税用）
-                    (t.get("60_rd_standardized_items") or {}).get("std_unit_price", 0) * (t.get("quantity") or 1)
+                    (t.get("std_unit_price", 0) or 0) * (t.get("quantity") or 1)
                     for t in transactions.data
                 )
                 calc_total = sum(  # 税込合計
-                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    t.get("std_amount", 0) or 0
                     for t in transactions.data
                 )
 
                 # 税率別の対象額（8%, 10%）
                 # 10%対象額（税込）- 内税用
                 calc_10_amount_including_tax = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    t.get("std_amount", 0) or 0
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 10
+                    if t.get("tax_rate") == 10
                 )
                 # 10%対象額（税抜）- 外税用
                 calc_10_amount_excluding_tax = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("std_unit_price", 0) * (t.get("quantity") or 1)
+                    (t.get("std_unit_price", 0) or 0) * (t.get("quantity") or 1)
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 10
+                    if t.get("tax_rate") == 10
                 )
                 # 8%対象額（税込）- 内税用
                 calc_8_amount_including_tax = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("std_amount", 0)
+                    t.get("std_amount", 0) or 0
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 8
+                    if t.get("tax_rate") == 8
                 )
                 # 8%対象額（税抜）- 外税用
                 calc_8_amount_excluding_tax = sum(
-                    (t.get("60_rd_standardized_items") or {}).get("std_unit_price", 0) * (t.get("quantity") or 1)
+                    (t.get("std_unit_price", 0) or 0) * (t.get("quantity") or 1)
                     for t in transactions.data
-                    if (t.get("60_rd_standardized_items") or {}).get("tax_rate") == 8
+                    if t.get("tax_rate") == 8
                 )
 
                 # レシート記載値
@@ -1205,7 +1171,7 @@ def show_receipt_detail(log: dict):
                 with col1:
                     if st.button("✅ 全て承認", key="approve_all"):
                         # レシート単位で承認
-                        db.table("60_rd_receipts") \
+                        db.table("Rawdata_RECEIPT_shops") \
                             .update({"is_verified": True}) \
                             .eq("id", log["receipt_id"]) \
                             .execute()
@@ -1220,7 +1186,7 @@ def show_receipt_detail(log: dict):
                 with col3:
                     if st.button("🗑️ 全て削除", key="delete_all"):
                         # レシートを削除（CASCADE で子・孫も削除される）
-                        db.table("60_rd_receipts") \
+                        db.table("Rawdata_RECEIPT_shops") \
                             .delete() \
                             .eq("id", log["receipt_id"]) \
                             .execute()
@@ -1233,8 +1199,8 @@ def show_receipt_detail(log: dict):
                     st.subheader("個別編集")
 
                     for idx, t in enumerate(transactions.data):
-                        std = t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})
-                        amount = std.get('std_amount', 0) or 0
+                        # Note: standardized data is now directly in t
+                        amount = t.get('std_amount', 0) or 0
                         with st.expander(f"{t['product_name']} (¥{amount:,})"):
                             col_a, col_b, col_c = st.columns(3)
 
@@ -1253,13 +1219,13 @@ def show_receipt_detail(log: dict):
 
                                 new_tax_included = st.number_input(
                                     "内税額",
-                                    value=std.get("tax_amount", 0) or 0,
+                                    value=t.get("tax_amount", 0) or 0,
                                     key=f"tax_{idx}"
                                 )
 
                                 new_official_name = st.text_input(
                                     "正式名",
-                                    value=std.get("official_name") or "",
+                                    value=t.get("official_name") or "",
                                     key=f"official_{idx}"
                                 )
 
@@ -1271,7 +1237,7 @@ def show_receipt_detail(log: dict):
 
                             with col_b:
                                 # 分類（最下層のみ表示）
-                                current_category = std.get("minor_category") or std.get("middle_category") or std.get("major_category") or ""
+                                current_category = t.get("minor_category") or t.get("middle_category") or t.get("major_category") or ""
                                 new_category = st.text_input(
                                     "分類",
                                     value=current_category,
@@ -1281,7 +1247,7 @@ def show_receipt_detail(log: dict):
 
                             with col_c:
                                 # 人物（プルダウン）
-                                current_person = std.get("person") or "家族"
+                                current_person = t.get("person") or "家族"
                                 person_index = person_options.index(current_person) if current_person in person_options else 0
                                 new_person = st.selectbox(
                                     "人物",
@@ -1291,7 +1257,7 @@ def show_receipt_detail(log: dict):
                                 )
 
                                 # 名目（プルダウン）
-                                current_purpose = std.get("purpose") or "日常"
+                                current_purpose = t.get("purpose") or "日常"
                                 if current_purpose not in purpose_options:
                                     purpose_options.append(current_purpose)
                                 purpose_index = purpose_options.index(current_purpose) if current_purpose in purpose_options else 0
@@ -1303,26 +1269,20 @@ def show_receipt_detail(log: dict):
                                 )
 
                             if st.button("💾 更新", key=f"update_{idx}"):
-                                # 子テーブル（テキスト）の更新
-                                db.table("60_rd_transactions").update({
+                                # Rawdata_RECEIPT_items を更新（全データを同じテーブルに保存）
+                                db.table("Rawdata_RECEIPT_items").update({
                                     "product_name": new_product,
-                                    "item_name": new_item_name
+                                    "item_name": new_item_name,
+                                    "std_amount": new_amount,
+                                    "tax_amount": new_tax_included,
+                                    "official_name": new_official_name,
+                                    "minor_category": new_category,  # 分類を更新
+                                    "person": new_person,
+                                    "purpose": new_purpose
                                 }).eq("id", t["id"]).execute()
 
-                                # 孫テーブル（分類・金額）の更新
-                                std = t.get("60_rd_standardized_items", [{}])[0] if isinstance(t.get("60_rd_standardized_items"), list) else t.get("60_rd_standardized_items", {})
-                                if std and "id" in std:
-                                    db.table("60_rd_standardized_items").update({
-                                        "std_amount": new_amount,
-                                        "tax_amount": new_tax_included,
-                                        "official_name": new_official_name,
-                                        "minor_category": new_category,  # 分類を更新
-                                        "person": new_person,
-                                        "purpose": new_purpose
-                                    }).eq("id", std["id"]).execute()
-
                                 # レシート全体を確認済みにマーク
-                                db.table("60_rd_receipts").update({
+                                db.table("Rawdata_RECEIPT_shops").update({
                                     "is_verified": True
                                 }).eq("id", log["receipt_id"]).execute()
 
@@ -1382,7 +1342,7 @@ def show_daily_inbox():
     if 'pending_products_data' not in st.session_state or st.session_state.get('refresh_pending_products', False):
         try:
             # データ取得（初回または明示的なリフレッシュ時のみ）
-            all_pending = db.table('80_rd_products').select(
+            all_pending = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, product_name_normalized, general_name, category_id, classification_confidence, organization'
             ).eq('needs_approval', True).execute()
 
@@ -1484,7 +1444,7 @@ def render_product_approval_table(products, title, icon):
             if len(checked_rows) > 0:
                 for _, row in checked_rows.iterrows():
                     # 修正内容のみ保存（承認はしない）
-                    db.table('80_rd_products').update({
+                    db.table('Rawdata_NETSUPER_items').update({
                         "product_name": row['product_name'],
                         "product_name_normalized": row['product_name_normalized'],
                         "general_name": row['general_name']
@@ -1502,7 +1462,7 @@ def render_product_approval_table(products, title, icon):
             if len(checked_rows) > 0:
                 for _, row in checked_rows.iterrows():
                     # 修正内容も保存して承認
-                    db.table('80_rd_products').update({
+                    db.table('Rawdata_NETSUPER_items').update({
                         "product_name": row['product_name'],
                         "product_name_normalized": row['product_name_normalized'],
                         "general_name": row['general_name'],
@@ -1598,7 +1558,7 @@ def show_bulk_clustering():
 
                     # Tier 1: 各商品名 → general_name のマッピング
                     for product_name in set(product_names):
-                        db.table('70_ms_product_normalization').upsert({
+                        db.table('MASTER_Product_generalize').upsert({
                             "raw_keyword": product_name,
                             "general_name": general_name,
                             "confidence_score": confidence,
@@ -1606,7 +1566,7 @@ def show_bulk_clustering():
                         }, on_conflict="raw_keyword,general_name").execute()
 
                     # Tier 2: general_name + context → category_id
-                    db.table('70_ms_product_classification').upsert({
+                    db.table('MASTER_Product_classify').upsert({
                         "general_name": general_name,
                         "source_type": "online_shop",
                         "workspace": "shopping",
@@ -1617,9 +1577,9 @@ def show_bulk_clustering():
                         "confidence_score": confidence
                     }, on_conflict="general_name,source_type,workspace,doc_type,organization").execute()
 
-                    # 80_rd_productsを更新
+                    # Rawdata_NETSUPER_itemsを更新
                     for product_id in product_ids:
-                        db.table('80_rd_products').update({
+                        db.table('Rawdata_NETSUPER_items').update({
                             "general_name": general_name,
                             "category_id": category_id,
                             "needs_approval": False,
@@ -1670,7 +1630,7 @@ def show_product_category_management():
 
     try:
         # カテゴリ取得
-        categories = db.table('60_ms_product_categories').select('*').order('name').execute()
+        categories = db.table('MASTER_Categories_product').select('*').order('name').execute()
 
         if not categories.data:
             st.warning("カテゴリがありません。新規追加してください。")
@@ -1705,7 +1665,7 @@ def show_product_category_management():
                     st.markdown(f"{indent}{icon} {item['name']}{desc_text}")
                 with col2:
                     if st.button("🗑️", key=f"del_prod_{item['id']}", help="削除"):
-                        db.table('60_ms_product_categories').delete().eq('id', item['id']).execute()
+                        db.table('MASTER_Categories_product').delete().eq('id', item['id']).execute()
                         st.success("削除しました")
                         st.rerun()
 
@@ -1731,7 +1691,7 @@ def show_product_category_management():
         if st.button("追加", type="primary", key="add_prod_cat"):
             if new_name:
                 parent_id = parent_options[selected_parent]
-                db.table('60_ms_product_categories').insert({
+                db.table('MASTER_Categories_product').insert({
                     "name": new_name,
                     "parent_id": parent_id,
                     "description": new_desc if new_desc else None
@@ -1754,7 +1714,7 @@ def show_expense_category_management():
 
     try:
         # 費目取得
-        expense_cats = db.table('60_ms_expense_categories').select('*').order('display_order').execute()
+        expense_cats = db.table('MASTER_Categories_expense').select('*').order('display_order').execute()
 
         if expense_cats.data:
             st.markdown("#### 現在の費目一覧")
@@ -1792,7 +1752,7 @@ def show_expense_category_management():
                     cat_id = row.get("id")
                     if cat_id:
                         # 既存データを更新
-                        db.table('60_ms_expense_categories').update({
+                        db.table('MASTER_Categories_expense').update({
                             "name": row["名前"],
                             "description": row["説明"],
                             "display_order": int(row["表示順"])
@@ -1818,7 +1778,7 @@ def show_expense_category_management():
 
         if st.button("追加", type="primary", key="add_exp_cat"):
             if new_name:
-                db.table('60_ms_expense_categories').insert({
+                db.table('MASTER_Categories_expense').insert({
                     "name": new_name,
                     "description": new_desc if new_desc else None,
                     "display_order": new_order
@@ -1841,7 +1801,7 @@ def show_purpose_management():
 
     try:
         # 名目取得
-        purposes = db.table('60_ms_purposes').select('*').order('display_order').execute()
+        purposes = db.table('MASTER_Categories_purpose').select('*').order('display_order').execute()
 
         if purposes.data:
             st.markdown("#### 現在の名目一覧")
@@ -1879,7 +1839,7 @@ def show_purpose_management():
                     purpose_id = row.get("id")
                     if purpose_id:
                         # 既存データを更新
-                        db.table('60_ms_purposes').update({
+                        db.table('MASTER_Categories_purpose').update({
                             "name": row["名前"],
                             "description": row["説明"],
                             "display_order": int(row["表示順"])
@@ -1905,7 +1865,7 @@ def show_purpose_management():
 
         if st.button("追加", type="primary", key="add_purpose"):
             if new_name:
-                db.table('60_ms_purposes').insert({
+                db.table('MASTER_Categories_purpose').insert({
                     "name": new_name,
                     "description": new_desc if new_desc else None,
                     "display_order": new_order
@@ -1978,7 +1938,7 @@ def show_rule_management():
                 selected_idx = [f"{r['名目']} + {r['人物']} + {r['1次分類']} → {r['→ 費目']}" for r in df_data].index(rule_to_delete)
                 rule_id = df_data[selected_idx]["id"]
 
-                db.table("60_ms_expense_category_rules").delete().eq("id", rule_id).execute()
+                db.table("MASTER_Rules_expense_mapping").delete().eq("id", rule_id).execute()
                 st.success("ルールを削除しました")
                 st.rerun()
 
@@ -1988,17 +1948,17 @@ def show_rule_management():
         st.markdown("### 新規ルール追加")
 
         # 選択肢を取得
-        purposes = db.table("60_ms_purposes").select("id, name").order("display_order").execute()
+        purposes = db.table("MASTER_Categories_purpose").select("id, name").order("display_order").execute()
         purpose_options = {"（任意）": None}
         if purposes.data:
             purpose_options.update({p["name"]: p["id"] for p in purposes.data})
 
-        product_cats = db.table("60_ms_product_categories").select("id, name").order("name").execute()
+        product_cats = db.table("MASTER_Categories_product").select("id, name").order("name").execute()
         product_cat_options = {"（任意）": None}
         if product_cats.data:
             product_cat_options.update({c["name"]: c["id"] for c in product_cats.data})
 
-        expense_cats = db.table("60_ms_expense_categories").select("id, name").order("display_order").execute()
+        expense_cats = db.table("MASTER_Categories_expense").select("id, name").order("display_order").execute()
         expense_cat_options = {}
         if expense_cats.data:
             expense_cat_options.update({c["name"]: c["id"] for c in expense_cats.data})
@@ -2045,7 +2005,7 @@ def show_rule_management():
                 product_cat_id = product_cat_options[selected_product_cat]
                 expense_cat_id = expense_cat_options[selected_expense_cat]
 
-                db.table("60_ms_expense_category_rules").insert({
+                db.table("MASTER_Rules_expense_mapping").insert({
                     "purpose_id": purpose_id,
                     "person": person_value,
                     "product_category_id": product_cat_id,
@@ -2076,7 +2036,7 @@ def show_approved_products_search():
 
         with col1:
             # 店舗フィルター
-            stores_result = db.table('80_rd_products').select('organization').execute()
+            stores_result = db.table('Rawdata_NETSUPER_items').select('organization').execute()
             unique_stores = sorted(list(set([p.get('organization', '') for p in stores_result.data if p.get('organization')])))
             selected_store = st.selectbox("店舗", options=["全て"] + unique_stores)
 
@@ -2094,7 +2054,7 @@ def show_approved_products_search():
         # 検索ボタン
         if st.button("🔍 検索", type="primary"):
             # クエリ構築
-            query = db.table('80_rd_products').select(
+            query = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, product_name_normalized, general_name, category_id, organization, classification_confidence'
             ).eq('needs_approval', False)  # 承認済みのみ
 
@@ -2153,7 +2113,7 @@ def show_approved_products_search():
                 checked_rows = edited_df[edited_df["選択"] == True]
                 if len(checked_rows) > 0:
                     for _, row in checked_rows.iterrows():
-                        db.table('80_rd_products').update({
+                        db.table('Rawdata_NETSUPER_items').update({
                             "product_name": row['product_name'],
                             "product_name_normalized": row['product_name_normalized'],
                             "general_name": row['general_name']

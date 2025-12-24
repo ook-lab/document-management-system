@@ -7,7 +7,7 @@ Google Drive から家計簿レシートを取得して統合パイプライン�
    - Stage F: 全テキスト抽出 (gemini-2.5-flash-lite)
    - Stage G: JSON構造化 (gemini-2.5-flash-lite)
    - Stage H: 税額按分・分類 (stage_h_kakeibo.py + Python)
-3. 3層DB (60_rd_receipts → 60_rd_transactions → 60_rd_standardized_items) に保存
+3. 2層DB (Rawdata_RECEIPT_shops → Rawdata_RECEIPT_items with standardized data) に保存
 """
 
 import asyncio
@@ -278,10 +278,10 @@ class ReceiptReimporter:
         logger.info(f"Hard:   {stats['hard']}件")
         logger.info("="*80)
 
-        # 80_rd_productsへの自動同期
+        # Rawdata_NETSUPER_itemsへの自動同期
         if stats['success'] > 0:
             logger.info("\n" + "="*80)
-            logger.info("80_rd_products への商品同期を開始...")
+            logger.info("Rawdata_NETSUPER_items への商品同期を開始...")
             logger.info("="*80)
             try:
                 from sync_receipt_products_to_master import ReceiptProductSync

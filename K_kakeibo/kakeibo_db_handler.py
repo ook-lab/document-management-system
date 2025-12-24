@@ -1,10 +1,9 @@
 """
 家計簿データのDB保存ハンドラー
 
-Stage Hで処理された家計簿データを3層構造のDBに保存する
-- 60_rd_receipts（親）
-- 60_rd_transactions（子）
-- 60_rd_standardized_items（孫）
+Stage Hで処理された家計簿データを2層構造のDBに保存する
+- Rawdata_RECEIPT_shops（親）
+- Rawdata_RECEIPT_items（子）← OCR生データ + 標準化データ統合
 - 99_lg_image_proc_log（処理ログ）
 """
 
@@ -56,17 +55,18 @@ class KakeiboDBHandler:
                 source_folder
             )
 
-            # 2. トランザクション（子）と正規化アイテム（孫）を登録
+            # 2. トランザクション（OCRデータ + 標準化データを統合して登録）
             transaction_ids = []
-            standardized_ids = []
 
             for line_num, item_data in enumerate(stage_h_output["items"], start=1):
                 item = item_data["raw_item"]
                 normalized = item_data["normalized"]
 
-                # 子テーブルに登録
                 # displayed_amount は normalized から取得（レシート記載の金額）
                 displayed_amount = normalized.get("displayed_amount") or item.get("amount") or 0
+
+                # 値引き行でない場合は標準化データも含める
+                is_discount = item.get("line_type") == "DISCOUNT"
 
                 transaction_id = self._insert_transaction(
                     receipt_id=receipt_id,
@@ -82,23 +82,12 @@ class KakeiboDBHandler:
                     tax_amount=normalized.get("tax_amount"),
                     tax_included_amount=normalized.get("tax_included_amount"),
                     tax_display_type=normalized.get("tax_display_type"),
-                    tax_rate=normalized.get("tax_rate")
+                    tax_rate=normalized.get("tax_rate"),
+                    # 標準化データ（値引き行以外）
+                    normalized=normalized if not is_discount else None,
+                    situation_id=stage_h_output["receipt"]["situation_id"] if not is_discount else None
                 )
                 transaction_ids.append(transaction_id)
-
-                # 孫テーブルに登録（7要素を使用）
-                # 値引き行の場合はスキップ（トランザクションとしてのみ記録）
-                if item.get("line_type") != "DISCOUNT":
-                    std_id = self._insert_standardized_item(
-                        transaction_id=transaction_id,
-                        receipt_id=receipt_id,
-                        normalized=normalized,
-                        situation_id=stage_h_output["receipt"]["situation_id"],
-                        base_price=normalized.get("base_price", 0),
-                        tax_included_amount=normalized.get("tax_included_amount", 0),
-                        tax_amount=normalized.get("tax_amount", 0)
-                    )
-                    standardized_ids.append(std_id)
 
             # 3. 処理ログを記録
             log_id = self._log_processing_success(
@@ -115,7 +104,6 @@ class KakeiboDBHandler:
                 "success": True,
                 "receipt_id": receipt_id,
                 "transaction_ids": transaction_ids,
-                "standardized_ids": standardized_ids,
                 "log_id": log_id
             }
 
@@ -158,7 +146,7 @@ class KakeiboDBHandler:
             "is_verified": False
         }
 
-        result = self.db.client.table("60_rd_receipts").insert(data).execute()
+        result = self.db.client.table("Rawdata_RECEIPT_shops").insert(data).execute()
         return result.data[0]["id"]
 
     def _insert_transaction(
@@ -176,9 +164,11 @@ class KakeiboDBHandler:
         tax_amount: int = None,
         tax_included_amount: int = None,
         tax_display_type: str = None,
-        tax_rate: int = None
+        tax_rate: int = None,
+        normalized: Dict = None,
+        situation_id: str = None
     ) -> str:
-        """トランザクション情報をDBに登録（子テーブル）"""
+        """トランザクション情報 + 標準化データをDBに登録（統合テーブル）"""
         data = {
             "receipt_id": receipt_id,
             "line_number": line_number,
@@ -197,34 +187,18 @@ class KakeiboDBHandler:
             "tax_rate": tax_rate  # 税率（8 or 10）
         }
 
-        result = self.db.client.table("60_rd_transactions").insert(data).execute()
-        return result.data[0]["id"]
+        # 標準化データがあれば追加
+        if normalized:
+            data.update({
+                "official_name": normalized["product_name"],
+                "category_id": normalized.get("category_id"),
+                "situation_id": situation_id,
+                "std_unit_price": base_price,  # 税抜本体価格
+                "std_amount": tax_included_amount,  # 税込額
+                "needs_review": normalized.get("tax_rate_source") != "master"
+            })
 
-    def _insert_standardized_item(
-        self,
-        transaction_id: str,
-        receipt_id: str,
-        normalized: Dict,
-        situation_id: str,
-        base_price: int,
-        tax_included_amount: int,
-        tax_amount: int
-    ) -> str:
-        """正規化された家計簿アイテムをDBに登録（孫テーブル）"""
-        data = {
-            "transaction_id": transaction_id,
-            "receipt_id": receipt_id,
-            "official_name": normalized["product_name"],
-            "category_id": normalized.get("category_id"),
-            "situation_id": situation_id,
-            "tax_rate": normalized["tax_rate"],
-            "std_unit_price": base_price,  # 税抜本体価格
-            "std_amount": tax_included_amount,  # 税込額
-            "tax_amount": tax_amount,  # 消費税額
-            "needs_review": normalized.get("tax_rate_source") != "master"
-        }
-
-        result = self.db.client.table("60_rd_standardized_items").insert(data).execute()
+        result = self.db.client.table("Rawdata_RECEIPT_items").insert(data).execute()
         return result.data[0]["id"]
 
     def _log_processing_success(

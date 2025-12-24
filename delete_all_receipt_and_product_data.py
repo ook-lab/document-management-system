@@ -4,10 +4,9 @@
 ⚠️ 警告：この操作は元に戻せません ⚠️
 
 削除対象：
-1. 60_rd_receipts（レシート）
-2. 60_rd_transactions（取引明細）
-3. 60_rd_standardized_items（正規化商品）
-4. 80_rd_products（商品マスタ）
+1. Rawdata_RECEIPT_shops（レシート）
+2. Rawdata_RECEIPT_items（取引明細、正規化データを含む）
+3. Rawdata_NETSUPER_items（商品マスタ）
 """
 
 import os
@@ -30,10 +29,9 @@ def confirm_deletion():
     print("⚠️  警告：データ全削除 ⚠️")
     print("="*80)
     print("\n以下のテーブルから全データを削除します：")
-    print("  1. 60_rd_standardized_items（正規化商品）")
-    print("  2. 60_rd_transactions（取引明細）")
-    print("  3. 60_rd_receipts（レシート）")
-    print("  4. 80_rd_products（商品マスタ）")
+    print("  1. Rawdata_RECEIPT_items（取引明細、正規化データを含む）")
+    print("  2. Rawdata_RECEIPT_shops（レシート）")
+    print("  3. Rawdata_NETSUPER_items（商品マスタ）")
     print("\n⚠️  この操作は元に戻せません！ ⚠️\n")
 
     response = input("本当に削除しますか？ (yes/no): ")
@@ -50,44 +48,32 @@ def delete_all_data():
 
     stats = {}
 
-    # 1. 60_rd_standardized_items（孫テーブル）を削除
-    print("\n[1/5] 60_rd_standardized_items を削除中...")
-    result = db.client.table('60_rd_standardized_items').select('id', count='exact').execute()
-    count = result.count
-    stats['standardized_items'] = count
-
-    if count > 0:
-        db.client.table('60_rd_standardized_items').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
-        print(f"  ✅ {count}件を削除")
-    else:
-        print("  ℹ️  削除対象なし")
-
-    # 2. 60_rd_transactions（子テーブル）を削除
-    print("\n[2/5] 60_rd_transactions を削除中...")
-    result = db.client.table('60_rd_transactions').select('id', count='exact').execute()
+    # 1. Rawdata_RECEIPT_items（子テーブル）を削除
+    print("\n[1/4] Rawdata_RECEIPT_items を削除中...")
+    result = db.client.table('Rawdata_RECEIPT_items').select('id', count='exact').execute()
     count = result.count
     stats['transactions'] = count
 
     if count > 0:
-        db.client.table('60_rd_transactions').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.client.table('Rawdata_RECEIPT_items').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
         print(f"  ✅ {count}件を削除")
     else:
         print("  ℹ️  削除対象なし")
 
-    # 3. 60_rd_receipts（親テーブル）を削除
-    print("\n[3/5] 60_rd_receipts を削除中...")
-    result = db.client.table('60_rd_receipts').select('id', count='exact').execute()
+    # 2. Rawdata_RECEIPT_shops（親テーブル）を削除
+    print("\n[2/4] Rawdata_RECEIPT_shops を削除中...")
+    result = db.client.table('Rawdata_RECEIPT_shops').select('id', count='exact').execute()
     count = result.count
     stats['receipts'] = count
 
     if count > 0:
-        db.client.table('60_rd_receipts').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.client.table('Rawdata_RECEIPT_shops').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
         print(f"  ✅ {count}件を削除")
     else:
         print("  ℹ️  削除対象なし")
 
-    # 4. 99_lg_gemini_classification_log（分類ログ）を削除（外部キー制約のため先に削除）
-    print("\n[4/5] 99_lg_gemini_classification_log を削除中...")
+    # 3. 99_lg_gemini_classification_log（分類ログ）を削除（外部キー制約のため先に削除）
+    print("\n[3/4] 99_lg_gemini_classification_log を削除中...")
     try:
         result = db.client.table('99_lg_gemini_classification_log').select('id', count='exact').execute()
         count = result.count
@@ -102,14 +88,14 @@ def delete_all_data():
         print(f"  ⚠️  警告: {e}")
         stats['classification_log'] = 0
 
-    # 5. 80_rd_products（商品マスタ）を削除
-    print("\n[5/5] 80_rd_products を削除中...")
-    result = db.client.table('80_rd_products').select('id', count='exact').execute()
+    # 4. Rawdata_NETSUPER_items（商品マスタ）を削除
+    print("\n[4/4] Rawdata_NETSUPER_items を削除中...")
+    result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').execute()
     count = result.count
     stats['products'] = count
 
     if count > 0:
-        db.client.table('80_rd_products').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
+        db.client.table('Rawdata_NETSUPER_items').delete().neq('id', '00000000-0000-0000-0000-000000000000').execute()
         print(f"  ✅ {count}件を削除")
     else:
         print("  ℹ️  削除対象なし")
@@ -118,11 +104,10 @@ def delete_all_data():
     print("\n" + "="*80)
     print("削除完了")
     print("="*80)
-    print(f"60_rd_standardized_items:       {stats['standardized_items']}件")
-    print(f"60_rd_transactions:             {stats['transactions']}件")
-    print(f"60_rd_receipts:                 {stats['receipts']}件")
+    print(f"Rawdata_RECEIPT_items:             {stats['transactions']}件")
+    print(f"Rawdata_RECEIPT_shops:                 {stats['receipts']}件")
     print(f"99_lg_gemini_classification_log: {stats.get('classification_log', 0)}件")
-    print(f"80_rd_products:                 {stats['products']}件")
+    print(f"Rawdata_NETSUPER_items:                 {stats['products']}件")
     print("="*80)
 
 

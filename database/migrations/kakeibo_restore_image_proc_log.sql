@@ -1,9 +1,9 @@
 -- ====================================================================
 -- 99_lg_image_proc_log の復元スクリプト
 -- ====================================================================
--- 目的: 60_rd_receiptsから99_lg_image_proc_logを復元
+-- 目的: Rawdata_RECEIPT_shopsから99_lg_image_proc_logを復元
 -- 実行場所: Supabase SQL Editor
--- 前提条件: 60_rd_receiptsにデータが存在すること
+-- 前提条件: Rawdata_RECEIPT_shopsにデータが存在すること
 -- ====================================================================
 
 BEGIN;
@@ -16,14 +16,14 @@ BEGIN
 END $$;
 
 -- ====================================================================
--- ステップ1: 60_rd_receiptsから99_lg_image_proc_logを復元
+-- ステップ1: Rawdata_RECEIPT_shopsから99_lg_image_proc_logを復元
 -- ====================================================================
 
 DO $$
 DECLARE
     inserted_count INTEGER;
 BEGIN
-    RAISE NOTICE 'ステップ1: 60_rd_receiptsから処理ログを復元...';
+    RAISE NOTICE 'ステップ1: Rawdata_RECEIPT_shopsから処理ログを復元...';
 
     INSERT INTO "99_lg_image_proc_log" (
         file_name,
@@ -41,11 +41,11 @@ BEGIN
         ocr_model,
         id AS receipt_id,
         NULL AS error_message
-    FROM "60_rd_receipts"
+    FROM "Rawdata_RECEIPT_shops"
     WHERE NOT EXISTS (
         -- 重複防止：既にログが存在する場合はスキップ
         SELECT 1 FROM "99_lg_image_proc_log"
-        WHERE drive_file_id = "60_rd_receipts".drive_file_id
+        WHERE drive_file_id = "Rawdata_RECEIPT_shops".drive_file_id
     )
     ORDER BY created_at;
 
@@ -67,11 +67,11 @@ BEGIN
     RAISE NOTICE '==========================================';
 
     SELECT COUNT(*) INTO log_count FROM "99_lg_image_proc_log";
-    SELECT COUNT(*) INTO receipt_count FROM "60_rd_receipts";
+    SELECT COUNT(*) INTO receipt_count FROM "Rawdata_RECEIPT_shops";
 
     RAISE NOTICE '最終件数:';
     RAISE NOTICE '  - 99_lg_image_proc_log: % 件', log_count;
-    RAISE NOTICE '  - 60_rd_receipts: % 件', receipt_count;
+    RAISE NOTICE '  - Rawdata_RECEIPT_shops: % 件', receipt_count;
     RAISE NOTICE '';
 
     IF log_count = receipt_count THEN

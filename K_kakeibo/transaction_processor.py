@@ -86,15 +86,14 @@ class TransactionProcessor:
                 ocr_result.get("tax_summary")
             )
 
-            # 5. 各明細を3層に分けて登録
+            # 5. 各明細を登録（OCRデータ + 標準化データを統合）
             transaction_ids = []
-            standardized_ids = []
 
             for line_num, item_data in enumerate(items_with_tax, start=1):
                 item = item_data["raw_item"]
                 normalized = item_data["normalized"]
 
-                # 子テーブル: トランザクション（OCRテキスト正規化）
+                # Rawdata_RECEIPT_items: OCRデータ + 標準化データを同時に保存
                 trans_id = self._insert_transaction(
                     receipt_id=receipt_id,
                     line_number=line_num,
@@ -103,21 +102,15 @@ class TransactionProcessor:
                     product_name=normalized["product_name"],
                     item_name=None,  # 将来的にOCRから取得
                     unit_price=item.get("unit_price"),
-                    quantity=item.get("quantity", 1)
-                )
-                transaction_ids.append(trans_id)
-
-                # 孫テーブル: 正規化アイテム（家計簿・情報正規化）
-                std_id = self._insert_standardized_item(
-                    transaction_id=trans_id,
-                    receipt_id=receipt_id,
+                    quantity=item.get("quantity", 1),
+                    # 標準化データも同時に保存
                     normalized=normalized,
                     situation_id=situation_id,
                     total_amount=item["total_amount"],
                     tax_amount=normalized["tax_amount"],
                     needs_review=item_data.get("needs_review", False)
                 )
-                standardized_ids.append(std_id)
+                transaction_ids.append(trans_id)
 
             # 6. 処理ログ記録（receipt_idとocr_resultも保存）
             processing_log_id = self._log_processing_success(
@@ -143,8 +136,7 @@ class TransactionProcessor:
             return {
                 "success": True,
                 "receipt_id": receipt_id,
-                "transaction_ids": transaction_ids,
-                "standardized_ids": standardized_ids
+                "transaction_ids": transaction_ids
             }
 
         except Exception as e:
@@ -248,13 +240,16 @@ class TransactionProcessor:
             "is_verified": False
         }
 
-        result = self.db.table("60_rd_receipts").insert(receipt_data).execute()
+        result = self.db.table("Rawdata_RECEIPT_shops").insert(receipt_data).execute()
         return result.data[0]["id"]
 
     def _insert_transaction(self, receipt_id: str, line_number: int, ocr_raw_text: str,
                            ocr_confidence: float, product_name: str, item_name: str,
-                           unit_price: int, quantity: int) -> str:
-        """トランザクション（明細行）をDBに登録（子テーブル）"""
+                           unit_price: int, quantity: int,
+                           normalized: Dict = None, situation_id: str = None,
+                           total_amount: int = None, tax_amount: int = None,
+                           needs_review: bool = False) -> str:
+        """トランザクション（明細行）+ 標準化データをDBに登録（統合テーブル）"""
         trans_data = {
             "receipt_id": receipt_id,
             "line_number": line_number,
@@ -267,36 +262,28 @@ class TransactionProcessor:
             "quantity": quantity
         }
 
-        result = self.db.table("60_rd_transactions").insert(trans_data).execute()
-        return result.data[0]["id"]
+        # 標準化データがあれば追加
+        if normalized:
+            # 7要素構造のデータを取得
+            base_price = normalized.get("base_price")  # 本体価（税抜）
 
-    def _insert_standardized_item(self, transaction_id: str, receipt_id: str, normalized: Dict,
-                                  situation_id: str, total_amount: int, tax_amount: int,
-                                  needs_review: bool) -> str:
-        """正規化された家計簿アイテムをDBに登録（孫テーブル）"""
-        # 7要素構造のデータを取得
-        quantity = normalized.get("quantity", 1)
-        base_price = normalized.get("base_price")  # 本体価（税抜）
+            # 本体単価を計算（本体価 ÷ 数量）
+            std_unit_price = None
+            if base_price is not None and quantity and quantity > 0:
+                std_unit_price = base_price // quantity  # 整数除算
 
-        # 本体単価を計算（本体価 ÷ 数量）
-        std_unit_price = None
-        if base_price is not None and quantity and quantity > 0:
-            std_unit_price = base_price // quantity  # 整数除算
+            trans_data.update({
+                "official_name": normalized.get("official_name"),
+                "category_id": normalized.get("category_id"),
+                "situation_id": situation_id,
+                "tax_rate": normalized["tax_rate"],
+                "std_amount": total_amount,  # 税込価
+                "std_unit_price": std_unit_price,  # 本体単価
+                "tax_amount": tax_amount,
+                "needs_review": needs_review
+            })
 
-        std_data = {
-            "transaction_id": transaction_id,
-            "receipt_id": receipt_id,  # 冗長化（JOIN削減のため）
-            "official_name": normalized.get("official_name"),
-            "category_id": normalized.get("category_id"),
-            "situation_id": situation_id,
-            "tax_rate": normalized["tax_rate"],
-            "std_amount": total_amount,  # 税込価
-            "std_unit_price": std_unit_price,  # 本体単価
-            "tax_amount": tax_amount,
-            "needs_review": needs_review
-        }
-
-        result = self.db.table("60_rd_standardized_items").insert(std_data).execute()
+        result = self.db.table("Rawdata_RECEIPT_items").insert(trans_data).execute()
         return result.data[0]["id"]
 
     def _log_processing_success(self, file_name: str, drive_file_id: str, receipt_id: str, transaction_ids: List[str], ocr_result: Dict = None, model_name: str = None) -> str:

@@ -30,7 +30,7 @@ BEGIN
         p.metadata,
         1 - (p.embedding <=> query_embedding) AS similarity
     FROM
-        "80_rd_products" p
+        "Rawdata_NETSUPER_items" p
     WHERE
         p.embedding IS NOT NULL
         AND (filter_organizations IS NULL OR p.organization = ANY(filter_organizations))

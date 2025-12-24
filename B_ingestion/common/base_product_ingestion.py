@@ -76,7 +76,7 @@ class BaseProductIngestionPipeline(ABC):
         if not valid_jan_codes:
             return set()
 
-        result = self.db.client.table('80_rd_products').select(
+        result = self.db.client.table('Rawdata_NETSUPER_items').select(
             'jan_code'
         ).in_('jan_code', valid_jan_codes).execute()
 
@@ -106,7 +106,7 @@ class BaseProductIngestionPipeline(ABC):
             return {}
 
         # 該当する商品名と組織の組み合わせで既存レコードを検索
-        result = self.db.client.table('80_rd_products').select(
+        result = self.db.client.table('Rawdata_NETSUPER_items').select(
             'id, product_name, organization'
         ).in_('product_name', product_names).eq(
             'organization', self.organization_name
@@ -250,13 +250,22 @@ class BaseProductIngestionPipeline(ABC):
             "updated_at": datetime.now().isoformat()
         }
 
-        # Embeddingを生成（商品名から）
-        embedding = self._generate_embedding(product_name)
+        # Embeddingを生成（複数フィールドから）
+        # product_name + general_name + category + manufacturer を組み合わせる
+        text_parts = [
+            product_name,
+            general_name or '',
+            category_name or '',
+            product.get("manufacturer") or ''
+        ]
+        text_for_embedding = ' '.join(filter(None, text_parts)).strip()
+
+        embedding = self._generate_embedding(text_for_embedding)
         if embedding:
             # vector型として保存するために文字列形式に変換
             embedding_str = '[' + ','.join(map(str, embedding)) + ']'
             data["embedding"] = embedding_str
-            logger.debug(f"Embedding生成成功: {product_name[:30]}...")
+            logger.debug(f"Embedding生成成功: {text_for_embedding[:50]}...")
 
         return data
 
@@ -318,21 +327,21 @@ class BaseProductIngestionPipeline(ABC):
             try:
                 if jan_code and jan_code in existing_jan_codes:
                     # JANコードで既存商品を更新
-                    self.db.client.table('80_rd_products').update(
+                    self.db.client.table('Rawdata_NETSUPER_items').update(
                         product_data
                     ).eq('jan_code', jan_code).execute()
                     update_count += 1
                 elif not jan_code and (product_name, self.organization_name) in existing_by_name:
                     # JANコードなし商品を商品名+組織で更新
                     existing_id = existing_by_name[(product_name, self.organization_name)]
-                    self.db.client.table('80_rd_products').update(
+                    self.db.client.table('Rawdata_NETSUPER_items').update(
                         product_data
                     ).eq('id', existing_id).execute()
                     update_count += 1
                 else:
                     # 新規商品を挿入
                     product_data["created_at"] = datetime.now().isoformat()
-                    self.db.client.table('80_rd_products').insert(
+                    self.db.client.table('Rawdata_NETSUPER_items').insert(
                         product_data
                     ).execute()
                     insert_count += 1

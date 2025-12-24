@@ -3,7 +3,7 @@
 -- ====================================================================
 -- 目的: 新3テーブルの既存データを削除（再移行の準備）
 -- 実行場所: Supabase SQL Editor
--- 前提条件: 60_rd_transactions_OLD_BACKUPにデータが保存されていること
+-- 前提条件: Rawdata_RECEIPT_items_OLD_BACKUPにデータが保存されていること
 -- ====================================================================
 
 BEGIN;
@@ -19,17 +19,17 @@ DECLARE
     trans_count INTEGER;
     std_count INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO backup_count FROM "60_rd_transactions_OLD_BACKUP";
-    SELECT COUNT(*) INTO receipt_count FROM "60_rd_receipts";
-    SELECT COUNT(*) INTO trans_count FROM "60_rd_transactions";
+    SELECT COUNT(*) INTO backup_count FROM "Rawdata_RECEIPT_items_OLD_BACKUP";
+    SELECT COUNT(*) INTO receipt_count FROM "Rawdata_RECEIPT_shops";
+    SELECT COUNT(*) INTO trans_count FROM "Rawdata_RECEIPT_items";
     SELECT COUNT(*) INTO std_count FROM "60_rd_standardized_items";
 
     RAISE NOTICE '====================================================================';
     RAISE NOTICE 'クリーンアップ前のデータ件数';
     RAISE NOTICE '====================================================================';
     RAISE NOTICE 'OLD_BACKUP: % 件', backup_count;
-    RAISE NOTICE '60_rd_receipts: % 件', receipt_count;
-    RAISE NOTICE '60_rd_transactions: % 件', trans_count;
+    RAISE NOTICE 'Rawdata_RECEIPT_shops: % 件', receipt_count;
+    RAISE NOTICE 'Rawdata_RECEIPT_items: % 件', trans_count;
     RAISE NOTICE '60_rd_standardized_items: % 件', std_count;
     RAISE NOTICE '';
 
@@ -78,14 +78,14 @@ BEGIN
     RAISE NOTICE '  - 60_rd_standardized_items: % 件削除', items_deleted;
 
     -- 子テーブル削除
-    DELETE FROM "60_rd_transactions";
+    DELETE FROM "Rawdata_RECEIPT_items";
     GET DIAGNOSTICS trans_deleted = ROW_COUNT;
-    RAISE NOTICE '  - 60_rd_transactions: % 件削除', trans_deleted;
+    RAISE NOTICE '  - Rawdata_RECEIPT_items: % 件削除', trans_deleted;
 
     -- 親テーブル削除
-    DELETE FROM "60_rd_receipts";
+    DELETE FROM "Rawdata_RECEIPT_shops";
     GET DIAGNOSTICS receipts_deleted = ROW_COUNT;
-    RAISE NOTICE '  - 60_rd_receipts: % 件削除', receipts_deleted;
+    RAISE NOTICE '  - Rawdata_RECEIPT_shops: % 件削除', receipts_deleted;
 END $$;
 
 -- ====================================================================
@@ -99,8 +99,8 @@ DECLARE
     std_count INTEGER;
     log_count INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO receipt_count FROM "60_rd_receipts";
-    SELECT COUNT(*) INTO trans_count FROM "60_rd_transactions";
+    SELECT COUNT(*) INTO receipt_count FROM "Rawdata_RECEIPT_shops";
+    SELECT COUNT(*) INTO trans_count FROM "Rawdata_RECEIPT_items";
     SELECT COUNT(*) INTO std_count FROM "60_rd_standardized_items";
     SELECT COUNT(*) INTO log_count FROM "99_lg_image_proc_log";
 
@@ -108,8 +108,8 @@ BEGIN
     RAISE NOTICE '====================================================================';
     RAISE NOTICE 'クリーンアップ完了';
     RAISE NOTICE '====================================================================';
-    RAISE NOTICE '60_rd_receipts: % 件 (期待: 0件)', receipt_count;
-    RAISE NOTICE '60_rd_transactions: % 件 (期待: 0件)', trans_count;
+    RAISE NOTICE 'Rawdata_RECEIPT_shops: % 件 (期待: 0件)', receipt_count;
+    RAISE NOTICE 'Rawdata_RECEIPT_items: % 件 (期待: 0件)', trans_count;
     RAISE NOTICE '60_rd_standardized_items: % 件 (期待: 0件)', std_count;
     RAISE NOTICE '99_lg_image_proc_log: % 件 (保護されました)', log_count;
     RAISE NOTICE '';

@@ -37,7 +37,7 @@ class DailyAutoClassifier:
         Returns:
             general_name（見つからない場合はNone）
         """
-        result = self.db.client.table('70_ms_product_normalization').select(
+        result = self.db.client.table('MASTER_Product_generalize').select(
             'general_name'
         ).eq('raw_keyword', product_name).execute()
 
@@ -66,7 +66,7 @@ class DailyAutoClassifier:
         Returns:
             category_id（見つからない場合はNone）
         """
-        query = self.db.client.table('70_ms_product_classification').select(
+        query = self.db.client.table('MASTER_Product_classify').select(
             'category_id'
         ).eq('general_name', general_name).eq(
             'source_type', source_type
@@ -95,7 +95,7 @@ class DailyAutoClassifier:
         Returns:
             承認済み商品リスト
         """
-        result = self.db.client.table('80_rd_products').select(
+        result = self.db.client.table('Rawdata_NETSUPER_items').select(
             'product_name, general_name, category_id'
         ).eq('needs_approval', False).not_.is_(
             'general_name', 'null'
@@ -237,7 +237,7 @@ class DailyAutoClassifier:
     async def process_unclassified_products(self):
         """未分類商品を一括処理"""
         # 未分類商品を取得
-        result = self.db.client.table('80_rd_products').select(
+        result = self.db.client.table('Rawdata_NETSUPER_items').select(
             '*'
         ).eq('needs_approval', True).limit(1000).execute()
 
@@ -249,7 +249,7 @@ class DailyAutoClassifier:
         for product in products:
             classification = await self.classify_product(product)
 
-            # 80_rd_productsを更新
+            # Rawdata_NETSUPER_itemsを更新
             update_data = {
                 "general_name": classification.get("general_name"),
                 "category_id": classification.get("category_id"),
@@ -257,7 +257,7 @@ class DailyAutoClassifier:
                 "needs_approval": True  # 常に手動承認必須（自動承認は無効）
             }
 
-            self.db.client.table('80_rd_products').update(
+            self.db.client.table('Rawdata_NETSUPER_items').update(
                 update_data
             ).eq('id', product["id"]).execute()
 

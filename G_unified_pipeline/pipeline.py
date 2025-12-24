@@ -280,13 +280,13 @@ class UnifiedDocumentPipeline:
                 # 既存ドキュメントを更新 or 新規作成
                 if existing_document_id:
                     logger.info(f"[DB更新] 既存ドキュメント更新: {existing_document_id}")
-                    result = self.db.client.table('10_rd_source_docs').update(doc_data).eq('id', existing_document_id).execute()
+                    result = self.db.client.table('Rawdata_FILE_AND_MAIL').update(doc_data).eq('id', existing_document_id).execute()
                     if not result.data:
                         logger.error("[DB更新エラー] ドキュメント更新失敗")
                         return {'success': False, 'error': 'Document update failed'}
                 else:
                     logger.info("[DB保存] 新規ドキュメント作成")
-                    result = self.db.client.table('10_rd_source_docs').insert(doc_data).execute()
+                    result = self.db.client.table('Rawdata_FILE_AND_MAIL').insert(doc_data).execute()
                     if result.data and len(result.data) > 0:
                         document_id = result.data[0]['id']
                         logger.info(f"[DB保存] source_documents ID: {document_id}")

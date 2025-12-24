@@ -13,7 +13,7 @@ BEGIN;
 -- ====================================================================
 
 ALTER TABLE "99_lg_image_proc_log"
-ADD COLUMN IF NOT EXISTS receipt_id UUID REFERENCES "60_rd_receipts"(id) ON DELETE SET NULL;
+ADD COLUMN IF NOT EXISTS receipt_id UUID REFERENCES "Rawdata_RECEIPT_shops"(id) ON DELETE SET NULL;
 
 -- コメント
 COMMENT ON COLUMN "99_lg_image_proc_log".receipt_id IS '処理対象のレシートID（新3層構造対応）';
@@ -32,7 +32,7 @@ CREATE INDEX IF NOT EXISTS idx_image_proc_log_receipt
 
 UPDATE "99_lg_image_proc_log" log
 SET receipt_id = r.id
-FROM "60_rd_receipts" r
+FROM "Rawdata_RECEIPT_shops" r
 WHERE log.drive_file_id = r.drive_file_id
   AND log.receipt_id IS NULL;
 
@@ -84,8 +84,8 @@ SELECT
     r.is_verified,
     COUNT(t.id) AS item_count
 FROM "99_lg_image_proc_log" log
-LEFT JOIN "60_rd_receipts" r ON r.id = log.receipt_id
-LEFT JOIN "60_rd_transactions_new" t ON t.receipt_id = r.id
+LEFT JOIN "Rawdata_RECEIPT_shops" r ON r.id = log.receipt_id
+LEFT JOIN "Rawdata_RECEIPT_items_new" t ON t.receipt_id = r.id
 GROUP BY log.id, log.file_name, log.drive_file_id, log.status, log.error_message, log.ocr_model, log.processed_at, log.retry_count, log.receipt_id, r.transaction_date, r.shop_name, r.total_amount_check, r.is_verified
 ORDER BY log.processed_at DESC;
 
@@ -120,8 +120,8 @@ SELECT
     r.total_amount_check,
     COUNT(t.id) AS item_count
 FROM "99_lg_image_proc_log" log
-LEFT JOIN "60_rd_receipts" r ON r.id = log.receipt_id
-LEFT JOIN "60_rd_transactions_new" t ON t.receipt_id = r.id
+LEFT JOIN "Rawdata_RECEIPT_shops" r ON r.id = log.receipt_id
+LEFT JOIN "Rawdata_RECEIPT_items_new" t ON t.receipt_id = r.id
 GROUP BY log.id, log.file_name, log.status, r.transaction_date, r.shop_name, r.total_amount_check
 ORDER BY log.processed_at DESC
 LIMIT 10;

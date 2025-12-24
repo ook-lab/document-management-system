@@ -12,54 +12,54 @@ BEGIN;
 -- 1. 日次集計ビューの更新
 -- ====================================================================
 -- 新テーブル構造に対応させる
--- 親（60_rd_receipts）と孫（60_rd_standardized_items）を結合
+-- 親（Rawdata_RECEIPT_shops）と孫（60_rd_standardized_items）を結合
 
-CREATE OR REPLACE VIEW "60_ag_daily_summary" AS
+CREATE OR REPLACE VIEW "Aggregate_daily_summary" AS
 SELECT
     r.transaction_date,
     sit.name AS situation,
     cat.name AS category,
     COUNT(*) AS item_count,
     SUM(s.std_amount) AS total
-FROM "60_rd_receipts" r
+FROM "Rawdata_RECEIPT_shops" r
 INNER JOIN "60_rd_standardized_items" s ON s.receipt_id = r.id
-LEFT JOIN "60_ms_situations" sit ON s.situation_id = sit.id
-LEFT JOIN "60_ms_categories" cat ON s.category_id = cat.id
+LEFT JOIN "MASTER_Categories_purpose" sit ON s.situation_id = sit.id
+LEFT JOIN "MASTER_Categories_expense" cat ON s.category_id = cat.id
 WHERE cat.is_expense = TRUE  -- 集計対象のみ
 GROUP BY r.transaction_date, sit.name, cat.name
 ORDER BY r.transaction_date DESC;
 
 -- コメント
-COMMENT ON VIEW "60_ag_daily_summary" IS '日次集計ビュー - 新3層テーブル構造対応';
+COMMENT ON VIEW "Aggregate_daily_summary" IS '日次集計ビュー - 新3層テーブル構造対応';
 
 -- ====================================================================
 -- 2. 月次集計ビューの更新
 -- ====================================================================
 
-CREATE OR REPLACE VIEW "60_ag_monthly_summary" AS
+CREATE OR REPLACE VIEW "Aggregate_monthly_summary" AS
 SELECT
     DATE_TRUNC('month', r.transaction_date) AS month,
     sit.name AS situation,
     cat.name AS category,
     COUNT(*) AS item_count,
     SUM(s.std_amount) AS total
-FROM "60_rd_receipts" r
+FROM "Rawdata_RECEIPT_shops" r
 INNER JOIN "60_rd_standardized_items" s ON s.receipt_id = r.id
-LEFT JOIN "60_ms_situations" sit ON s.situation_id = sit.id
-LEFT JOIN "60_ms_categories" cat ON s.category_id = cat.id
+LEFT JOIN "MASTER_Categories_purpose" sit ON s.situation_id = sit.id
+LEFT JOIN "MASTER_Categories_expense" cat ON s.category_id = cat.id
 WHERE cat.is_expense = TRUE  -- 集計対象のみ
 GROUP BY month, sit.name, cat.name
 ORDER BY month DESC;
 
 -- コメント
-COMMENT ON VIEW "60_ag_monthly_summary" IS '月次集計ビュー - 新3層テーブル構造対応';
+COMMENT ON VIEW "Aggregate_monthly_summary" IS '月次集計ビュー - 新3層テーブル構造対応';
 
 -- ====================================================================
 -- 3. 新規ビュー: レシート一覧ビュー（追加）
 -- ====================================================================
 -- レシート単位での確認を容易にするためのビュー
 
-CREATE OR REPLACE VIEW "60_ag_receipt_summary" AS
+CREATE OR REPLACE VIEW "Aggregate_receipt_summary" AS
 SELECT
     r.id AS receipt_id,
     r.transaction_date,
@@ -73,20 +73,20 @@ SELECT
     r.ocr_model,
     r.person,
     r.created_at
-FROM "60_rd_receipts" r
-LEFT JOIN "60_rd_transactions_new" t ON t.receipt_id = r.id
+FROM "Rawdata_RECEIPT_shops" r
+LEFT JOIN "Rawdata_RECEIPT_items_new" t ON t.receipt_id = r.id
 LEFT JOIN "60_rd_standardized_items" s ON s.receipt_id = r.id
 GROUP BY r.id, r.transaction_date, r.shop_name, r.total_amount_check, r.is_verified, r.drive_file_id, r.ocr_model, r.person, r.created_at
 ORDER BY r.transaction_date DESC, r.created_at DESC;
 
 -- コメント
-COMMENT ON VIEW "60_ag_receipt_summary" IS 'レシート一覧サマリービュー - レビューUI用';
+COMMENT ON VIEW "Aggregate_receipt_summary" IS 'レシート一覧サマリービュー - レビューUI用';
 
 -- ====================================================================
 -- 4. 新規ビュー: 未確認レシート一覧（追加）
 -- ====================================================================
 
-CREATE OR REPLACE VIEW "60_ag_unverified_receipts" AS
+CREATE OR REPLACE VIEW "Aggregate_unverified_receipts" AS
 SELECT
     r.id AS receipt_id,
     r.transaction_date,
@@ -95,20 +95,20 @@ SELECT
     COUNT(t.id) AS item_count,
     r.drive_file_id,
     r.created_at
-FROM "60_rd_receipts" r
-LEFT JOIN "60_rd_transactions_new" t ON t.receipt_id = r.id
+FROM "Rawdata_RECEIPT_shops" r
+LEFT JOIN "Rawdata_RECEIPT_items_new" t ON t.receipt_id = r.id
 WHERE r.is_verified = FALSE
 GROUP BY r.id, r.transaction_date, r.shop_name, r.total_amount_check, r.drive_file_id, r.created_at
 ORDER BY r.created_at DESC;
 
 -- コメント
-COMMENT ON VIEW "60_ag_unverified_receipts" IS '未確認レシート一覧 - レビュー対象抽出用';
+COMMENT ON VIEW "Aggregate_unverified_receipts" IS '未確認レシート一覧 - レビュー対象抽出用';
 
 -- ====================================================================
 -- 5. 新規ビュー: 要確認アイテム一覧（追加）
 -- ====================================================================
 
-CREATE OR REPLACE VIEW "60_ag_items_needs_review" AS
+CREATE OR REPLACE VIEW "Aggregate_items_needs_review" AS
 SELECT
     r.transaction_date,
     r.shop_name,
@@ -120,15 +120,15 @@ SELECT
     r.id AS receipt_id,
     t.id AS transaction_id,
     s.id AS standardized_id
-FROM "60_rd_receipts" r
-INNER JOIN "60_rd_transactions_new" t ON t.receipt_id = r.id
+FROM "Rawdata_RECEIPT_shops" r
+INNER JOIN "Rawdata_RECEIPT_items_new" t ON t.receipt_id = r.id
 INNER JOIN "60_rd_standardized_items" s ON s.transaction_id = t.id
 WHERE s.needs_review = TRUE
    OR t.ocr_confidence < 0.8
 ORDER BY r.transaction_date DESC, t.line_number;
 
 -- コメント
-COMMENT ON VIEW "60_ag_items_needs_review" IS '要確認アイテム一覧 - OCR信頼度が低い、または税額計算要確認';
+COMMENT ON VIEW "Aggregate_items_needs_review" IS '要確認アイテム一覧 - OCR信頼度が低い、または税額計算要確認';
 
 -- ====================================================================
 -- 動作確認
@@ -142,10 +142,10 @@ DECLARE
     unverified_count INTEGER;
 BEGIN
     -- 各ビューのレコード数を確認
-    SELECT COUNT(*) INTO daily_count FROM "60_ag_daily_summary";
-    SELECT COUNT(*) INTO monthly_count FROM "60_ag_monthly_summary";
-    SELECT COUNT(*) INTO receipt_count FROM "60_ag_receipt_summary";
-    SELECT COUNT(*) INTO unverified_count FROM "60_ag_unverified_receipts";
+    SELECT COUNT(*) INTO daily_count FROM "Aggregate_daily_summary";
+    SELECT COUNT(*) INTO monthly_count FROM "Aggregate_monthly_summary";
+    SELECT COUNT(*) INTO receipt_count FROM "Aggregate_receipt_summary";
+    SELECT COUNT(*) INTO unverified_count FROM "Aggregate_unverified_receipts";
 
     RAISE NOTICE '====================================================================';
     RAISE NOTICE 'ビュー更新完了';
@@ -167,16 +167,16 @@ COMMIT;
 -- ====================================================================
 
 -- 日次集計ビューの確認
-SELECT * FROM "60_ag_daily_summary" LIMIT 10;
+SELECT * FROM "Aggregate_daily_summary" LIMIT 10;
 
 -- 月次集計ビューの確認
-SELECT * FROM "60_ag_monthly_summary" LIMIT 10;
+SELECT * FROM "Aggregate_monthly_summary" LIMIT 10;
 
 -- レシート一覧ビューの確認
-SELECT * FROM "60_ag_receipt_summary" LIMIT 10;
+SELECT * FROM "Aggregate_receipt_summary" LIMIT 10;
 
 -- 未確認レシート一覧の確認
-SELECT * FROM "60_ag_unverified_receipts" LIMIT 10;
+SELECT * FROM "Aggregate_unverified_receipts" LIMIT 10;
 
 -- 要確認アイテム一覧の確認
-SELECT * FROM "60_ag_items_needs_review" LIMIT 10;
+SELECT * FROM "Aggregate_items_needs_review" LIMIT 10;

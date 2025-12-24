@@ -20,7 +20,7 @@ DECLARE
 BEGIN
     -- 最新の修正履歴IDを取得
     SELECT latest_correction_id INTO v_latest_correction_id
-    FROM "10_rd_source_docs"
+    FROM "Rawdata_FILE_AND_MAIL"
     WHERE id = p_document_id;
 
     -- 修正履歴が存在しない場合
@@ -33,8 +33,8 @@ BEGIN
     FROM "99_lg_correction_history"
     WHERE id = v_latest_correction_id;
 
-    -- 10_rd_source_docsテーブルを更新（ロールバック）
-    UPDATE "10_rd_source_docs"
+    -- Rawdata_FILE_AND_MAILテーブルを更新（ロールバック）
+    UPDATE "Rawdata_FILE_AND_MAIL"
     SET metadata = v_old_metadata,
         latest_correction_id = NULL
     WHERE id = p_document_id;
@@ -57,21 +57,21 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
--- 70_rd_flyer_docs の updated_at トリガー
-DROP TRIGGER IF EXISTS update_flyer_documents_updated_at ON "70_rd_flyer_docs";
+-- Rawdata_FLYER_shops の updated_at トリガー
+DROP TRIGGER IF EXISTS update_flyer_documents_updated_at ON "Rawdata_FLYER_shops";
 CREATE TRIGGER update_flyer_documents_updated_at
-    BEFORE UPDATE ON "70_rd_flyer_docs"
+    BEFORE UPDATE ON "Rawdata_FLYER_shops"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- 70_rd_flyer_items の updated_at トリガー
-DROP TRIGGER IF EXISTS update_flyer_products_updated_at ON "70_rd_flyer_items";
+-- Rawdata_FLYER_items の updated_at トリガー
+DROP TRIGGER IF EXISTS update_flyer_products_updated_at ON "Rawdata_FLYER_items";
 CREATE TRIGGER update_flyer_products_updated_at
-    BEFORE UPDATE ON "70_rd_flyer_items"
+    BEFORE UPDATE ON "Rawdata_FLYER_items"
     FOR EACH ROW
     EXECUTE FUNCTION update_updated_at_column();
 
--- 70_rd_flyer_docs の検索ベクトル更新関数
+-- Rawdata_FLYER_shops の検索ベクトル更新関数
 CREATE OR REPLACE FUNCTION flyer_documents_search_vector_update()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -84,13 +84,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS tsvector_update_flyer_documents ON "70_rd_flyer_docs";
+DROP TRIGGER IF EXISTS tsvector_update_flyer_documents ON "Rawdata_FLYER_shops";
 CREATE TRIGGER tsvector_update_flyer_documents
-    BEFORE INSERT OR UPDATE ON "70_rd_flyer_docs"
+    BEFORE INSERT OR UPDATE ON "Rawdata_FLYER_shops"
     FOR EACH ROW
     EXECUTE FUNCTION flyer_documents_search_vector_update();
 
--- 70_rd_flyer_items の検索ベクトル更新関数
+-- Rawdata_FLYER_items の検索ベクトル更新関数
 CREATE OR REPLACE FUNCTION flyer_products_search_vector_update()
 RETURNS TRIGGER AS $$
 BEGIN
@@ -103,9 +103,9 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-DROP TRIGGER IF EXISTS tsvector_update_flyer_products ON "70_rd_flyer_items";
+DROP TRIGGER IF EXISTS tsvector_update_flyer_products ON "Rawdata_FLYER_items";
 CREATE TRIGGER tsvector_update_flyer_products
-    BEFORE INSERT OR UPDATE ON "70_rd_flyer_items"
+    BEFORE INSERT OR UPDATE ON "Rawdata_FLYER_items"
     FOR EACH ROW
     EXECUTE FUNCTION flyer_products_search_vector_update();
 
@@ -311,8 +311,8 @@ $$;
 DO $$
 BEGIN
     RAISE NOTICE '✅ 関数・トリガーの更新が完了しました';
-    RAISE NOTICE '✅ rollback_document_metadata: 10_rd_source_docs に対応';
-    RAISE NOTICE '✅ チラシ関連トリガー: 70_rd_flyer_docs, 70_rd_flyer_items に対応';
+    RAISE NOTICE '✅ rollback_document_metadata: Rawdata_FILE_AND_MAIL に対応';
+    RAISE NOTICE '✅ チラシ関連トリガー: Rawdata_FLYER_shops, Rawdata_FLYER_items に対応';
     RAISE NOTICE '✅ 再処理キュー関連関数: 99_lg_reprocess_queue に対応';
 END $$;
 

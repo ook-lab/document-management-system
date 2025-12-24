@@ -48,7 +48,7 @@ def inspect_documents(keyword: str):
 
     try:
         # file_name で部分一致検索
-        response = client.table('10_rd_source_docs').select(
+        response = client.table('Rawdata_FILE_AND_MAIL').select(
             'id, file_name, doc_type, confidence, summary, document_date, tags, metadata, workspace, created_at'
         ).ilike('file_name', f'%{keyword}%').execute()
 

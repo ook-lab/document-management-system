@@ -90,7 +90,7 @@ def main():
         cursor.execute("""
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_name = '80_rd_products'
+            WHERE table_name = 'Rawdata_NETSUPER_items'
               AND column_name IN ('display_sender', 'display_subject')
             ORDER BY column_name;
         """)
@@ -102,10 +102,10 @@ def main():
         # カラム削除
         logger.info("\n[3] カラム削除実行...")
 
-        cursor.execute('ALTER TABLE "80_rd_products" DROP COLUMN IF EXISTS display_sender;')
+        cursor.execute('ALTER TABLE "Rawdata_NETSUPER_items" DROP COLUMN IF EXISTS display_sender;')
         logger.info("✓ display_sender カラムを削除しました")
 
-        cursor.execute('ALTER TABLE "80_rd_products" DROP COLUMN IF EXISTS display_subject;')
+        cursor.execute('ALTER TABLE "Rawdata_NETSUPER_items" DROP COLUMN IF EXISTS display_subject;')
         logger.info("✓ display_subject カラムを削除しました")
 
         conn.commit()
@@ -116,7 +116,7 @@ def main():
         cursor.execute("""
             SELECT column_name
             FROM information_schema.columns
-            WHERE table_name = '80_rd_products'
+            WHERE table_name = 'Rawdata_NETSUPER_items'
               AND column_name IN ('display_sender', 'display_subject')
             ORDER BY column_name;
         """)
@@ -142,8 +142,8 @@ def main():
         logger.error("\n手動で実行してください:")
         logger.error("Supabase Dashboard -> SQL Editor -> 以下を実行")
         logger.error("-" * 80)
-        logger.error("ALTER TABLE \"80_rd_products\" DROP COLUMN IF EXISTS display_sender;")
-        logger.error("ALTER TABLE \"80_rd_products\" DROP COLUMN IF EXISTS display_subject;")
+        logger.error("ALTER TABLE \"Rawdata_NETSUPER_items\" DROP COLUMN IF EXISTS display_sender;")
+        logger.error("ALTER TABLE \"Rawdata_NETSUPER_items\" DROP COLUMN IF EXISTS display_subject;")
         logger.error("-" * 80)
 
 

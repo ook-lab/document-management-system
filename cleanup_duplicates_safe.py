@@ -20,7 +20,7 @@ print("重複レコードクリーンアップ（安全版）")
 print("="*80)
 
 # 全商品を取得
-result = db.client.table('80_rd_products').select(
+result = db.client.table('Rawdata_NETSUPER_items').select(
     'id, product_name, organization, jan_code, created_at'
 ).execute()
 
@@ -84,7 +84,7 @@ if response.lower() == 'yes':
 
     for record_id in to_delete:
         try:
-            db.client.table('80_rd_products').delete().eq('id', record_id).execute()
+            db.client.table('Rawdata_NETSUPER_items').delete().eq('id', record_id).execute()
             deleted_count += 1
         except Exception as e:
             print(f"❌ 削除失敗 {record_id}: {e}")
@@ -95,7 +95,7 @@ if response.lower() == 'yes':
         print(f"❌ 削除失敗: {len(failed_ids)}件")
 
     # 削除後の状態を確認
-    after_result = db.client.table('80_rd_products').select('id').execute()
+    after_result = db.client.table('Rawdata_NETSUPER_items').select('id').execute()
     print(f"\n削除後の総レコード数: {len(after_result.data)}件")
     print(f"削減数: {len(result.data)} -> {len(after_result.data)} (-{len(result.data) - len(after_result.data)}件)")
 else:

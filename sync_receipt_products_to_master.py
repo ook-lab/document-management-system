@@ -1,13 +1,13 @@
 """
-レシート商品を80_rd_productsに統合
+レシート商品をRawdata_NETSUPER_itemsに統合
 
-レシートデータ（60_rd_standardized_items）から商品情報を取得し、
-80_rd_productsテーブルに統合する。
+レシートデータ（Rawdata_RECEIPT_items）から商品情報を取得し、
+Rawdata_NETSUPER_itemsテーブルに統合する。
 
 処理内容：
 1. レシート商品データを取得（商品名、税込単価、店舗名など）
 2. 税込単価を計算（std_amount ÷ quantity）
-3. 80_rd_productsに既存商品があるかチェック（商品名＋店舗名）
+3. Rawdata_NETSUPER_itemsに既存商品があるかチェック（商品名＋店舗名）
 4. あれば価格を更新、なければ新規作成
 """
 
@@ -45,7 +45,7 @@ except ImportError:
 
 
 class ReceiptProductSync:
-    """レシート商品を80_rd_productsに同期"""
+    """レシート商品をRawdata_NETSUPER_itemsに同期"""
 
     def __init__(self):
         self.db = DatabaseClient(use_service_role=True)
@@ -70,9 +70,9 @@ class ReceiptProductSync:
         """
         logger.info("レシート商品データを取得中...")
 
-        # 60_rd_standardized_itemsから商品データを取得
-        # JOINでtransactions（数量取得用）とreceipts（店舗名取得用）も取得
-        result = self.db.client.table('60_rd_standardized_items').select(
+        # Rawdata_RECEIPT_itemsから商品データを取得
+        # JOINでreceipts（店舗名取得用）も取得
+        result = self.db.client.table('Rawdata_RECEIPT_items').select(
             '''
             id,
             official_name,
@@ -82,22 +82,21 @@ class ReceiptProductSync:
             major_category,
             minor_category,
             receipt_id,
-            transaction_id,
-            60_rd_transactions!inner(quantity),
-            60_rd_receipts!inner(shop_name, transaction_date)
+            quantity,
+            Rawdata_RECEIPT_shops!inner(shop_name, transaction_date)
             '''
         ).execute()
 
         products = []
         for item in result.data:
             # 数量を取得
-            quantity = item.get('60_rd_transactions', {}).get('quantity', 1)
+            quantity = item.get('quantity', 1)
             if quantity == 0:
                 logger.warning(f"数量が0の商品をスキップ: {item.get('official_name')}")
                 continue
 
             # 店舗名と日付を取得
-            receipt_info = item.get('60_rd_receipts', {})
+            receipt_info = item.get('Rawdata_RECEIPT_shops', {})
             shop_name = receipt_info.get('shop_name', '不明')
             transaction_date = receipt_info.get('transaction_date')
 
@@ -123,7 +122,7 @@ class ReceiptProductSync:
                 'minor_category': item.get('minor_category'),
                 'transaction_date': transaction_date,
                 'receipt_id': item.get('receipt_id'),
-                'transaction_id': item.get('transaction_id')
+                'transaction_id': item.get('id')
             })
 
         logger.info(f"取得完了: {len(products)}件の商品データ")
@@ -140,7 +139,7 @@ class ReceiptProductSync:
         Returns:
             既存商品データ（なければNone）
         """
-        result = self.db.client.table('80_rd_products').select('*').eq(
+        result = self.db.client.table('Rawdata_NETSUPER_items').select('*').eq(
             'product_name', product_name
         ).eq('organization', shop_name).limit(1).execute()
 
@@ -211,7 +210,7 @@ class ReceiptProductSync:
             embedding_str = '[' + ','.join(map(str, embedding)) + ']'
             data['embedding'] = embedding_str
 
-        result = self.db.client.table('80_rd_products').insert(data).execute()
+        result = self.db.client.table('Rawdata_NETSUPER_items').insert(data).execute()
         return result.data[0]['id']
 
     def update_product_price(self, product_id: str, product: Dict):
@@ -232,7 +231,7 @@ class ReceiptProductSync:
         }
 
         # 既存商品のembeddingが無ければ生成
-        existing = self.db.client.table('80_rd_products').select('embedding').eq('id', product_id).execute()
+        existing = self.db.client.table('Rawdata_NETSUPER_items').select('embedding').eq('id', product_id).execute()
         if existing.data and not existing.data[0].get('embedding'):
             embedding = self._generate_embedding(product['official_name'])
             if embedding:
@@ -240,11 +239,11 @@ class ReceiptProductSync:
                 embedding_str = '[' + ','.join(map(str, embedding)) + ']'
                 data['embedding'] = embedding_str
 
-        self.db.client.table('80_rd_products').update(data).eq('id', product_id).execute()
+        self.db.client.table('Rawdata_NETSUPER_items').update(data).eq('id', product_id).execute()
 
     def sync_products(self, limit: Optional[int] = None):
         """
-        レシート商品を80_rd_productsに同期
+        レシート商品をRawdata_NETSUPER_itemsに同期
 
         Args:
             limit: 処理する最大件数（Noneの場合は全件）
@@ -317,7 +316,7 @@ def main():
     """メイン処理"""
     import argparse
 
-    parser = argparse.ArgumentParser(description='レシート商品を80_rd_productsに同期')
+    parser = argparse.ArgumentParser(description='レシート商品をRawdata_NETSUPER_itemsに同期')
     parser.add_argument('--limit', type=int, help='処理する最大件数', default=None)
     args = parser.parse_args()
 

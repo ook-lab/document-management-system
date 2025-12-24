@@ -27,7 +27,7 @@ print("レシート商品更新")
 print("="*80)
 
 # レシート商品のsource_typeとdoc_typeを更新
-result = db.client.table('80_rd_products').update({
+result = db.client.table('Rawdata_NETSUPER_items').update({
     'source_type': 'physical_store',
     'doc_type': 'Receipt',
     'workspace': 'shopping'

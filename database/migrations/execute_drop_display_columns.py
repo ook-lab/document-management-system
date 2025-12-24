@@ -35,7 +35,7 @@ def main():
             'query': """
                 SELECT column_name
                 FROM information_schema.columns
-                WHERE table_name = '80_rd_products'
+                WHERE table_name = 'Rawdata_NETSUPER_items'
                   AND column_name IN ('display_sender', 'display_subject')
                 ORDER BY column_name;
             """
@@ -54,7 +54,7 @@ def main():
         db.client.rpc(
             'execute_sql',
             {
-                'query': 'ALTER TABLE "80_rd_products" DROP COLUMN IF EXISTS display_sender;'
+                'query': 'ALTER TABLE "Rawdata_NETSUPER_items" DROP COLUMN IF EXISTS display_sender;'
             }
         ).execute()
         logger.info("✓ display_sender カラムを削除しました")
@@ -63,7 +63,7 @@ def main():
         db.client.rpc(
             'execute_sql',
             {
-                'query': 'ALTER TABLE "80_rd_products" DROP COLUMN IF EXISTS display_subject;'
+                'query': 'ALTER TABLE "Rawdata_NETSUPER_items" DROP COLUMN IF EXISTS display_subject;'
             }
         ).execute()
         logger.info("✓ display_subject カラムを削除しました")
@@ -80,7 +80,7 @@ def main():
             'query': """
                 SELECT column_name
                 FROM information_schema.columns
-                WHERE table_name = '80_rd_products'
+                WHERE table_name = 'Rawdata_NETSUPER_items'
                   AND column_name IN ('display_sender', 'display_subject')
                 ORDER BY column_name;
             """
@@ -95,14 +95,14 @@ def main():
             logger.warning(f"  - {col['column_name']}")
 
     # 残存カラムの確認
-    logger.info("\n[4] 80_rd_products の全カラム一覧:")
+    logger.info("\n[4] Rawdata_NETSUPER_items の全カラム一覧:")
     result_all = db.client.rpc(
         'execute_sql',
         {
             'query': """
                 SELECT column_name, data_type
                 FROM information_schema.columns
-                WHERE table_name = '80_rd_products'
+                WHERE table_name = 'Rawdata_NETSUPER_items'
                 ORDER BY ordinal_position;
             """
         }

@@ -21,7 +21,7 @@ async def main():
 
     # 全ドキュメントを取得
     print("\n[Step 1] ドキュメント取得中...")
-    result = db.client.table('10_rd_source_docs').select('id,file_name,attachment_text,summary').execute()
+    result = db.client.table('Rawdata_FILE_AND_MAIL').select('id,file_name,attachment_text,summary').execute()
     documents = result.data if result.data else []
 
     total = len(documents)
@@ -65,7 +65,7 @@ async def main():
             embedding_str = '[' + ','.join(str(x) for x in embedding) + ']'
 
             # データベースを更新
-            db.client.table('10_rd_source_docs').update({
+            db.client.table('Rawdata_FILE_AND_MAIL').update({
                 'embedding': embedding_str
             }).eq('id', doc_id).execute()
 

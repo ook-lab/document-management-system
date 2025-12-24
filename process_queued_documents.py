@@ -96,10 +96,10 @@ class ClassroomReprocessorV2:
         # 対象ドキュメントを取得（processing_status='completed'は除外）
         if workspace == 'all':
             # 全ワークスペースを対象
-            result = self.db.client.table('10_rd_source_docs').select('*').neq('processing_status', 'completed').limit(limit).execute()
+            result = self.db.client.table('Rawdata_FILE_AND_MAIL').select('*').neq('processing_status', 'completed').limit(limit).execute()
         else:
             # 特定のワークスペースのみ
-            result = self.db.client.table('10_rd_source_docs').select('*').eq(
+            result = self.db.client.table('Rawdata_FILE_AND_MAIL').select('*').eq(
                 'workspace', workspace
             ).neq('processing_status', 'completed').limit(limit).execute()
 
@@ -645,7 +645,7 @@ class ClassroomReprocessorV2:
             if tags:
                 update_data['tags'] = tags
 
-            response = self.db.client.table('10_rd_source_docs').update(update_data).eq('id', document_id).execute()
+            response = self.db.client.table('Rawdata_FILE_AND_MAIL').update(update_data).eq('id', document_id).execute()
 
             if response.data:
                 logger.success(f"✅ テキストのみドキュメント再処理成功: {file_name}")
@@ -1002,7 +1002,7 @@ class ClassroomReprocessorV2:
             if tags:
                 update_data['tags'] = tags
 
-            response = self.db.client.table('10_rd_source_docs').update(update_data).eq('id', document_id).execute()
+            response = self.db.client.table('Rawdata_FILE_AND_MAIL').update(update_data).eq('id', document_id).execute()
 
             if response.data:
                 logger.success(f"✅ 動画投稿本文処理成功: {file_name}")

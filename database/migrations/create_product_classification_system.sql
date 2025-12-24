@@ -31,7 +31,7 @@ CREATE TABLE IF NOT EXISTS "70_ms_product_classification" (
   workspace TEXT,
   doc_type TEXT,
   organization TEXT,
-  category_id UUID NOT NULL REFERENCES "60_ms_categories"(id) ON DELETE CASCADE,
+  category_id UUID NOT NULL REFERENCES "MASTER_Categories_expense"(id) ON DELETE CASCADE,
   approval_status TEXT DEFAULT 'pending',  -- 'pending', 'approved', 'rejected'
   confidence_score FLOAT,
   created_at TIMESTAMPTZ DEFAULT NOW(),
@@ -51,7 +51,7 @@ CREATE TABLE IF NOT EXISTS "99_tmp_gemini_clustering" (
   batch_id UUID NOT NULL,
   general_name TEXT NOT NULL,
   category_name TEXT,
-  product_ids UUID[] NOT NULL,  -- 80_rd_products.id配列
+  product_ids UUID[] NOT NULL,  -- Rawdata_NETSUPER_items.id配列
   product_names TEXT[] NOT NULL,
   confidence_avg FLOAT,
   approval_status TEXT DEFAULT 'pending',  -- 'pending', 'approved', 'rejected'
@@ -66,7 +66,7 @@ CREATE INDEX idx_99_tmp_gemini_clustering_approval_status ON "99_tmp_gemini_clus
 -- ============================================
 CREATE TABLE IF NOT EXISTS "99_lg_gemini_classification_log" (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  product_id UUID REFERENCES "80_rd_products"(id),
+  product_id UUID REFERENCES "Rawdata_NETSUPER_items"(id),
   operation_type TEXT NOT NULL,  -- 'batch_clustering', 'daily_classification'
   model_name TEXT,
   prompt TEXT,
@@ -83,15 +83,15 @@ CREATE INDEX idx_99_lg_gemini_classification_log_created_at ON "99_lg_gemini_cla
 -- 既存テーブルへのカラム追加
 -- ============================================
 
--- 80_rd_products: 商品マスタ
-ALTER TABLE "80_rd_products" ADD COLUMN IF NOT EXISTS general_name TEXT;
-ALTER TABLE "80_rd_products" ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES "60_ms_categories"(id);
-ALTER TABLE "80_rd_products" ADD COLUMN IF NOT EXISTS needs_approval BOOLEAN DEFAULT TRUE;
-ALTER TABLE "80_rd_products" ADD COLUMN IF NOT EXISTS classification_confidence FLOAT;
+-- Rawdata_NETSUPER_items: 商品マスタ
+ALTER TABLE "Rawdata_NETSUPER_items" ADD COLUMN IF NOT EXISTS general_name TEXT;
+ALTER TABLE "Rawdata_NETSUPER_items" ADD COLUMN IF NOT EXISTS category_id UUID REFERENCES "MASTER_Categories_expense"(id);
+ALTER TABLE "Rawdata_NETSUPER_items" ADD COLUMN IF NOT EXISTS needs_approval BOOLEAN DEFAULT TRUE;
+ALTER TABLE "Rawdata_NETSUPER_items" ADD COLUMN IF NOT EXISTS classification_confidence FLOAT;
 
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_general_name ON "80_rd_products"(general_name);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_category_id ON "80_rd_products"(category_id);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_needs_approval ON "80_rd_products"(needs_approval) WHERE needs_approval = TRUE;
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_general_name ON "Rawdata_NETSUPER_items"(general_name);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_category_id ON "Rawdata_NETSUPER_items"(category_id);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_needs_approval ON "Rawdata_NETSUPER_items"(needs_approval) WHERE needs_approval = TRUE;
 
 -- ============================================
 -- カテゴリマスタへの階層データ追加
@@ -103,17 +103,17 @@ DECLARE
   food_category_id UUID;
 BEGIN
   -- 「食費」カテゴリのIDを取得
-  SELECT id INTO food_category_id FROM "60_ms_categories" WHERE name = '食費' LIMIT 1;
+  SELECT id INTO food_category_id FROM "MASTER_Categories_expense" WHERE name = '食費' LIMIT 1;
 
   -- food_category_idがNULLでない場合のみ実行
   IF food_category_id IS NOT NULL THEN
     -- 「食材」カテゴリを追加（parent_id = 食費）
-    INSERT INTO "60_ms_categories" (name, is_expense, parent_id)
+    INSERT INTO "MASTER_Categories_expense" (name, is_expense, parent_id)
     VALUES ('食材', TRUE, food_category_id)
     ON CONFLICT (name) DO NOTHING;
 
     -- 「外食」カテゴリを追加（parent_id = 食費）
-    INSERT INTO "60_ms_categories" (name, is_expense, parent_id)
+    INSERT INTO "MASTER_Categories_expense" (name, is_expense, parent_id)
     VALUES ('外食', TRUE, food_category_id)
     ON CONFLICT (name) DO NOTHING;
   ELSE

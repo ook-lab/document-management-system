@@ -13,7 +13,7 @@ def delete_price_list_document():
 
     try:
         # レコード検索
-        response = db.client.table('10_rd_source_docs').select('id, file_name').eq('file_name', file_name).execute()
+        response = db.client.table('Rawdata_FILE_AND_MAIL').select('id, file_name').eq('file_name', file_name).execute()
 
         if not response.data:
             logger.warning(f"❌ レコードが見つかりません: {file_name}")
@@ -21,7 +21,7 @@ def delete_price_list_document():
 
         # 削除実行
         for doc in response.data:
-            db.client.table('10_rd_source_docs').delete().eq('id', doc['id']).execute()
+            db.client.table('Rawdata_FILE_AND_MAIL').delete().eq('id', doc['id']).execute()
             logger.info(f"✅ 削除完了: {doc['file_name']} (ID: {doc['id']})")
 
         logger.info(f"🗑️  {len(response.data)} 件のレコードを削除しました")

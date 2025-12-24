@@ -23,7 +23,7 @@ class DailyInboxUI:
         Returns:
             (high, medium, low)のタプル
         """
-        result = self.db.client.table('80_rd_products').select(
+        result = self.db.client.table('Rawdata_NETSUPER_items').select(
             'id, product_name, general_name, category_id, classification_confidence, organization'
         ).eq('needs_approval', True).execute()
 
@@ -46,7 +46,7 @@ class DailyInboxUI:
     def approve_products(self, product_ids: List[str]):
         """商品を承認（needs_approval = False）"""
         for product_id in product_ids:
-            self.db.client.table('80_rd_products').update({
+            self.db.client.table('Rawdata_NETSUPER_items').update({
                 "needs_approval": False
             }).eq('id', product_id).execute()
 

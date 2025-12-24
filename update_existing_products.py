@@ -31,7 +31,7 @@ print("\n[1] ネットスーパー商品を更新...")
 net_supermarkets = ["楽天西友ネットスーパー", "東急ストア ネットスーパー", "ダイエーネットスーパー"]
 
 for org in net_supermarkets:
-    result = db.client.table('80_rd_products').update({
+    result = db.client.table('Rawdata_NETSUPER_items').update({
         "source_type": "online_supermarket",
         "doc_type": "online_grocery_item"
     }).eq('organization', org).execute()
@@ -42,7 +42,7 @@ for org in net_supermarkets:
 print("\n[2] レシート由来商品を更新...")
 
 # まずレシート由来の商品を確認
-receipt_products = db.client.table('80_rd_products').select(
+receipt_products = db.client.table('Rawdata_NETSUPER_items').select(
     'id, metadata'
 ).eq('organization', 'レシート').execute()
 
@@ -56,13 +56,13 @@ for product in receipt_products.data:
 
     if receipt_id:
         # receipt_idから店舗名を取得
-        receipt = db.client.table('60_rd_receipts').select('shop_name').eq('id', receipt_id).execute()
+        receipt = db.client.table('Rawdata_RECEIPT_shops').select('shop_name').eq('id', receipt_id).execute()
 
         if receipt.data and receipt.data[0].get('shop_name'):
             shop_name = receipt.data[0]['shop_name']
 
             # 商品を更新
-            db.client.table('80_rd_products').update({
+            db.client.table('Rawdata_NETSUPER_items').update({
                 "organization": shop_name,
                 "source_type": "physical_store",
                 "doc_type": "Receipt",
@@ -78,7 +78,7 @@ print(f"  ✅ {updated_count}件のレシート商品を更新しました")
 
 # 3. 確認
 print("\n[3] 更新結果を確認...")
-result = db.client.table('80_rd_products').select('organization, source_type, doc_type').execute()
+result = db.client.table('Rawdata_NETSUPER_items').select('organization, source_type, doc_type').execute()
 
 # 集計
 stats = {}

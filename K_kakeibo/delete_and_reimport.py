@@ -30,7 +30,7 @@ class ReceiptReimporter:
 
     def get_all_receipts(self) -> List[Dict]:
         """データベースから全レシートを取得"""
-        result = self.db.client.table("60_rd_receipts").select("*").order("created_at", desc=True).execute()
+        result = self.db.client.table("Rawdata_RECEIPT_shops").select("*").order("created_at", desc=True).execute()
         return result.data
 
     def delete_receipt(self, receipt_id: str) -> bool:
@@ -45,7 +45,7 @@ class ReceiptReimporter:
         """
         try:
             # 削除前の情報を取得
-            receipt = self.db.client.table("60_rd_receipts").select("*").eq("id", receipt_id).execute()
+            receipt = self.db.client.table("Rawdata_RECEIPT_shops").select("*").eq("id", receipt_id).execute()
             if not receipt.data:
                 logger.warning(f"レシートが見つかりません: {receipt_id}")
                 return False
@@ -54,7 +54,7 @@ class ReceiptReimporter:
             logger.info(f"削除対象: {receipt_info.get('shop_name')} - {receipt_info.get('transaction_date')}")
 
             # レシートを削除（CASCADE削除により子・孫も削除される）
-            self.db.client.table("60_rd_receipts").delete().eq("id", receipt_id).execute()
+            self.db.client.table("Rawdata_RECEIPT_shops").delete().eq("id", receipt_id).execute()
 
             # ログテーブルからも削除
             self.db.client.table("99_lg_image_proc_log").delete().eq("receipt_id", receipt_id).execute()

@@ -17,10 +17,10 @@ DROP TABLE IF EXISTS rakuten_seiyu_products CASCADE;
 DROP TABLE IF EXISTS money_events CASCADE;
 
 -- ====================================================================
--- STEP 1: 統合テーブル 80_rd_products の作成
+-- STEP 1: 統合テーブル Rawdata_NETSUPER_items の作成
 -- ====================================================================
 
-CREATE TABLE IF NOT EXISTS "80_rd_products" (
+CREATE TABLE IF NOT EXISTS "Rawdata_NETSUPER_items" (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
@@ -73,18 +73,18 @@ CREATE TABLE IF NOT EXISTS "80_rd_products" (
 );
 
 -- インデックス作成
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_category ON "80_rd_products"(category);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_jan_code ON "80_rd_products"(jan_code);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_price ON "80_rd_products"(current_price);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_name ON "80_rd_products"(product_name);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_scraped ON "80_rd_products"(last_scraped_at DESC);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_search ON "80_rd_products" USING GIN(search_vector);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_date ON "80_rd_products"(document_date DESC);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_workspace ON "80_rd_products"(workspace);
-CREATE INDEX IF NOT EXISTS idx_80_rd_products_organization ON "80_rd_products"(organization);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_category ON "Rawdata_NETSUPER_items"(category);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_jan_code ON "Rawdata_NETSUPER_items"(jan_code);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_price ON "Rawdata_NETSUPER_items"(current_price);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_name ON "Rawdata_NETSUPER_items"(product_name);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_scraped ON "Rawdata_NETSUPER_items"(last_scraped_at DESC);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_search ON "Rawdata_NETSUPER_items" USING GIN(search_vector);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_date ON "Rawdata_NETSUPER_items"(document_date DESC);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_workspace ON "Rawdata_NETSUPER_items"(workspace);
+CREATE INDEX IF NOT EXISTS idx_Rawdata_NETSUPER_items_organization ON "Rawdata_NETSUPER_items"(organization);
 
 -- 検索ベクトル自動更新トリガー
-CREATE OR REPLACE FUNCTION update_80_rd_products_search_vector()
+CREATE OR REPLACE FUNCTION update_Rawdata_NETSUPER_items_search_vector()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.search_vector :=
@@ -95,13 +95,13 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trigger_80_rd_products_search_vector_update
-    BEFORE INSERT OR UPDATE ON "80_rd_products"
+CREATE TRIGGER trigger_Rawdata_NETSUPER_items_search_vector_update
+    BEFORE INSERT OR UPDATE ON "Rawdata_NETSUPER_items"
     FOR EACH ROW
-    EXECUTE FUNCTION update_80_rd_products_search_vector();
+    EXECUTE FUNCTION update_Rawdata_NETSUPER_items_search_vector();
 
 -- updated_at 自動更新トリガー
-CREATE OR REPLACE FUNCTION update_80_rd_products_updated_at()
+CREATE OR REPLACE FUNCTION update_Rawdata_NETSUPER_items_updated_at()
 RETURNS TRIGGER AS $$
 BEGIN
     NEW.updated_at = NOW();
@@ -109,10 +109,10 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql;
 
-CREATE TRIGGER trigger_80_rd_products_updated_at
-    BEFORE UPDATE ON "80_rd_products"
+CREATE TRIGGER trigger_Rawdata_NETSUPER_items_updated_at
+    BEFORE UPDATE ON "Rawdata_NETSUPER_items"
     FOR EACH ROW
-    EXECUTE FUNCTION update_80_rd_products_updated_at();
+    EXECUTE FUNCTION update_Rawdata_NETSUPER_items_updated_at();
 
 -- ====================================================================
 -- STEP 2: 価格履歴テーブル 80_rd_price_history の作成
@@ -123,7 +123,7 @@ CREATE TABLE IF NOT EXISTS "80_rd_price_history" (
     created_at TIMESTAMPTZ DEFAULT NOW(),
 
     -- 商品参照
-    product_id UUID REFERENCES "80_rd_products"(id) ON DELETE CASCADE,
+    product_id UUID REFERENCES "Rawdata_NETSUPER_items"(id) ON DELETE CASCADE,
     jan_code VARCHAR(20) NOT NULL,
     product_name VARCHAR(500),
 
@@ -157,19 +157,19 @@ CREATE INDEX IF NOT EXISTS idx_80_rd_price_history_price ON "80_rd_price_history
 -- ====================================================================
 
 -- 10. ドキュメント処理
-ALTER TABLE IF EXISTS source_documents RENAME TO "10_rd_source_docs";
+ALTER TABLE IF EXISTS source_documents RENAME TO "Rawdata_FILE_AND_MAIL";
 ALTER TABLE IF EXISTS search_index RENAME TO "10_ix_search_index";
 
 -- 60. 家計簿
-ALTER TABLE IF EXISTS money_transactions RENAME TO "60_rd_transactions";
-ALTER TABLE IF EXISTS money_categories RENAME TO "60_ms_categories";
-ALTER TABLE IF EXISTS money_situations RENAME TO "60_ms_situations";
-ALTER TABLE IF EXISTS money_product_dictionary RENAME TO "60_ms_product_dict";
-ALTER TABLE IF EXISTS money_aliases RENAME TO "60_ms_ocr_aliases";
+ALTER TABLE IF EXISTS money_transactions RENAME TO "Rawdata_RECEIPT_items";
+ALTER TABLE IF EXISTS money_categories RENAME TO "MASTER_Categories_expense";
+ALTER TABLE IF EXISTS money_situations RENAME TO "MASTER_Categories_purpose";
+ALTER TABLE IF EXISTS money_product_dictionary RENAME TO "MASTER_product_dict_DELETED";
+ALTER TABLE IF EXISTS money_aliases RENAME TO "MASTER_ocr_aliases_DELETED";
 
 -- 70. チラシ
-ALTER TABLE IF EXISTS flyer_documents RENAME TO "70_rd_flyer_docs";
-ALTER TABLE IF EXISTS flyer_products RENAME TO "70_rd_flyer_items";
+ALTER TABLE IF EXISTS flyer_documents RENAME TO "Rawdata_FLYER_shops";
+ALTER TABLE IF EXISTS flyer_products RENAME TO "Rawdata_FLYER_items";
 
 -- 99. ログ・システム
 ALTER TABLE IF EXISTS correction_history RENAME TO "99_lg_correction_history";
@@ -188,31 +188,31 @@ DROP VIEW IF EXISTS v_rakuten_seiyu_products_latest;
 DROP VIEW IF EXISTS v_rakuten_seiyu_price_changes;
 
 -- 60_ag_daily_summary
-CREATE OR REPLACE VIEW "60_ag_daily_summary" AS
+CREATE OR REPLACE VIEW "Aggregate_daily_summary" AS
 SELECT
     transaction_date,
     s.name AS situation,
     c.name AS category,
     COUNT(*) AS item_count,
     SUM(total_amount) AS total
-FROM "60_rd_transactions" t
-LEFT JOIN "60_ms_situations" s ON t.situation_id = s.id
-LEFT JOIN "60_ms_categories" c ON t.category_id = c.id
+FROM "Rawdata_RECEIPT_items" t
+LEFT JOIN "MASTER_Categories_purpose" s ON t.situation_id = s.id
+LEFT JOIN "MASTER_Categories_expense" c ON t.category_id = c.id
 WHERE c.is_expense = TRUE
 GROUP BY transaction_date, s.name, c.name
 ORDER BY transaction_date DESC;
 
 -- 60_ag_monthly_summary
-CREATE OR REPLACE VIEW "60_ag_monthly_summary" AS
+CREATE OR REPLACE VIEW "Aggregate_monthly_summary" AS
 SELECT
     DATE_TRUNC('month', transaction_date) AS month,
     s.name AS situation,
     c.name AS category,
     COUNT(*) AS item_count,
     SUM(total_amount) AS total
-FROM "60_rd_transactions" t
-LEFT JOIN "60_ms_situations" s ON t.situation_id = s.id
-LEFT JOIN "60_ms_categories" c ON t.category_id = c.id
+FROM "Rawdata_RECEIPT_items" t
+LEFT JOIN "MASTER_Categories_purpose" s ON t.situation_id = s.id
+LEFT JOIN "MASTER_Categories_expense" c ON t.category_id = c.id
 WHERE c.is_expense = TRUE
 GROUP BY month, s.name, c.name
 ORDER BY month DESC;
@@ -227,7 +227,7 @@ SELECT
     ph_new.price AS new_price,
     ph_new.scraped_date AS change_date,
     ROUND(((ph_new.price - ph_old.price) / ph_old.price * 100)::numeric, 2) AS price_change_percent
-FROM "80_rd_products" p
+FROM "Rawdata_NETSUPER_items" p
 INNER JOIN "80_rd_price_history" ph_new ON p.jan_code = ph_new.jan_code
 INNER JOIN LATERAL (
     SELECT price
@@ -250,18 +250,18 @@ ORDER BY ABS((ph_new.price - ph_old.price) / ph_old.price) DESC;
 -- STEP 6: RLSポリシー設定（80番台のみ）
 -- ====================================================================
 
-ALTER TABLE "80_rd_products" ENABLE ROW LEVEL SECURITY;
+ALTER TABLE "Rawdata_NETSUPER_items" ENABLE ROW LEVEL SECURITY;
 ALTER TABLE "80_rd_price_history" ENABLE ROW LEVEL SECURITY;
 
-CREATE POLICY "Allow authenticated users full access to 80_rd_products"
-    ON "80_rd_products"
+CREATE POLICY "Allow authenticated users full access to Rawdata_NETSUPER_items"
+    ON "Rawdata_NETSUPER_items"
     FOR ALL
     TO authenticated
     USING (true)
     WITH CHECK (true);
 
-CREATE POLICY "Allow service role full access to 80_rd_products"
-    ON "80_rd_products"
+CREATE POLICY "Allow service role full access to Rawdata_NETSUPER_items"
+    ON "Rawdata_NETSUPER_items"
     FOR ALL
     TO service_role
     USING (true)
@@ -288,7 +288,7 @@ CREATE POLICY "Allow service role full access to 80_rd_price_history"
 DO $$
 BEGIN
     RAISE NOTICE '✅ テーブル統合・リネームが完了しました';
-    RAISE NOTICE '✅ 80_rd_products: ダイエーと楽天西友を統合可能な構造を作成';
+    RAISE NOTICE '✅ Rawdata_NETSUPER_items: ダイエーと楽天西友を統合可能な構造を作成';
     RAISE NOTICE '✅ 80_rd_price_history: 価格履歴テーブルを作成';
     RAISE NOTICE '✅ 全テーブルを新命名規則でリネーム完了';
     RAISE NOTICE '✅ ビューを新テーブル名で再作成完了';

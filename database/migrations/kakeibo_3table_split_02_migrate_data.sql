@@ -1,7 +1,7 @@
 -- ====================================================================
 -- フェーズ2: 家計簿3分割テーブル - データ移行
 -- ====================================================================
--- 目的: 既存の 60_rd_transactions のデータを新3テーブルに変換・移行
+-- 目的: 既存の Rawdata_RECEIPT_items のデータを新3テーブルに変換・移行
 -- 実行場所: Supabase SQL Editor
 -- 前提条件: フェーズ1のスキーマ作成が完了していること
 -- ====================================================================
@@ -16,7 +16,7 @@ DO $$
 DECLARE
     old_count INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO old_count FROM "60_rd_transactions";
+    SELECT COUNT(*) INTO old_count FROM "Rawdata_RECEIPT_items";
     RAISE NOTICE '既存データ件数: % 件', old_count;
     RAISE NOTICE '移行を開始します...';
 END $$;
@@ -27,7 +27,7 @@ END $$;
 -- レシート単位にグループ化して親テーブルに挿入
 -- グループ化キー: drive_file_id + transaction_date + shop_name
 
-INSERT INTO "60_rd_receipts" (
+INSERT INTO "Rawdata_RECEIPT_shops" (
     transaction_date,
     shop_name,
     total_amount_check,
@@ -58,7 +58,7 @@ SELECT
     MAX(notes) AS notes,                        -- レシート全体のメモ
     MIN(created_at) AS created_at,              -- 最初の明細の作成日時
     MAX(updated_at) AS updated_at               -- 最後の更新日時
-FROM "60_rd_transactions"
+FROM "Rawdata_RECEIPT_items"
 GROUP BY drive_file_id, transaction_date, shop_name
 ORDER BY transaction_date DESC, shop_name;
 
@@ -67,7 +67,7 @@ DO $$
 DECLARE
     receipt_count INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO receipt_count FROM "60_rd_receipts";
+    SELECT COUNT(*) INTO receipt_count FROM "Rawdata_RECEIPT_shops";
     RAISE NOTICE '✅ ステップ1完了: % 件のレシートを作成', receipt_count;
 END $$;
 
@@ -77,7 +77,7 @@ END $$;
 -- 旧トランザクションデータを子テーブルに挿入
 -- 行番号はROW_NUMBER()で自動採番
 
-INSERT INTO "60_rd_transactions_new" (
+INSERT INTO "Rawdata_RECEIPT_items_new" (
     receipt_id,
     line_number,
     line_type,
@@ -106,8 +106,8 @@ SELECT
     NULL AS discount_text,                      -- 既存データにはないのでNULL
     t.created_at,
     t.updated_at
-FROM "60_rd_transactions" t
-INNER JOIN "60_rd_receipts" r
+FROM "Rawdata_RECEIPT_items" t
+INNER JOIN "Rawdata_RECEIPT_shops" r
     ON r.drive_file_id = t.drive_file_id
     AND r.transaction_date = t.transaction_date
     AND r.shop_name = t.shop_name
@@ -118,7 +118,7 @@ DO $$
 DECLARE
     trans_count INTEGER;
 BEGIN
-    SELECT COUNT(*) INTO trans_count FROM "60_rd_transactions_new";
+    SELECT COUNT(*) INTO trans_count FROM "Rawdata_RECEIPT_items_new";
     RAISE NOTICE '✅ ステップ2完了: % 件の明細行を作成', trans_count;
 END $$;
 
@@ -166,12 +166,12 @@ SELECT
     t.notes,
     t.created_at,
     t.updated_at
-FROM "60_rd_transactions" t
-INNER JOIN "60_rd_receipts" r
+FROM "Rawdata_RECEIPT_items" t
+INNER JOIN "Rawdata_RECEIPT_shops" r
     ON r.drive_file_id = t.drive_file_id
     AND r.transaction_date = t.transaction_date
     AND r.shop_name = t.shop_name
-INNER JOIN "60_rd_transactions_new" tr
+INNER JOIN "Rawdata_RECEIPT_items_new" tr
     ON tr.receipt_id = r.id
     AND tr.product_name = t.product_name
     AND tr.created_at = t.created_at
@@ -199,23 +199,23 @@ DECLARE
     unique_receipts INTEGER;
 BEGIN
     -- 旧テーブルの件数
-    SELECT COUNT(*) INTO old_count FROM "60_rd_transactions";
+    SELECT COUNT(*) INTO old_count FROM "Rawdata_RECEIPT_items";
 
     -- 新テーブルの件数
-    SELECT COUNT(*) INTO receipt_count FROM "60_rd_receipts";
-    SELECT COUNT(*) INTO trans_count FROM "60_rd_transactions_new";
+    SELECT COUNT(*) INTO receipt_count FROM "Rawdata_RECEIPT_shops";
+    SELECT COUNT(*) INTO trans_count FROM "Rawdata_RECEIPT_items_new";
     SELECT COUNT(*) INTO std_count FROM "60_rd_standardized_items";
 
     -- 期待されるレシート数（drive_file_idのユニーク数）
-    SELECT COUNT(DISTINCT drive_file_id) INTO unique_receipts FROM "60_rd_transactions";
+    SELECT COUNT(DISTINCT drive_file_id) INTO unique_receipts FROM "Rawdata_RECEIPT_items";
 
     RAISE NOTICE '';
     RAISE NOTICE '====================================================================';
     RAISE NOTICE 'データ移行完了';
     RAISE NOTICE '====================================================================';
-    RAISE NOTICE '旧テーブル (60_rd_transactions):           % 件', old_count;
-    RAISE NOTICE '新テーブル (60_rd_receipts):               % 件 (期待: % 件)', receipt_count, unique_receipts;
-    RAISE NOTICE '新テーブル (60_rd_transactions_new):       % 件 (期待: % 件)', trans_count, old_count;
+    RAISE NOTICE '旧テーブル (Rawdata_RECEIPT_items):           % 件', old_count;
+    RAISE NOTICE '新テーブル (Rawdata_RECEIPT_shops):               % 件 (期待: % 件)', receipt_count, unique_receipts;
+    RAISE NOTICE '新テーブル (Rawdata_RECEIPT_items_new):       % 件 (期待: % 件)', trans_count, old_count;
     RAISE NOTICE '新テーブル (60_rd_standardized_items):     % 件 (期待: % 件)', std_count, old_count;
     RAISE NOTICE '';
 
@@ -245,8 +245,8 @@ SELECT
     COUNT(t.id) AS item_count,
     SUM(s.std_amount) AS calculated_total,
     r.is_verified
-FROM "60_rd_receipts" r
-LEFT JOIN "60_rd_transactions_new" t ON t.receipt_id = r.id
+FROM "Rawdata_RECEIPT_shops" r
+LEFT JOIN "Rawdata_RECEIPT_items_new" t ON t.receipt_id = r.id
 LEFT JOIN "60_rd_standardized_items" s ON s.receipt_id = r.id
 GROUP BY r.id, r.transaction_date, r.shop_name, r.total_amount_check, r.is_verified
 ORDER BY r.transaction_date DESC, r.shop_name

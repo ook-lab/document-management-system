@@ -24,7 +24,7 @@ def migrate_email_workspaces():
     logger.info("=" * 60)
 
     # file_type = 'email' のドキュメントを取得
-    result = db.client.table('10_rd_source_docs').select(
+    result = db.client.table('Rawdata_FILE_AND_MAIL').select(
         'id, workspace, metadata'
     ).eq('file_type', 'email').execute()
 
@@ -64,7 +64,7 @@ def migrate_email_workspaces():
 
         # workspaceを更新
         try:
-            db.client.table('10_rd_source_docs').update({
+            db.client.table('Rawdata_FILE_AND_MAIL').update({
                 'workspace': correct_workspace
             }).eq('id', email_id).execute()
 

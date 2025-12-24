@@ -20,7 +20,7 @@ SELECT
     is_nullable,
     column_default
 FROM information_schema.columns
-WHERE table_name = '10_rd_source_docs'
+WHERE table_name = 'Rawdata_FILE_AND_MAIL'
 ORDER BY ordinal_position;
 """
 
@@ -28,7 +28,7 @@ try:
     # RPC経由でクエリを実行
     # Supabaseではsql()関数が使えない可能性があるため、
     # 直接テーブルから1行取得してカラム名を確認
-    response = client.table('10_rd_source_docs').select('*').limit(1).execute()
+    response = client.table('Rawdata_FILE_AND_MAIL').select('*').limit(1).execute()
 
     if response.data:
         columns = list(response.data[0].keys())

@@ -105,7 +105,7 @@ class GeminiBatchClustering:
         """
         logger.info(f"Fetching up to {limit} unclassified products...")
 
-        result = self.db.client.table('80_rd_products').select(
+        result = self.db.client.table('Rawdata_NETSUPER_items').select(
             'id, product_name, product_name_normalized, organization, jan_code'
         ).is_('general_name', 'null').limit(limit).execute()
 
