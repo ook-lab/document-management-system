@@ -207,7 +207,9 @@ class ReceiptProductSync:
         # Embeddingを生成（商品名から）
         embedding = self._generate_embedding(product['official_name'])
         if embedding:
-            data['embedding'] = embedding
+            # vector型として保存するために文字列形式に変換
+            embedding_str = '[' + ','.join(map(str, embedding)) + ']'
+            data['embedding'] = embedding_str
 
         result = self.db.client.table('80_rd_products').insert(data).execute()
         return result.data[0]['id']
@@ -234,7 +236,9 @@ class ReceiptProductSync:
         if existing.data and not existing.data[0].get('embedding'):
             embedding = self._generate_embedding(product['official_name'])
             if embedding:
-                data['embedding'] = embedding
+                # vector型として保存するために文字列形式に変換
+                embedding_str = '[' + ','.join(map(str, embedding)) + ']'
+                data['embedding'] = embedding_str
 
         self.db.client.table('80_rd_products').update(data).eq('id', product_id).execute()
 

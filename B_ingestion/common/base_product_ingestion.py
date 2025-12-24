@@ -253,7 +253,9 @@ class BaseProductIngestionPipeline(ABC):
         # Embeddingを生成（商品名から）
         embedding = self._generate_embedding(product_name)
         if embedding:
-            data["embedding"] = embedding
+            # vector型として保存するために文字列形式に変換
+            embedding_str = '[' + ','.join(map(str, embedding)) + ']'
+            data["embedding"] = embedding_str
             logger.debug(f"Embedding生成成功: {product_name[:30]}...")
 
         return data

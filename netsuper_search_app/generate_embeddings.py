@@ -105,8 +105,10 @@ class ProductEmbeddingGenerator:
             product_id: 商品ID
             embedding: 埋め込みベクトル
         """
+        # vector型として保存するために文字列形式に変換
+        embedding_str = '[' + ','.join(map(str, embedding)) + ']'
         self.db.table('80_rd_products').update({
-            'embedding': embedding
+            'embedding': embedding_str
         }).eq('id', product_id).execute()
 
     def process_products(self, batch_size: int = 100, limit: int = None, delay: float = 0.1):
