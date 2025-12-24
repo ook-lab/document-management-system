@@ -8,10 +8,12 @@ from datetime import date, datetime
 from typing import Dict, List, Optional, Set
 from uuid import UUID
 import uuid
+import os
 
 from A_common.database.client import DatabaseClient
 from C_ai_common.llm_client.llm_client import LLMClient
 from loguru import logger
+from openai import OpenAI
 
 
 class BaseProductIngestionPipeline(ABC):
@@ -30,6 +32,17 @@ class BaseProductIngestionPipeline(ABC):
         self.db = DatabaseClient(use_service_role=True)
         self.llm_client = LLMClient()
         self.scraper = None
+
+        # OpenAI clientの初期化（embedding生成用）
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if openai_api_key:
+            self.openai_client = OpenAI(api_key=openai_api_key)
+            self.embedding_enabled = True
+            logger.info("OpenAI Embedding機能が有効化されました")
+        else:
+            self.openai_client = None
+            self.embedding_enabled = False
+            logger.warning("OPENAI_API_KEYが設定されていません。Embedding生成は無効です")
 
     @abstractmethod
     async def start(self) -> bool:
@@ -106,6 +119,32 @@ class BaseProductIngestionPipeline(ABC):
             existing_map[key] = row['id']
 
         return existing_map
+
+    def _generate_embedding(self, text: str) -> Optional[List[float]]:
+        """
+        商品名からembeddingを生成
+
+        Args:
+            text: 商品名
+
+        Returns:
+            1536次元のベクトル（失敗時はNone）
+        """
+        if not self.embedding_enabled or not self.openai_client:
+            return None
+
+        if not text:
+            return None
+
+        try:
+            response = self.openai_client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"Embedding生成エラー: {e}")
+            return None
 
     def _prepare_product_data(
         self,
@@ -210,6 +249,12 @@ class BaseProductIngestionPipeline(ABC):
             "last_scraped_at": datetime.now().isoformat(),
             "updated_at": datetime.now().isoformat()
         }
+
+        # Embeddingを生成（商品名から）
+        embedding = self._generate_embedding(product_name)
+        if embedding:
+            data["embedding"] = embedding
+            logger.debug(f"Embedding生成成功: {product_name[:30]}...")
 
         return data
 

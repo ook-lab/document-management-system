@@ -17,6 +17,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 from datetime import datetime
 from typing import Dict, List, Optional
+from openai import OpenAI
 
 # Windows環境でのUnicode出力設定
 if sys.platform == "win32":
@@ -48,6 +49,17 @@ class ReceiptProductSync:
 
     def __init__(self):
         self.db = DatabaseClient(use_service_role=True)
+
+        # OpenAI clientの初期化（embedding生成用）
+        openai_api_key = os.getenv("OPENAI_API_KEY")
+        if openai_api_key:
+            self.openai_client = OpenAI(api_key=openai_api_key)
+            self.embedding_enabled = True
+            logger.info("OpenAI Embedding機能が有効化されました")
+        else:
+            self.openai_client = None
+            self.embedding_enabled = False
+            logger.warning("OPENAI_API_KEYが設定されていません。Embedding生成は無効です")
 
     def fetch_receipt_products(self) -> List[Dict]:
         """
@@ -134,6 +146,32 @@ class ReceiptProductSync:
 
         return result.data[0] if result.data else None
 
+    def _generate_embedding(self, text: str) -> Optional[List]:
+        """
+        商品名からembeddingを生成
+
+        Args:
+            text: 商品名
+
+        Returns:
+            1536次元のベクトル（失敗時はNone）
+        """
+        if not self.embedding_enabled or not self.openai_client:
+            return None
+
+        if not text:
+            return None
+
+        try:
+            response = self.openai_client.embeddings.create(
+                model="text-embedding-3-small",
+                input=text
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logger.error(f"Embedding生成エラー: {e}")
+            return None
+
     def create_product(self, product: Dict) -> str:
         """
         新規商品を作成
@@ -166,6 +204,11 @@ class ReceiptProductSync:
             }
         }
 
+        # Embeddingを生成（商品名から）
+        embedding = self._generate_embedding(product['official_name'])
+        if embedding:
+            data['embedding'] = embedding
+
         result = self.db.client.table('80_rd_products').insert(data).execute()
         return result.data[0]['id']
 
@@ -185,6 +228,13 @@ class ReceiptProductSync:
             'last_scraped_at': datetime.now().isoformat(),
             'updated_at': datetime.now().isoformat()
         }
+
+        # 既存商品のembeddingが無ければ生成
+        existing = self.db.client.table('80_rd_products').select('embedding').eq('id', product_id).execute()
+        if existing.data and not existing.data[0].get('embedding'):
+            embedding = self._generate_embedding(product['official_name'])
+            if embedding:
+                data['embedding'] = embedding
 
         self.db.client.table('80_rd_products').update(data).eq('id', product_id).execute()
 
