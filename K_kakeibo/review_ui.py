@@ -636,18 +636,18 @@ def show_receipt_detail(log: dict):
                         "数量": quantity,
                         "表示額": displayed_amount if displayed_amount is not None else 0,
                         "外or内": tax_display_type,
-                        "税率": std.get('tax_rate', 10),
+                        "税率": t.get('tax_rate', 10),
                         "本体価": base_price_total if base_price_total is not None else 0,
                         "税額": tax_amount if tax_amount is not None else 0,
                         "税込価": tax_included_amount if tax_included_amount is not None else 0,
                         "単価": tax_included_unit_price if tax_included_unit_price is not None else 0,
-                        "正式名": std.get("official_name") or "",
+                        "正式名": t.get("official_name") or "",
                         "物品名": t.get("item_name") or "",
                         "分類": category_display,
                         "人物": person_value,
                         "名目": purpose_value,
                         "費目": expense_category,  # 2次分類（自動判定）
-                        "要確認": "⚠️" if std.get("needs_review") else ""
+                        "要確認": "⚠️" if t.get("needs_review") else ""
                     })
 
                 df = pd.DataFrame(df_data)
