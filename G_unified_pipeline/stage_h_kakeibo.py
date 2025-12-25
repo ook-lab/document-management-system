@@ -126,7 +126,12 @@ class StageHKakeibo:
         applied_to_line = discount_item.get("discount_applied_to")
         if applied_to_line and applied_to_line in items_by_line:
             target = items_by_line[applied_to_line]
-            if target.get("tax_mark") == "※" or "8%" in str(target.get("tax_mark", "")):
+            tax_mark = target.get("tax_mark")
+            if tax_mark and (
+                tax_mark in ["*", "※", "◆"] or
+                "8%" in str(tax_mark) or
+                "8" in str(tax_mark)
+            ):
                 return 8
             return 10
 
@@ -136,7 +141,12 @@ class StageHKakeibo:
             for i in range(discount_line_num - 1, 0, -1):
                 if i in items_by_line and items_by_line[i].get("line_type") != "DISCOUNT":
                     target = items_by_line[i]
-                    if target.get("tax_mark") == "※" or "8%" in str(target.get("tax_mark", "")):
+                    tax_mark = target.get("tax_mark")
+                    if tax_mark and (
+                        tax_mark in ["*", "※", "◆"] or
+                        "8%" in str(tax_mark) or
+                        "8" in str(tax_mark)
+                    ):
                         return 8
                     return 10
 
@@ -202,7 +212,12 @@ class StageHKakeibo:
         Returns:
             Dict: {"product_name": "正規化後", "category_id": "...", "tax_rate": 10}
         """
-        product_name = item.get("product_name") or item.get("line_text") or "不明"
+        # 商品名を取得（空文字列もNoneとして扱う）
+        product_name = item.get("product_name") or item.get("line_text") or item.get("ocr_raw_text") or "不明"
+        # 空文字列の場合は「不明」に
+        if not product_name or not product_name.strip():
+            product_name = "不明"
+
         receipt_tax_mark = item.get("tax_mark")  # レシートの税率マーク
 
         # 1. エイリアス変換
@@ -220,10 +235,21 @@ class StageHKakeibo:
                 }
 
         # 3. レシートのマークから税率を判定
-        if receipt_tax_mark == "※" or "8%" in str(receipt_tax_mark):
+        # 8%マークの判定（複数パターン対応）
+        if receipt_tax_mark and (
+            receipt_tax_mark in ["*", "※", "◆"] or  # よくある軽減税率マーク
+            "8%" in str(receipt_tax_mark) or
+            "8" in str(receipt_tax_mark) or
+            "(軽)" in str(receipt_tax_mark)
+        ):
             tax_rate = 8
             tax_rate_source = "receipt_mark"
-        elif receipt_tax_mark == "★" or "10%" in str(receipt_tax_mark):
+        # 10%マークの判定
+        elif receipt_tax_mark and (
+            receipt_tax_mark in ["★", "☆"] or  # よくある標準税率マーク
+            "10%" in str(receipt_tax_mark) or
+            "10" in str(receipt_tax_mark)
+        ):
             tax_rate = 10
             tax_rate_source = "receipt_mark"
         else:
@@ -497,20 +523,25 @@ class StageHKakeibo:
 
     def _load_aliases(self) -> Dict[str, str]:
         """エイリアステーブルを読み込み"""
-        result = self.db.client.table("60_ms_ocr_aliases").select("*").execute()
-        return {row["ocr_text"].lower(): row["official_name"] for row in result.data}
+        result = self.db.client.table("MASTER_Rules_transaction_dict").select("*").execute()
+        # product_name → official_name のマッピング
+        aliases = {}
+        for row in result.data:
+            if row.get("product_name") and row.get("official_name"):
+                aliases[row["product_name"].lower()] = row["official_name"]
+        return aliases
 
     def _load_product_dictionary(self) -> List[Dict]:
         """商品辞書を読み込み"""
-        result = self.db.client.table("60_ms_product_dict").select("*").execute()
+        result = self.db.client.table("MASTER_Product_classify").select("*").execute()
         return result.data
 
     def _load_situations(self) -> List[Dict]:
-        """シチュエーションマスタを読み込み"""
-        result = self.db.client.table("60_ms_situations").select("*").execute()
+        """シチュエーションマスタを読み込み（名目）"""
+        result = self.db.client.table("MASTER_Categories_purpose").select("*").execute()
         return result.data
 
     def _load_categories(self) -> List[Dict]:
-        """カテゴリマスタを読み込み"""
-        result = self.db.client.table("60_ms_categories").select("*").execute()
+        """カテゴリマスタを読み込み（商品カテゴリ）"""
+        result = self.db.client.table("MASTER_Categories_product").select("*").execute()
         return result.data

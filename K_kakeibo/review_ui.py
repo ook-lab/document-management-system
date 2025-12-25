@@ -527,10 +527,12 @@ def show_receipt_detail(log: dict):
                 tax_display_type = "不明"
 
             # トランザクションを取得（JOINは使わず2段階クエリ）
+            # 注意: 小計・合計行を除外するため、line_type = 'ITEM' のみ取得
             try:
                 transactions = db.table("Rawdata_RECEIPT_items") \
                     .select("*") \
                     .eq("receipt_id", log["receipt_id"]) \
+                    .or_("line_type.eq.ITEM,line_type.is.null") \
                     .order("line_number") \
                     .execute()
 
@@ -586,10 +588,11 @@ def show_receipt_detail(log: dict):
                     tax_amount = t.get('tax_amount')  # 税額
                     tax_included_amount = t.get('std_amount')  # 税込価
 
-                    # 本体価を計算（本体単価 × 数量 = 税抜総額）
+                    # 本体価を計算（税込価 - 税額）
+                    # 注意: 本体価は数量分の合計なので、数量を掛けない
                     base_price_total = None
-                    if std_unit_price is not None and quantity:
-                        base_price_total = std_unit_price * quantity
+                    if tax_included_amount is not None and tax_amount is not None:
+                        base_price_total = tax_included_amount - tax_amount
 
                     # 表示額を取得
                     # 1. transactionsテーブルのdisplayed_amountを優先（レシート記載値）

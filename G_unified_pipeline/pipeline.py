@@ -187,7 +187,7 @@ class UnifiedDocumentPipeline:
                     'success': True,
                     'receipt_id': kakeibo_save_result['receipt_id'],
                     'transaction_ids': kakeibo_save_result['transaction_ids'],
-                    'standardized_ids': kakeibo_save_result['standardized_ids'],
+                    'log_id': kakeibo_save_result['log_id'],
                     'doc_type': 'kakeibo'
                 }
 

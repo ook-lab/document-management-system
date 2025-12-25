@@ -72,8 +72,25 @@ class TransactionProcessor:
             situation_id = self._determine_situation(trans_date)
 
             # 3. 各商品を正規化（税率決定のみ、税額はまだ計算しない）
+            # 注意: 小計・合計行は税額按分の対象外なので、ITEM行のみ処理
             normalized_items = []
             for item in ocr_result["items"]:
+                # SUBTOTAL/TOTAL行はスキップ（税額按分の対象外）
+                line_type = item.get("line_type", "ITEM")
+                if line_type in ["SUBTOTAL", "TOTAL"]:
+                    # 小計・合計行はそのまま保持（税額按分しない）
+                    normalized_items.append({
+                        "raw_item": item,
+                        "normalized": {
+                            "product_name": item.get("product_name", ""),
+                            "category_id": None,
+                            "tax_rate": item.get("tax_rate", 10),
+                            "tax_rate_fixed": False,
+                            "tax_amount": item.get("tax_amount", 0)  # レシート記載の税額をそのまま使用
+                        }
+                    })
+                    continue
+
                 normalized = self._normalize_item(item, ocr_result["shop_name"])
                 normalized_items.append({
                     "raw_item": item,
@@ -173,11 +190,20 @@ class TransactionProcessor:
         tax_mark = item.get("tax_mark")
         tax_rate_from_mark = None
         if tax_mark:
-            # tax_markに「8」が含まれていれば8%
-            if "8" in str(tax_mark):
+            # 8%マークの判定（複数パターン対応）
+            if (
+                tax_mark in ["*", "※", "◆"] or  # よくある軽減税率マーク
+                "8%" in str(tax_mark) or
+                "8" in str(tax_mark) or
+                "(軽)" in str(tax_mark)
+            ):
                 tax_rate_from_mark = 8
-            # tax_markに「10」が含まれていれば10%
-            elif "10" in str(tax_mark):
+            # 10%マークの判定
+            elif (
+                tax_mark in ["★", "☆"] or  # よくある標準税率マーク
+                "10%" in str(tax_mark) or
+                "10" in str(tax_mark)
+            ):
                 tax_rate_from_mark = 10
 
         # 2. エイリアス変換
@@ -352,10 +378,16 @@ class TransactionProcessor:
             List[Dict]: 税額が計算された商品リスト
         """
         # 商品を8%と10%にグループ化
+        # 注意: SUBTOTAL/TOTAL行は税額按分の対象外
         items_8 = []
         items_10 = []
 
         for item_data in normalized_items:
+            # SUBTOTAL/TOTAL行はスキップ
+            line_type = item_data["raw_item"].get("line_type", "ITEM")
+            if line_type in ["SUBTOTAL", "TOTAL"]:
+                continue
+
             if item_data["normalized"]["tax_rate"] == 8:
                 items_8.append(item_data)
             else:
@@ -505,20 +537,25 @@ class TransactionProcessor:
     # ========================================
     def _load_aliases(self) -> Dict[str, str]:
         """エイリアステーブルを読み込み"""
-        result = self.db.table("60_ms_ocr_aliases").select("*").execute()
-        return {row["input_word"].lower(): row["correct_word"] for row in result.data}
+        result = self.db.table("MASTER_Rules_transaction_dict").select("*").execute()
+        # product_name → official_name のマッピング
+        aliases = {}
+        for row in result.data:
+            if row.get("product_name") and row.get("official_name"):
+                aliases[row["product_name"].lower()] = row["official_name"]
+        return aliases
 
     def _load_product_dictionary(self) -> List[Dict]:
         """商品辞書を読み込み"""
-        result = self.db.table("60_ms_product_dict").select("*").execute()
+        result = self.db.table("MASTER_Product_classify").select("*").execute()
         return result.data
 
     def _load_situations(self) -> List[Dict]:
-        """シチュエーション一覧を読み込み"""
-        result = self.db.table("60_ms_situations").select("*").execute()
+        """シチュエーション一覧を読み込み（名目）"""
+        result = self.db.table("MASTER_Categories_purpose").select("*").execute()
         return result.data
 
     def _load_categories(self) -> List[Dict]:
-        """カテゴリ一覧を読み込み"""
-        result = self.db.table("60_ms_categories").select("*").execute()
+        """カテゴリ一覧を読み込み（商品カテゴリ）"""
+        result = self.db.table("MASTER_Categories_product").select("*").execute()
         return result.data
