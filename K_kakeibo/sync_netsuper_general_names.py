@@ -102,10 +102,10 @@ def sync_general_names(limit: Optional[int] = None, dry_run: bool = False):
 
             if not dry_run:
                 try:
-                    import json
+                    # SupabaseのJSONBカラムにはPythonのlistを直接渡す
                     db.table('Rawdata_NETSUPER_items').update({
                         'general_name': general_name,
-                        'keywords': json.dumps(keywords, ensure_ascii=False)
+                        'keywords': keywords  # json.dumps()は不要
                     }).eq('id', product_id).execute()
                     stats['updated'] += 1
                 except Exception as e:
