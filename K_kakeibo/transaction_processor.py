@@ -79,10 +79,15 @@ class TransactionProcessor:
                 line_type = item.get("line_type", "ITEM")
                 if line_type in ["SUBTOTAL", "TOTAL"]:
                     # 小計・合計行はそのまま保持（税額按分しない）
+                    # 商品名を取得（nullや空文字列の場合は代替値を使用）
+                    subtotal_name = item.get("product_name") or item.get("line_text") or item.get("ocr_raw_text") or "小計"
+                    if not subtotal_name or not subtotal_name.strip():
+                        subtotal_name = "小計" if line_type == "SUBTOTAL" else "合計"
+
                     normalized_items.append({
                         "raw_item": item,
                         "normalized": {
-                            "product_name": item.get("product_name", ""),
+                            "product_name": subtotal_name,
                             "category_id": None,
                             "tax_rate": item.get("tax_rate", 10),
                             "tax_rate_fixed": False,
@@ -91,7 +96,7 @@ class TransactionProcessor:
                     })
                     continue
 
-                normalized = self._normalize_item(item, ocr_result["shop_name"])
+                normalized = self._normalize_item(item, ocr_result["shop_name"], ocr_result.get("tax_summary"))
                 normalized_items.append({
                     "raw_item": item,
                     "normalized": normalized
@@ -166,43 +171,98 @@ class TransactionProcessor:
                 "message": str(e)
             }
 
-    def _normalize_item(self, item: Dict, shop_name: str) -> Dict:
+    def _normalize_item(self, item: Dict, shop_name: str, tax_summary: Dict = None) -> Dict:
         """
         商品情報を正規化（税率のみ決定、税額は後で按分計算）
 
         Priority:
-        1. tax_markから税率を判定（最優先）
-        2. エイリアス変換
-        3. 商品辞書マッチング（税率も取得）
-        4. そのまま使用（Geminiの推測税率を使用）
+        1. レシート全体の税率情報（最優先）
+        2. tax_markから税率を判定
+        3. エイリアス変換
+        4. 商品辞書マッチング（税率も取得）
+        5. そのまま使用（Geminiの推測税率を使用）
 
         Args:
             item: {"product_name": "...", "tax_rate": 10, "tax_mark": "※", ...}
             shop_name: 店舗名
+            tax_summary: レシート全体の税額情報（税率判定に使用）
 
         Returns:
             Dict: {"product_name": "正規化後", "category_id": "...", "tax_rate": 10, "tax_rate_fixed": True/False}
         """
-        product_name = item["product_name"]
+        # 商品名を取得（nullや空文字列の場合は代替値を使用）
+        product_name = item.get("product_name") or item.get("line_text") or item.get("ocr_raw_text") or "不明"
+        # 空文字列の場合は「不明」に
+        if not product_name or not product_name.strip():
+            product_name = "不明"
+
         gemini_tax_rate = item.get("tax_rate", 10)  # Geminiの推測税率（デフォルト10%）
 
-        # 1. tax_markから税率を判定（最優先）
+        # レシート全体の税率情報を確認（最優先）
+        receipt_level_tax_rate = None
+        if tax_summary:
+            tax_8_amount = tax_summary.get("tax_8_amount") or 0
+            tax_10_amount = tax_summary.get("tax_10_amount") or 0
+
+            # 8%のみの場合
+            if tax_8_amount > 0 and tax_10_amount == 0:
+                receipt_level_tax_rate = 8
+                logger.debug(f"Receipt has only 8% tax, setting all items to 8%")
+            # 10%のみの場合
+            elif tax_10_amount > 0 and tax_8_amount == 0:
+                receipt_level_tax_rate = 10
+                logger.debug(f"Receipt has only 10% tax, setting all items to 10%")
+            # 混在の場合は個別判定に進む
+
+        # レシート全体の税率が判定できた場合はそれを使用（最優先）
+        if receipt_level_tax_rate is not None:
+            return {
+                "product_name": product_name,
+                "category_id": None,
+                "tax_rate": receipt_level_tax_rate,
+                "tax_rate_fixed": True  # レシート全体の税率は確定
+            }
+
+        # 1. tax_markから税率を判定
         tax_mark = item.get("tax_mark")
         tax_rate_from_mark = None
+
+        # 商品名から税率パターンを検出（「外8」「内8」などのレシート記載パターン）
+        product_name_lower = product_name.lower()
+        if "外8" in product_name or "内8" in product_name or "外 8" in product_name or "内 8" in product_name:
+            tax_rate_from_mark = 8
+            # 商品名から税率パターンを削除
+            product_name = product_name.replace("外8", "").replace("内8", "").replace("外 8", "").replace("内 8", "").strip()
+            # 空文字列になった場合は元の商品名を保持（削除しない）
+            if not product_name:
+                product_name = item["product_name"]  # 元の商品名に戻す
+        elif "外10" in product_name or "内10" in product_name or "外 10" in product_name or "内 10" in product_name:
+            tax_rate_from_mark = 10
+            # 商品名から税率パターンを削除
+            product_name = product_name.replace("外10", "").replace("内10", "").replace("外 10", "").replace("内 10", "").strip()
+            # 空文字列になった場合は元の商品名を保持（削除しない）
+            if not product_name:
+                product_name = item["product_name"]  # 元の商品名に戻す
+
+        # tax_markフィールドからも判定
         if tax_mark:
             # 8%マークの判定（複数パターン対応）
             if (
                 tax_mark in ["*", "※", "◆"] or  # よくある軽減税率マーク
                 "8%" in str(tax_mark) or
                 "8" in str(tax_mark) or
-                "(軽)" in str(tax_mark)
+                "(軽)" in str(tax_mark) or
+                "外8" in str(tax_mark) or  # 外税8%のパターン
+                "内8" in str(tax_mark)  # 内税8%のパターン
             ):
                 tax_rate_from_mark = 8
             # 10%マークの判定
             elif (
                 tax_mark in ["★", "☆"] or  # よくある標準税率マーク
                 "10%" in str(tax_mark) or
-                "10" in str(tax_mark)
+                "10" in str(tax_mark) or
+                "外10" in str(tax_mark) or  # 外税10%のパターン
+                "内10" in str(tax_mark)  # 内税10%のパターン
             ):
                 tax_rate_from_mark = 10
 
@@ -255,8 +315,12 @@ class TransactionProcessor:
         """レシート情報をDBに登録（親テーブル）"""
         trans_date = datetime.strptime(ocr_result["transaction_date"], "%Y-%m-%d").date()
 
-        # レシートの合計金額を計算
-        total_amount = sum(item["total_amount"] for item in ocr_result["items"])
+        # レシートの合計金額を計算（複数のフィールドから取得を試みる）
+        total_amount = 0
+        for item in ocr_result.get("items", []):
+            # total_amount, amount, displayed_amount のいずれかを使用
+            item_amount = item.get("total_amount") or item.get("amount") or item.get("displayed_amount") or 0
+            total_amount += item_amount
 
         # 税額サマリーから税抜小計を計算
         tax_summary = ocr_result.get("tax_summary", {})
@@ -271,7 +335,7 @@ class TransactionProcessor:
         receipt_data = {
             "transaction_date": ocr_result["transaction_date"],
             "shop_name": ocr_result["shop_name"],
-            "total_amount_check": ocr_result.get("total", total_amount),  # "total_amount" → "total"
+            "total_amount_check": ocr_result.get("total") or total_amount or 0,  # nullを許容しない
             "subtotal_amount": subtotal_amount,
             "image_path": f"99_Archive/{trans_date.strftime('%Y-%m')}/{file_name}",
             "drive_file_id": drive_file_id,

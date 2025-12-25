@@ -68,12 +68,17 @@ class KakeiboDBHandler:
                 # 値引き行でない場合は標準化データも含める
                 is_discount = item.get("line_type") == "DISCOUNT"
 
+                # 商品名を取得（nullや空文字列の場合は代替値を使用）
+                product_name = normalized.get("product_name") or item.get("product_name") or item.get("line_text") or "不明"
+                if not product_name or not product_name.strip():
+                    product_name = "不明"
+
                 transaction_id = self._insert_transaction(
                     receipt_id=receipt_id,
                     line_number=line_num,
                     line_type=item.get("line_type", "ITEM"),
                     ocr_raw_text=item.get("line_text", ""),
-                    product_name=item["product_name"],
+                    product_name=product_name,
                     quantity=normalized.get("quantity", item.get("quantity", 1)),
                     unit_price=item.get("unit_price"),
                     displayed_amount=displayed_amount,
@@ -109,13 +114,16 @@ class KakeiboDBHandler:
 
         except Exception as e:
             logger.error(f"Failed to save receipt: {e}")
-            # エラーログを記録
-            self._log_processing_error(
-                file_name=file_name,
-                drive_file_id=drive_file_id,
-                error_info={"error": str(e)},
-                model_name=model_name
-            )
+            # エラーログを記録（エラー時は失敗しても続行）
+            try:
+                self._log_processing_error(
+                    file_name=file_name,
+                    drive_file_id=drive_file_id,
+                    error_info={"error": str(e)},
+                    model_name=model_name
+                )
+            except Exception as log_error:
+                logger.warning(f"Failed to log error (ignoring): {log_error}")
             raise
 
     def _insert_receipt(
@@ -132,8 +140,8 @@ class KakeiboDBHandler:
         data = {
             "transaction_date": receipt_data["date"],
             "shop_name": receipt_data["name"],
-            "total_amount_check": receipt_data.get("total"),
-            "subtotal_amount": receipt_data.get("subtotal"),
+            "total_amount_check": receipt_data.get("total") or 0,
+            "subtotal_amount": receipt_data.get("subtotal") or 0,
             "tax_8_amount": receipt_data.get("tax_8_amount"),  # 8%消費税額
             "tax_10_amount": receipt_data.get("tax_10_amount"),  # 10%消費税額
             "tax_8_subtotal": receipt_data.get("tax_8_subtotal"),  # 8%対象額（税抜）
@@ -220,7 +228,11 @@ class KakeiboDBHandler:
         if model_name:
             log_data["ocr_model"] = model_name
 
-        result = self.db.client.table("99_lg_image_proc_log").insert(log_data).execute()
+        # file_name をユニークキーとして upsert
+        result = self.db.client.table("99_lg_image_proc_log").upsert(
+            log_data,
+            on_conflict="file_name"
+        ).execute()
         return result.data[0]["id"]
 
     def _log_processing_error(
@@ -243,4 +255,8 @@ class KakeiboDBHandler:
         if receipt_id:
             log_data["receipt_id"] = receipt_id
 
-        self.db.client.table("99_lg_image_proc_log").insert(log_data).execute()
+        # file_name をユニークキーとして upsert
+        self.db.client.table("99_lg_image_proc_log").upsert(
+            log_data,
+            on_conflict="file_name"
+        ).execute()

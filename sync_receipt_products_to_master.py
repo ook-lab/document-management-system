@@ -89,8 +89,8 @@ class ReceiptProductSync:
 
         products = []
         for item in result.data:
-            # 数量を取得
-            quantity = item.get('quantity', 1)
+            # 数量を取得（Noneの場合は1にデフォルト）
+            quantity = item.get('quantity') or 1
             if quantity == 0:
                 logger.warning(f"数量が0の商品をスキップ: {item.get('official_name')}")
                 continue
@@ -101,12 +101,12 @@ class ReceiptProductSync:
             transaction_date = receipt_info.get('transaction_date')
 
             # 税込単価を計算（std_amount ÷ quantity）
-            std_amount = item.get('std_amount', 0)
-            tax_included_unit_price = std_amount / quantity if quantity > 0 else 0
+            std_amount = item.get('std_amount') or 0
+            tax_included_unit_price = std_amount / quantity if quantity and quantity > 0 else 0
 
             # 税抜単価を計算（参考用）
-            tax_amount = item.get('tax_amount', 0)
-            tax_excluded_unit_price = (std_amount - tax_amount) / quantity if quantity > 0 else 0
+            tax_amount = item.get('tax_amount') or 0
+            tax_excluded_unit_price = (std_amount - tax_amount) / quantity if quantity and quantity > 0 else 0
 
             products.append({
                 'std_item_id': item.get('id'),

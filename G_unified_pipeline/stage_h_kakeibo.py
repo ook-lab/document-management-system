@@ -70,7 +70,8 @@ class StageHKakeibo:
 
                 normalized = self._normalize_item(
                     item,
-                    stage_g_output["shop_info"]["name"]
+                    stage_g_output["shop_info"]["name"],
+                    stage_g_output.get("amounts", {})
                 )
                 normalized_items.append({
                     "raw_item": item,
@@ -201,13 +202,14 @@ class StageHKakeibo:
 
         return items
 
-    def _normalize_item(self, item: Dict, shop_name: str) -> Dict:
+    def _normalize_item(self, item: Dict, shop_name: str, amounts: Dict = None) -> Dict:
         """
         商品名を正規化し、カテゴリ・税率を判定
 
         Args:
             item: 商品データ（Stage Gの出力）
             shop_name: 店舗名
+            amounts: レシート全体の金額情報（税率判定に使用）
 
         Returns:
             Dict: {"product_name": "正規化後", "category_id": "...", "tax_rate": 10}
@@ -219,6 +221,32 @@ class StageHKakeibo:
             product_name = "不明"
 
         receipt_tax_mark = item.get("tax_mark")  # レシートの税率マーク
+
+        # レシート全体の税率情報を確認（最優先）
+        receipt_level_tax_rate = None
+        if amounts:
+            tax_8_amount = amounts.get("tax_8_amount") or 0
+            tax_10_amount = amounts.get("tax_10_amount") or 0
+
+            # 8%のみの場合
+            if tax_8_amount > 0 and tax_10_amount == 0:
+                receipt_level_tax_rate = 8
+                logger.debug(f"Receipt has only 8% tax, setting all items to 8%")
+            # 10%のみの場合
+            elif tax_10_amount > 0 and tax_8_amount == 0:
+                receipt_level_tax_rate = 10
+                logger.debug(f"Receipt has only 10% tax, setting all items to 10%")
+            # 混在の場合は個別判定に進む
+
+        # レシート全体の税率が判定できた場合はそれを使用（最優先）
+        if receipt_level_tax_rate is not None:
+            return {
+                "product_name": product_name,
+                "category_id": None,
+                "tax_rate": receipt_level_tax_rate,
+                "tax_rate_source": "receipt_level",
+                "tax_amount": None
+            }
 
         # 1. エイリアス変換
         product_name = self.aliases.get(product_name.lower(), product_name)
@@ -234,13 +262,32 @@ class StageHKakeibo:
                     "tax_amount": None  # 後で計算
                 }
 
-        # 3. レシートのマークから税率を判定
+        # 3. 商品名から税率パターンを検出（「外8」「内8」などのレシート記載パターン）
+        if "外8" in product_name or "内8" in product_name or "外 8" in product_name or "内 8" in product_name:
+            tax_rate = 8
+            tax_rate_source = "product_name_pattern"
+            # 商品名から税率パターンを削除
+            product_name = product_name.replace("外8", "").replace("内8", "").replace("外 8", "").replace("内 8", "").strip()
+            # 空文字列になった場合は「不明」に
+            if not product_name:
+                product_name = "不明"
+        elif "外10" in product_name or "内10" in product_name or "外 10" in product_name or "内 10" in product_name:
+            tax_rate = 10
+            tax_rate_source = "product_name_pattern"
+            # 商品名から税率パターンを削除
+            product_name = product_name.replace("外10", "").replace("内10", "").replace("外 10", "").replace("内 10", "").strip()
+            # 空文字列になった場合は「不明」に
+            if not product_name:
+                product_name = "不明"
+        # 4. レシートのマークから税率を判定
         # 8%マークの判定（複数パターン対応）
-        if receipt_tax_mark and (
+        elif receipt_tax_mark and (
             receipt_tax_mark in ["*", "※", "◆"] or  # よくある軽減税率マーク
             "8%" in str(receipt_tax_mark) or
             "8" in str(receipt_tax_mark) or
-            "(軽)" in str(receipt_tax_mark)
+            "(軽)" in str(receipt_tax_mark) or
+            "外8" in str(receipt_tax_mark) or  # 外税8%のパターン
+            "内8" in str(receipt_tax_mark)  # 内税8%のパターン
         ):
             tax_rate = 8
             tax_rate_source = "receipt_mark"
@@ -248,7 +295,9 @@ class StageHKakeibo:
         elif receipt_tax_mark and (
             receipt_tax_mark in ["★", "☆"] or  # よくある標準税率マーク
             "10%" in str(receipt_tax_mark) or
-            "10" in str(receipt_tax_mark)
+            "10" in str(receipt_tax_mark) or
+            "外10" in str(receipt_tax_mark) or  # 外税10%のパターン
+            "内10" in str(receipt_tax_mark)  # 内税10%のパターン
         ):
             tax_rate = 10
             tax_rate_source = "receipt_mark"
@@ -401,9 +450,29 @@ class StageHKakeibo:
         if not items:
             return
 
+        # 金額0円の商品（セット内訳行など）を除外
+        items_with_amount = [item for item in items if (item["raw_item"].get("amount") or 0) != 0]
+        items_zero_amount = [item for item in items if (item["raw_item"].get("amount") or 0) == 0]
+
+        # 金額0円の商品には税額0を設定
+        for item in items_zero_amount:
+            quantity = item["raw_item"].get("quantity", 1)
+            displayed_amount = 0
+            item["normalized"]["quantity"] = quantity
+            item["normalized"]["displayed_amount"] = displayed_amount
+            item["normalized"]["tax_display_type"] = tax_type
+            item["normalized"]["base_price"] = 0
+            item["normalized"]["tax_amount"] = 0
+            item["normalized"]["tax_included_amount"] = 0
+            logger.debug(f"Zero-amount item excluded from tax distribution: {item['raw_item'].get('product_name')}")
+
+        # 金額がある商品のみで税額按分を行う
+        if not items_with_amount:
+            return
+
         if total_tax == 0:
             # 税額が0の場合も7要素を設定（割引は考慮）
-            for item in items:
+            for item in items_with_amount:
                 quantity = item["raw_item"].get("quantity", 1)
                 displayed_amount = item["raw_item"].get("amount") or 0
                 linked_discount = item["raw_item"].get("linked_discount", 0)
@@ -428,9 +497,9 @@ class StageHKakeibo:
                     item["normalized"]["base_price"] = tax_included_amount  # 5. 本体価
             return
 
-        # Step 1: 各商品の税込価を計算
+        # Step 1: 各商品の税込価を計算（金額がある商品のみ）
         tax_included_amounts = []
-        for item in items:
+        for item in items_with_amount:
             displayed_amount = item["raw_item"].get("amount") or 0
             linked_discount = item["raw_item"].get("linked_discount", 0)
             tax_included_amount = displayed_amount + linked_discount
@@ -438,7 +507,7 @@ class StageHKakeibo:
 
         # Step 2: 各商品の理論税額を計算（小数のまま保持）
         theoretical_taxes_float = []
-        for i, item in enumerate(items):
+        for i, item in enumerate(items_with_amount):
             tax_included_amount = tax_included_amounts[i]
             tax_rate = item["normalized"].get("tax_rate", 10)
             line_type = item["raw_item"].get("line_type", "ITEM")
@@ -469,19 +538,19 @@ class StageHKakeibo:
 
         if final_remainder != 0:
             # 税込価の絶対値でソート（インデックスを保持）
-            indexed_amounts = [(i, abs(tax_included_amounts[i])) for i in range(len(items))]
+            indexed_amounts = [(i, abs(tax_included_amounts[i])) for i in range(len(items_with_amount))]
             indexed_amounts.sort(key=lambda x: x[1], reverse=True)
 
             # 端数を1円ずつ配分
             for j in range(abs(final_remainder)):
-                idx = indexed_amounts[j % len(items)][0]
+                idx = indexed_amounts[j % len(items_with_amount)][0]
                 if final_remainder > 0:
                     distributed_tax[idx] += 1
                 else:
                     distributed_tax[idx] -= 1
 
-        # 各商品に7要素を設定
-        for i, item in enumerate(items):
+        # 各商品に7要素を設定（金額がある商品のみ）
+        for i, item in enumerate(items_with_amount):
             quantity = item["raw_item"].get("quantity", 1)
             displayed_amount = item["raw_item"].get("amount") or 0
             linked_discount = item["raw_item"].get("linked_discount", 0)  # リンクされた割引（負の値）
