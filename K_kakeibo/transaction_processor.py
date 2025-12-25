@@ -103,6 +103,8 @@ class TransactionProcessor:
                     item_name=None,  # 将来的にOCRから取得
                     unit_price=item.get("unit_price"),
                     quantity=item.get("quantity", 1),
+                    marks_text=item.get("tax_mark"),  # 税率マーク
+                    discount_text=item.get("discount_text"),  # 割引情報
                     # 標準化データも同時に保存
                     normalized=normalized,
                     situation_id=situation_id,
@@ -152,12 +154,13 @@ class TransactionProcessor:
         商品情報を正規化（税率のみ決定、税額は後で按分計算）
 
         Priority:
-        1. エイリアス変換
-        2. 商品辞書マッチング（税率も取得）
-        3. そのまま使用（Geminiの推測税率を使用）
+        1. tax_markから税率を判定（最優先）
+        2. エイリアス変換
+        3. 商品辞書マッチング（税率も取得）
+        4. そのまま使用（Geminiの推測税率を使用）
 
         Args:
-            item: {"product_name": "...", "tax_rate": 10, ...}
+            item: {"product_name": "...", "tax_rate": 10, "tax_mark": "※", ...}
             shop_name: 店舗名
 
         Returns:
@@ -166,26 +169,38 @@ class TransactionProcessor:
         product_name = item["product_name"]
         gemini_tax_rate = item.get("tax_rate", 10)  # Geminiの推測税率（デフォルト10%）
 
-        # 1. エイリアス変換
+        # 1. tax_markから税率を判定（最優先）
+        tax_mark = item.get("tax_mark")
+        tax_rate_from_mark = None
+        if tax_mark:
+            # tax_markに「8」が含まれていれば8%
+            if "8" in str(tax_mark):
+                tax_rate_from_mark = 8
+            # tax_markに「10」が含まれていれば10%
+            elif "10" in str(tax_mark):
+                tax_rate_from_mark = 10
+
+        # 2. エイリアス変換
         product_name = self.aliases.get(product_name.lower(), product_name)
 
-        # 2. 商品辞書マッチング
+        # 3. 商品辞書マッチング
         for entry in self.product_dict:
             if entry["raw_keyword"].lower() in product_name.lower():
                 # 辞書に登録されている税率を優先（確定）
+                # ただし、tax_markがあればそちらを最優先
                 return {
                     "product_name": entry["official_name"],
                     "category_id": entry["category_id"],
-                    "tax_rate": entry.get("tax_rate", 10),
+                    "tax_rate": tax_rate_from_mark if tax_rate_from_mark else entry.get("tax_rate", 10),
                     "tax_rate_fixed": True  # 辞書由来の税率は確定
                 }
 
-        # 3. マッチしなければGeminiの推測を使用（暫定）
+        # 4. マッチしなければtax_markまたはGeminiの推測を使用（暫定）
         return {
             "product_name": product_name,
             "category_id": None,
-            "tax_rate": gemini_tax_rate,
-            "tax_rate_fixed": False  # Gemini推測の税率は調整可能
+            "tax_rate": tax_rate_from_mark if tax_rate_from_mark else gemini_tax_rate,
+            "tax_rate_fixed": bool(tax_rate_from_mark)  # tax_markがあれば確定
         }
 
     def _determine_situation(self, trans_date: date) -> str:
@@ -245,10 +260,10 @@ class TransactionProcessor:
 
     def _insert_transaction(self, receipt_id: str, line_number: int, ocr_raw_text: str,
                            ocr_confidence: float, product_name: str, item_name: str,
-                           unit_price: int, quantity: int,
-                           normalized: Dict = None, situation_id: str = None,
-                           total_amount: int = None, tax_amount: int = None,
-                           needs_review: bool = False) -> str:
+                           unit_price: int, quantity: int, marks_text: str = None,
+                           discount_text: str = None, normalized: Dict = None,
+                           situation_id: str = None, total_amount: int = None,
+                           tax_amount: int = None, needs_review: bool = False) -> str:
         """トランザクション（明細行）+ 標準化データをDBに登録（統合テーブル）"""
         trans_data = {
             "receipt_id": receipt_id,
@@ -259,7 +274,9 @@ class TransactionProcessor:
             "product_name": product_name,
             "item_name": item_name,
             "unit_price": unit_price,
-            "quantity": quantity
+            "quantity": quantity,
+            "marks_text": marks_text,  # 税率マーク（※、★、8%、10%など）
+            "discount_text": discount_text  # 割引情報
         }
 
         # 標準化データがあれば追加
