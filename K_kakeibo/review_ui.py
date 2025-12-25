@@ -16,7 +16,6 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from PIL import Image
 import io
-import os
 
 # 設定
 try:
@@ -469,12 +468,6 @@ def show_receipt_detail(log: dict):
 
         if log["status"] == "success" and log.get("receipt_id"):
             try:
-                # デバッグ情報を表示
-                with st.expander("デバッグ情報"):
-                    st.write(f"receipt_id: {log.get('receipt_id')}")
-                    st.write(f"Supabase URL: {SUPABASE_URL}")
-                    st.write(f"Using service_role key: {'SUPABASE_SERVICE_ROLE_KEY' in os.environ}")
-
                 # レシート情報を取得
                 receipt_result = db.table("Rawdata_RECEIPT_shops") \
                     .select("*") \
