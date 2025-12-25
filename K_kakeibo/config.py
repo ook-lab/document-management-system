@@ -19,6 +19,13 @@ try:
             os.environ["KAKEIBO_INBOX_EASY_FOLDER_ID"] = st.secrets["KAKEIBO_INBOX_EASY_FOLDER_ID"]
         if "KAKEIBO_INBOX_HARD_FOLDER_ID" in st.secrets:
             os.environ["KAKEIBO_INBOX_HARD_FOLDER_ID"] = st.secrets["KAKEIBO_INBOX_HARD_FOLDER_ID"]
+        # Supabase設定もStreamlit Secretsから読み込む
+        if "SUPABASE_URL" in st.secrets:
+            os.environ["SUPABASE_URL"] = st.secrets["SUPABASE_URL"]
+        if "SUPABASE_SERVICE_ROLE_KEY" in st.secrets:
+            os.environ["SUPABASE_SERVICE_ROLE_KEY"] = st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+        if "SUPABASE_KEY" in st.secrets:
+            os.environ["SUPABASE_KEY"] = st.secrets["SUPABASE_KEY"]
     except FileNotFoundError:
         # secrets.tomlファイルが存在しない（ローカル環境など）
         pass
