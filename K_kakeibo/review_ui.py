@@ -16,6 +16,7 @@ from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from PIL import Image
 import io
+import os
 
 # 設定
 try:
@@ -467,17 +468,46 @@ def show_receipt_detail(log: dict):
         st.subheader("取引明細")
 
         if log["status"] == "success" and log.get("receipt_id"):
-            # レシート情報を取得
-            receipt_result = db.table("Rawdata_RECEIPT_shops") \
-                .select("*") \
-                .eq("id", log["receipt_id"]) \
-                .execute()
+            try:
+                # デバッグ情報を表示
+                with st.expander("デバッグ情報"):
+                    st.write(f"receipt_id: {log.get('receipt_id')}")
+                    st.write(f"Supabase URL: {SUPABASE_URL}")
+                    st.write(f"Using service_role key: {'SUPABASE_SERVICE_ROLE_KEY' in os.environ}")
 
-            if not receipt_result.data:
-                st.warning("レシート情報が見つかりません")
+                # レシート情報を取得
+                receipt_result = db.table("Rawdata_RECEIPT_shops") \
+                    .select("*") \
+                    .eq("id", log["receipt_id"]) \
+                    .execute()
+
+                if not receipt_result.data:
+                    st.warning("レシート情報が見つかりません")
+                    return
+
+                receipt = receipt_result.data[0]
+            except Exception as e:
+                st.error(f"データベースエラーが発生しました")
+                st.exception(e)
+                st.write("**エラー詳細:**")
+                st.write(f"- エラー型: {type(e).__name__}")
+                st.write(f"- エラーメッセージ: {str(e)}")
+
+                # より詳細な情報を取得
+                if hasattr(e, 'message'):
+                    st.write(f"- APIメッセージ: {e.message}")
+                if hasattr(e, 'details'):
+                    st.write(f"- 詳細: {e.details}")
+                if hasattr(e, 'hint'):
+                    st.write(f"- ヒント: {e.hint}")
+                if hasattr(e, 'code'):
+                    st.write(f"- エラーコード: {e.code}")
+
+                st.info("**解決方法:**\n"
+                       "1. Streamlit Secretsに `SUPABASE_SERVICE_ROLE_KEY` が設定されているか確認してください\n"
+                       "2. Supabaseのダッシュボードで、テーブル `Rawdata_RECEIPT_shops` のRLSポリシーを確認してください\n"
+                       "3. `receipt_id` が正しく設定されているか確認してください")
                 return
-
-            receipt = receipt_result.data[0]
 
             # 税表示タイプを判定（レシートレベル）
             # すべてのレシートには小計がある（前提）
