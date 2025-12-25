@@ -13,6 +13,7 @@ from supabase import create_client, Client
 from loguru import logger
 
 from .config import SUPABASE_URL, SUPABASE_KEY
+from C_ai_common.llm_client.llm_client import LLMClient
 
 
 class TransactionProcessor:
@@ -20,10 +21,12 @@ class TransactionProcessor:
 
     def __init__(self):
         self.db: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
+        self.llm_client = LLMClient()  # AI一般名詞抽出用
 
         # マスタデータをキャッシュ
         self.aliases = self._load_aliases()
         self.product_dict = self._load_product_dictionary()
+        self.product_generalize = self._load_product_generalize()
         self.situations = self._load_situations()
         self.categories = self._load_categories()
 
@@ -88,6 +91,7 @@ class TransactionProcessor:
                         "raw_item": item,
                         "normalized": {
                             "product_name": subtotal_name,
+                            "general_name": None,  # 小計/合計行は一般名詞なし
                             "category_id": None,
                             "tax_rate": item.get("tax_rate", 10),
                             "tax_rate_fixed": False,
@@ -274,16 +278,24 @@ class TransactionProcessor:
             if entry["raw_keyword"].lower() in product_name.lower():
                 # 辞書に登録されている税率を優先（確定）
                 # ただし、tax_markがあればそちらを最優先
+                # 一般名詞を取得
+                general_name = self._get_general_name(entry["official_name"])
+
                 return {
                     "product_name": entry["official_name"],
+                    "general_name": general_name,
                     "category_id": entry["category_id"],
                     "tax_rate": tax_rate_from_mark if tax_rate_from_mark else entry.get("tax_rate", 10),
                     "tax_rate_fixed": True  # 辞書由来の税率は確定
                 }
 
         # 4. マッチしなければtax_markまたはGeminiの推測を使用（暫定）
+        # 一般名詞を取得（正規化後の商品名から）
+        general_name = self._get_general_name(product_name)
+
         return {
             "product_name": product_name,
+            "general_name": general_name,
             "category_id": None,
             "tax_rate": tax_rate_from_mark if tax_rate_from_mark else gemini_tax_rate,
             "tax_rate_fixed": bool(tax_rate_from_mark)  # tax_markがあれば確定
@@ -381,6 +393,7 @@ class TransactionProcessor:
 
             trans_data.update({
                 "official_name": normalized.get("official_name"),
+                "general_name": normalized.get("general_name"),  # 一般名詞
                 "category_id": normalized.get("category_id"),
                 "situation_id": situation_id,
                 "tax_rate": normalized["tax_rate"],
@@ -623,3 +636,268 @@ class TransactionProcessor:
         """カテゴリ一覧を読み込み（商品カテゴリ）"""
         result = self.db.table("MASTER_Categories_product").select("*").execute()
         return result.data
+
+    def _load_product_generalize(self) -> Dict[str, str]:
+        """商品名→一般名詞のマッピングを読み込み"""
+        result = self.db.table("MASTER_Product_generalize").select("*").execute()
+        # raw_keyword → general_name のマッピング
+        generalize_map = {}
+        for row in result.data:
+            if row.get("raw_keyword") and row.get("general_name"):
+                generalize_map[row["raw_keyword"].lower()] = row["general_name"]
+        return generalize_map
+
+    def _get_general_name(self, product_name: str) -> Optional[str]:
+        """
+        商品名から一般名詞を取得
+
+        「買い物を依頼したら、その名前で買ってこれるレベルの名称」を抽出
+
+        ロジック:
+        1. MASTER_Product_generalizeでブランド名変換（完全一致・部分一致）
+        2. 見つからない場合はGemini 2.5 FlashでAI抽出
+        3. AI失敗時は正規表現でメーカー名・容量・産地を除去（フォールバック）
+
+        例:
+        - 「明治おいしい牛乳 1000ml」→「牛乳」（ブランド名変換）
+        - 「日本ハム 豚ひき肉 200g」→「豚ひき肉」（正規表現除去）
+        - 「国産ほうれん草 1束」→「ほうれん草」（正規表現除去）
+
+        Args:
+            product_name: 商品名
+
+        Returns:
+            str: 一般名詞（例: 「豚ひき肉」「ほうれん草」「ベーコン」）
+        """
+        if not product_name:
+            return None
+
+        # Step 1: MASTER_Product_generalizeで完全一致チェック（ブランド名変換）
+        general_name = self.product_generalize.get(product_name.lower())
+        if general_name:
+            return general_name
+
+        # Step 2: 部分一致でブランド名変換
+        for keyword, gen_name in self.product_generalize.items():
+            if keyword in product_name.lower():
+                return gen_name
+
+        # Step 2.5: Gemini 2.5 FlashでAI抽出
+        try:
+            ai_result = self._extract_general_name_with_ai(product_name)
+            if ai_result:
+                logger.debug(f"AI抽出成功: {product_name} → {ai_result}")
+                return ai_result
+        except Exception as e:
+            logger.warning(f"AI抽出失敗（正規表現フォールバックへ）: {e}")
+
+        # Step 3: AI失敗時のフォールバック - 正規表現で自動抽出
+        import re
+        cleaned = product_name
+
+        # 先頭の特殊な括弧・記号を除去
+        cleaned = re.sub(r'^\([^\)]+\)\s*', '', cleaned)  # (10本パック)ヤクルト → ヤクルト
+        cleaned = re.sub(r'^\[[^\]]+\]\s*', '', cleaned)  # [A]チーズ → チーズ
+
+        # メーカー名を除去
+        manufacturer_patterns = [
+            r'明治\s*', r'森永\s*', r'雪印\s*', r'メグミルク\s*', r'雪印メグミルク\s*',
+            r'日本ハム\s*', r'伊藤ハム\s*', r'プリマハム\s*', r'丸大食品\s*',
+            r'カゴメ\s*', r'キューピー\s*', r'味の素\s*', r'キッコーマン\s*',
+            r'ヤマサ\s*', r'ミツカン\s*', r'ハウス食品\s*', r'S&B\s*', r'エスビー\s*',
+            r'日清\s*', r'東洋水産\s*', r'サッポロ\s*', r'サントリー\s*',
+            r'キリン\s*', r'アサヒ\s*', r'コカ・コーラ\s*', r'ペプシ\s*',
+            r'ダノン\s*', r'チチヤス\s*', r'オハヨー\s*', r'六甲バター\s*',
+            r'QBB\s*', r'Q・B・B\s*', r'クラフト\s*',
+            r'西友オリジナル\s*', r'みなさまのお墨付き\s*',
+            r'セブンプレミアム\s*', r'トップバリュ\s*',
+        ]
+        for pattern in manufacturer_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+        # 産地・品質表示を除去
+        # 注意: 「低脂肪」「減塩」などは商品名の一部なので除去しない
+        # （例: 「低脂肪牛乳」「減塩醤油」は商品の種類として認識される）
+        origin_patterns = [
+            r'国産\s*', r'北海道産\s*', r'九州産\s*',
+            r'有機\s*', r'オーガニック\s*', r'無添加\s*', r'食塩無添加\s*',
+        ]
+        for pattern in origin_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+        # 容量・数量を除去
+        volume_patterns = [
+            r'\d+(?:\.\d+)?(?:ml|ML|ミリリットル)',
+            r'\d+(?:\.\d+)?(?:l|L|リットル)',
+            r'\d+(?:\.\d+)?(?:g|グラム)',
+            r'\d+(?:\.\d+)?(?:kg|キロ)',
+            r'\d+枚切り?',  # 6枚切り、6枚切（パン用）
+            r'[0-9０-９]+(?:個|本|束|枚|切れ?|缶|袋|パック|玉|入)',  # 全角数字にも対応
+            r'[（(][0-9０-９]+(?:個|本|束|枚|切れ?|缶|袋|パック|玉|入)[)）]',
+            r'×[0-9０-９]+', r'[0-9０-９]+入り?', r'ケース',
+        ]
+        for pattern in volume_patterns:
+            cleaned = re.sub(pattern, '', cleaned, flags=re.IGNORECASE)
+
+        # 特殊な記号・余分な空白を除去
+        cleaned = re.sub(r'[【】\[\]『』「」（）()]', '', cleaned)
+        cleaned = re.sub(r'\s+', ' ', cleaned)
+        cleaned = cleaned.strip()
+
+        # 空になった場合は元の商品名を返す
+        if not cleaned:
+            return product_name
+
+        return cleaned
+
+    def _get_general_name_and_keywords(self, product_name: str) -> Optional[Dict]:
+        """
+        商品名から一般名詞とキーワードを取得
+
+        ロジック:
+        1. MASTER_Product_generalizeでブランド名変換（完全一致・部分一致）
+        2. 見つからない場合はGemini 2.5 FlashでAI抽出（general_name + keywords）
+        3. AI失敗時は正規表現でgeneral_nameのみ生成（フォールバック）
+
+        Args:
+            product_name: 商品名
+
+        Returns:
+            dict: {"general_name": str, "keywords": list} (失敗時はNone)
+                  例: {"general_name": "食パン", "keywords": ["食パン", "パスコ", "超熟", "6枚切り"]}
+        """
+        if not product_name:
+            return None
+
+        # Step 1: MASTER_Product_generalizeで完全一致チェック（ブランド名変換）
+        general_name = self.product_generalize.get(product_name.lower())
+        if general_name:
+            # ブランド名変換の場合、キーワードは商品名を分割して生成
+            import re
+            # 簡易的に空白と記号で分割
+            keywords = [general_name] + [
+                word.strip() for word in re.split(r'[\s　]+', product_name)
+                if word.strip() and word.strip() != general_name
+            ]
+            return {"general_name": general_name, "keywords": keywords}
+
+        # Step 2: 部分一致でブランド名変換
+        for keyword, gen_name in self.product_generalize.items():
+            if keyword in product_name.lower():
+                import re
+                keywords = [gen_name] + [
+                    word.strip() for word in re.split(r'[\s　]+', product_name)
+                    if word.strip() and word.strip() != gen_name
+                ]
+                return {"general_name": gen_name, "keywords": keywords}
+
+        # Step 2.5: Gemini 2.5 FlashでAI抽出
+        try:
+            ai_result = self._extract_general_name_with_ai(product_name)
+            if ai_result:
+                logger.debug(f"AI抽出成功: {product_name} → {ai_result}")
+                return ai_result
+        except Exception as e:
+            logger.warning(f"AI抽出失敗（正規表現フォールバックへ）: {e}")
+
+        # Step 3: AI失敗時のフォールバック - 正規表現でgeneral_nameのみ生成
+        # _get_general_name()の正規表現ロジックを再利用
+        general_name_only = self._get_general_name(product_name)
+        if general_name_only:
+            # キーワードは商品名を分割して生成
+            import re
+            keywords = [general_name_only] + [
+                word.strip() for word in re.split(r'[\s　]+', product_name)
+                if word.strip() and word.strip() != general_name_only
+            ]
+            return {"general_name": general_name_only, "keywords": keywords}
+
+        return None
+
+    def _extract_general_name_with_ai(self, product_name: str) -> Optional[Dict]:
+        """
+        Gemini 2.5 Flashで商品名から一般名詞とキーワードを抽出
+
+        Args:
+            product_name: 商品名
+
+        Returns:
+            dict: {"general_name": str, "keywords": list} (失敗時はNone)
+                  例: {"general_name": "食パン", "keywords": ["食パン", "パスコ", "超熟", "6枚切り"]}
+        """
+        prompt = f"""あなたは商品名から一般名詞とキーワードを抽出する専門家です。
+
+商品名: {product_name}
+
+以下の2つを抽出してください:
+1. general_name（コア概念）: この商品のカテゴリーを表す最も重要な単語
+2. keywords（キーワード配列）: 商品名に含まれる全ての意味のある単語（general_nameを含む）
+
+ルール:
+- general_nameは商品のコア概念（例: 食パン、ボトルコーヒー、牛乳、豚ひき肉）
+- keywordsは検索に使える全ての単語を個別に抽出
+- メーカー名、ブランド名、容量、数量も全てkeywordsに含める
+- キーワードは辞書に登録できる単位で分割
+
+例:
+商品名: 「パスコ 超熟 6枚切り」
+general_name: 食パン
+keywords: ["食パン", "パスコ", "超熟", "6枚切り"]
+
+商品名: 「ジョージア 無糖 1000ml」
+general_name: ボトルコーヒー
+keywords: ["ボトルコーヒー", "ジョージア", "無糖", "1000ml"]
+
+商品名: 「明治おいしい牛乳 1000ml」
+general_name: 牛乳
+keywords: ["牛乳", "明治", "おいしい牛乳", "1000ml"]
+
+商品名: 「日本ハム 豚ひき肉 200g」
+general_name: 豚ひき肉
+keywords: ["豚ひき肉", "日本ハム", "200g"]
+
+以下のJSON形式で出力してください:
+{{"general_name": "...", "keywords": ["...", "..."]}}"""
+
+        try:
+            response = self.llm_client.call_model(
+                tier="stageh_extraction",
+                prompt=prompt,
+                model_name="gemini-2.5-flash",
+                max_output_tokens=200
+            )
+
+            if response.get("success"):
+                content = response.get("content", "").strip()
+
+                # JSONパース
+                import json
+                try:
+                    # マークダウンのコードブロックを除去（```json ... ```）
+                    if content.startswith("```"):
+                        content = content.split("```")[1]
+                        if content.startswith("json"):
+                            content = content[4:]
+                        content = content.strip()
+
+                    result = json.loads(content)
+
+                    # 必須フィールドの検証
+                    if "general_name" in result and "keywords" in result:
+                        # keywordsが配列であることを確認
+                        if isinstance(result["keywords"], list):
+                            return result
+                        else:
+                            logger.warning(f"keywords is not a list: {result}")
+                    else:
+                        logger.warning(f"Missing required fields in AI response: {result}")
+
+                except json.JSONDecodeError as e:
+                    logger.error(f"JSON parse error: {e}, content: {content}")
+                    return None
+
+            return None
+
+        except Exception as e:
+            logger.error(f"Gemini API呼び出しエラー: {e}")
+            return None
