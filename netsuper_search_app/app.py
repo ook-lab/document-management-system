@@ -42,20 +42,19 @@ st.title("🛒 ネットスーパー横断検索")
 st.markdown("**楽天西友・東急ストア・ダイエー**の商品を一括検索！類似度の高い順に表示します")
 
 # URLのクエリパラメータから検索キーワードを取得
-query_params = st.query_params
-default_query = query_params.get("q", "")
+default_query = st.query_params.get("q", "")
 
 # 検索欄
 st.subheader("🔍 商品を検索")
 col1, col2 = st.columns([4, 1])
 with col1:
-    search_query = st.text_input("商品名", value=default_query, placeholder="例: 牛乳、卵、パン", label_visibility="collapsed")
+    search_query = st.text_input("商品名", value=default_query, placeholder="例: 牛乳、卵、パン", label_visibility="collapsed", key="search_input")
 with col2:
     search_button = st.button("検索", type="primary", use_container_width=True)
 
 # 検索ボタンが押されたらクエリパラメータを更新
 if search_button and search_query:
-    st.query_params.update(q=search_query)
+    st.query_params["q"] = search_query
     st.rerun()
 
 def generate_query_embedding(query: str) -> list:
@@ -68,6 +67,9 @@ def generate_query_embedding(query: str) -> list:
 
 
 if search_query:
+    # デバッグ情報（開発時のみ表示、本番では削除可能）
+    st.caption(f"🔍 検索中: **{search_query}**")
+
     # ベクトル検索
     try:
         # 検索クエリをベクトル化
@@ -96,7 +98,9 @@ if search_query:
 
             # 商品一覧表示
             for i, product in enumerate(display_products, 1):
-                with st.container():
+                # ユニークなキーを使用してコンテナを作成
+                product_id = product.get('id', i)
+                with st.container(key=f"product_{product_id}_{i}"):
                     col1, col2 = st.columns([1, 4])
 
                     with col1:
@@ -155,17 +159,17 @@ else:
 
     with col1:
         if st.button("🥛 牛乳"):
-            st.query_params.update(q="牛乳")
+            st.query_params["q"] = "牛乳"
             st.rerun()
 
     with col2:
         if st.button("🥚 卵"):
-            st.query_params.update(q="卵")
+            st.query_params["q"] = "卵"
             st.rerun()
 
     with col3:
         if st.button("🍞 パン"):
-            st.query_params.update(q="パン")
+            st.query_params["q"] = "パン"
             st.rerun()
 
 # フッター
