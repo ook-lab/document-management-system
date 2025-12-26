@@ -40,9 +40,9 @@
       "name": "野菜",
       "url": "https://netsuper.rakuten.co.jp/seiyu/search/110001/?l-id=_leftnavi_110001&sort=1",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-04",
       "interval_days": 7,
-      "last_run": null,
+      "last_run": "2025-12-27",
       "notes": ""
     },
     {
