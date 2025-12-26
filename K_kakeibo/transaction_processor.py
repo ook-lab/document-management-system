@@ -7,6 +7,7 @@
 - Supabaseへの登録
 """
 
+import re
 from datetime import datetime, date
 from typing import Dict, List, Optional
 from supabase import create_client, Client
@@ -773,7 +774,6 @@ class TransactionProcessor:
         general_name = self.product_generalize.get(product_name.lower())
         if general_name:
             # ブランド名変換の場合、キーワードは商品名を分割して生成
-            import re
             # 簡易的に空白と記号で分割
             keywords = [general_name] + [
                 word.strip() for word in re.split(r'[\s　]+', product_name)
@@ -781,10 +781,24 @@ class TransactionProcessor:
             ]
             return {"general_name": general_name, "keywords": keywords}
 
-        # Step 2: 部分一致でブランド名変換
+        # Step 2: 正規化後の完全一致（空白のゆれ・量のバリエーション許容）
+        def normalize_product_name(name):
+            """空白除去 + 量情報除去"""
+            # 空白を全て除去
+            normalized = re.sub(r'[\s　]+', '', name.lower())
+            # 量情報を除去（100g, 500ml, 6個入り など）
+            normalized = re.sub(r'\d+(?:g|ml|l|個|枚|本|袋|パック|切|入り|ケース)(?:入り)?', '', normalized)
+            # ×6 のようなパターンも除去
+            normalized = re.sub(r'[×x]\d+', '', normalized)
+            # () や【】内も除去
+            normalized = re.sub(r'[\(（\[【].*?[\)）\]】]', '', normalized)
+            return normalized.strip()
+
+        normalized_product = normalize_product_name(product_name)
+
         for keyword, gen_name in self.product_generalize.items():
-            if keyword in product_name.lower():
-                import re
+            normalized_keyword = normalize_product_name(keyword)
+            if normalized_product == normalized_keyword:
                 keywords = [gen_name] + [
                     word.strip() for word in re.split(r'[\s　]+', product_name)
                     if word.strip() and word.strip() != gen_name
@@ -805,7 +819,6 @@ class TransactionProcessor:
         general_name_only = self._get_general_name(product_name)
         if general_name_only:
             # キーワードは商品名を分割して生成
-            import re
             keywords = [general_name_only] + [
                 word.strip() for word in re.split(r'[\s　]+', product_name)
                 if word.strip() and word.strip() != general_name_only

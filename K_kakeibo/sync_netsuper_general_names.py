@@ -75,7 +75,8 @@ def sync_general_names(limit: Optional[int] = None, dry_run: bool = False):
         'matched': 0,
         'not_matched': 0,
         'updated': 0,
-        'errors': 0
+        'errors': 0,
+        'mappings_saved': 0
     }
 
     # 各商品にgeneral_nameとkeywordsを設定
@@ -108,6 +109,21 @@ def sync_general_names(limit: Optional[int] = None, dry_run: bool = False):
                         'keywords': keywords  # json.dumps()は不要
                     }).eq('id', product_id).execute()
                     stats['updated'] += 1
+
+                    # AIが生成したマッピングをMASTER_Product_generalizeに蓄積
+                    # 既存チェック後、なければ追加
+                    existing = db.table('MASTER_Product_generalize').select('id').eq('raw_keyword', product_name.lower()).execute()
+                    if not existing.data:
+                        db.table('MASTER_Product_generalize').insert({
+                            'raw_keyword': product_name.lower(),
+                            'general_name': general_name,
+                            'confidence_score': 1.0,
+                            'source': 'ai_generated',
+                            'notes': f'AI抽出: {", ".join(keywords[:3])}'
+                        }).execute()
+                        stats['mappings_saved'] += 1
+                        logger.debug(f"  ✓ マッピング蓄積: {product_name} → {general_name}")
+
                 except Exception as e:
                     logger.error(f"更新エラー (ID={product_id}): {e}")
                     stats['errors'] += 1
@@ -129,6 +145,7 @@ def sync_general_names(limit: Optional[int] = None, dry_run: bool = False):
 
     if not dry_run:
         logger.info(f"更新成功:         {stats['updated']:,}件")
+        logger.info(f"マッピング蓄積:   {stats['mappings_saved']:,}件")
         if stats['errors'] > 0:
             logger.warning(f"更新エラー:       {stats['errors']:,}件")
     else:

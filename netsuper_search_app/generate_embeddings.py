@@ -67,7 +67,7 @@ class ProductEmbeddingGenerator:
         """
         logger.info("embeddingがない商品を取得中...")
 
-        query = self.db.client.table('Rawdata_NETSUPER_items').select('id, product_name').is_('embedding', 'null')
+        query = self.db.client.table('Rawdata_NETSUPER_items').select('id, product_name, general_name, small_category, keywords').is_('embedding', 'null')
 
         if limit:
             query = query.limit(limit)
