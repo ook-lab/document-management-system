@@ -140,8 +140,18 @@ if search_query:
                             st.image("https://via.placeholder.com/150?text=No+Image", width=150)
 
                     with col2:
-                        # 商品情報
-                        st.markdown(f"### {i}. {product['product_name']}")
+                        # 商品リンク（metadataから取得）
+                        metadata = product.get('metadata', {})
+                        product_url = None
+                        if isinstance(metadata, dict):
+                            product_url = metadata.get('raw_data', {}).get('url')
+
+                        # 商品名（URLがある場合はリンク化）
+                        product_name = product['product_name']
+                        if product_url:
+                            st.markdown(f"### {i}. [{product_name}]({product_url}) 🔗", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"### {i}. {product_name}")
 
                         # 価格（税込と本体を並記）
                         price_tax_included = product.get('current_price_tax_included', 0)
@@ -162,12 +172,20 @@ if search_query:
                         else:
                             st.markdown(f"🏪 **{organization}**")
 
-                        # 商品リンク（metadataから取得）
-                        metadata = product.get('metadata', {})
-                        if isinstance(metadata, dict):
-                            product_url = metadata.get('raw_data', {}).get('url')
-                            if product_url:
-                                st.markdown(f"[🔗 商品ページを開く]({product_url})")
+                        # 商品ページへのボタン（URLがある場合）
+                        if product_url:
+                            st.markdown(f"""
+                            <a href="{product_url}" target="_blank" style="
+                                display: inline-block;
+                                padding: 0.5em 1em;
+                                background-color: #FF4B4B;
+                                color: white;
+                                text-decoration: none;
+                                border-radius: 5px;
+                                font-weight: bold;
+                                margin-top: 0.5em;
+                            ">🛒 商品ページで購入</a>
+                            """, unsafe_allow_html=True)
 
                         # 検索スコア（複数キーワードの場合は合算スコア）
                         score = product.get('total_score') or product.get('final_score', 0)
