@@ -78,17 +78,17 @@ if search_query:
             # vector型として渡すために文字列形式に変換
             embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
 
-        # ベクトル類似度検索（200件取得）
-        # PostgreSQLのRPC関数を呼び出す
-        result = db.rpc('search_products_by_embedding', {
+        # ハイブリッド検索（複数のembedding + テキスト検索）
+        result = db.rpc('hybrid_search', {
             'query_embedding': embedding_str,
+            'query_text': search_query,
             'match_count': 200
         }).execute()
 
         products = result.data
 
-        # 類似度順にソート（高い順）
-        products.sort(key=lambda x: float(x.get('similarity', 0)), reverse=True)
+        # スコア順にソート（高い順）
+        products.sort(key=lambda x: float(x.get('final_score', 0)), reverse=True)
 
         # 上位20件のみ表示
         display_products = products[:20]
@@ -136,9 +136,9 @@ if search_query:
                             if product_url:
                                 st.markdown(f"[🔗 商品ページを開く]({product_url})")
 
-                        # 類似度スコア（デバッグ用、必要に応じて表示）
-                        if product.get('similarity'):
-                            st.caption(f"類似度: {product['similarity']:.3f}")
+                        # 検索スコア（デバッグ用、必要に応じて表示）
+                        if product.get('final_score'):
+                            st.caption(f"類似度: {product['final_score']:.3f}")
 
                     st.divider()
         else:
