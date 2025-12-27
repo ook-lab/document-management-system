@@ -479,12 +479,23 @@ class RakutenSeiyuScraperPlaywright:
             products = []
             for item in products_data:
                 try:
+                    # 商品URLを完全なURLに変換
+                    product_url = item.get('productUrl')
+                    if product_url:
+                        if product_url.startswith('http'):
+                            pass  # 既に完全なURL
+                        elif product_url.startswith('/'):
+                            product_url = f"https://netsuper.rakuten.co.jp{product_url}"
+                        else:
+                            product_url = f"https://netsuper.rakuten.co.jp/{product_url}"
+
                     product = {
                         "product_name": f"{item.get('manufacturer', '')} {item.get('productName', '')} {item.get('amount', '')}".strip(),
                         "price": item.get('price'),
                         "price_tax_included": item.get('priceTaxIncluded'),
                         "jan_code": item.get('itemId'),  # 商品IDをJANコードとして使用
                         "image_url": item.get('imageUrl'),
+                        "url": product_url,  # URLを追加
                         "manufacturer": item.get('manufacturer'),
                         "category": None,  # HTMLからは取得できないため
                         "in_stock": True,  # リストにあるものは在庫ありと仮定

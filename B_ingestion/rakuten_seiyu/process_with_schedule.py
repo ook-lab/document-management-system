@@ -136,6 +136,41 @@ class PoliteRakutenSeiyuPipeline:
             return
 
         try:
+            # カテゴリーを動的に取得して更新
+            logger.info("🔄 カテゴリーを最新化中...")
+            discovered_categories = await self.pipeline.discover_categories()
+
+            if discovered_categories:
+                logger.info(f"✅ {len(discovered_categories)}件のカテゴリーを取得")
+
+                # 既存の設定を取得
+                existing_categories = self.manager.get_all_categories(self.store_name)
+                existing_names = {cat["name"]: cat for cat in existing_categories} if existing_categories else {}
+
+                # 新規カテゴリーを追加
+                for cat in discovered_categories:
+                    if cat["name"] not in existing_names:
+                        logger.info(f"  📝 新規カテゴリー追加: {cat['name']}")
+                        self.manager.update_category(
+                            self.store_name,
+                            cat["name"],
+                            {
+                                "url": cat["url"],
+                                "enabled": True,
+                                "interval_days": 7,
+                                "start_date": datetime.now().strftime("%Y-%m-%d")
+                            }
+                        )
+                    else:
+                        # URLが変更されている場合は更新
+                        if existing_names[cat["name"]].get("url") != cat["url"]:
+                            logger.info(f"  🔄 URL更新: {cat['name']}")
+                            self.manager.update_category(
+                                self.store_name,
+                                cat["name"],
+                                {"url": cat["url"]}
+                            )
+
             # 設定からカテゴリーを取得
             categories = self.manager.get_all_categories(self.store_name)
 
@@ -188,18 +223,16 @@ class PoliteRakutenSeiyuPipeline:
                     else:
                         logger.warning(f"⚠️ カテゴリー {cat['name']} の処理に問題がありました")
 
-                    # 実行済みとしてマーク
-                    self.manager.mark_as_run(self.store_name, cat["name"], today)
-
-                    # カテゴリー間の待機
-                    if idx < len(runnable_categories):
-                        await self.polite_wait_between_categories()
-
                 except Exception as e:
                     logger.error(f"❌ カテゴリー {cat['name']} 処理エラー: {e}", exc_info=True)
-                    # エラー時は長めに待機
-                    await asyncio.sleep(60)
-                    continue
+
+                finally:
+                    # 成功・失敗に関わらず実行済みとしてマーク
+                    self.manager.mark_as_run(self.store_name, cat["name"], today)
+
+                # カテゴリー間の待機
+                if idx < len(runnable_categories):
+                    await self.polite_wait_between_categories()
 
             logger.info("")
             logger.info("="*80)
