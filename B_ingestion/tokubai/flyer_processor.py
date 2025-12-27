@@ -203,9 +203,8 @@ class FlyerProcessor:
 
         for product in products:
             try:
-                # 商品名の正規化（検索用）
+                # 商品名を取得
                 product_name = product.get('product_name', '')
-                product_name_normalized = product_name.lower().strip()
 
                 # カテゴリの正規化
                 category_map = {
@@ -224,7 +223,6 @@ class FlyerProcessor:
                 product_data = {
                     'flyer_document_id': flyer_doc_id,
                     'product_name': product_name,
-                    'product_name_normalized': product_name_normalized,
                     'price': product.get('price'),
                     'original_price': product.get('original_price'),
                     'discount_rate': product.get('discount_rate'),

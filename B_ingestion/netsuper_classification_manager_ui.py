@@ -7,6 +7,7 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import datetime, timezone
 from supabase import create_client
 
 # ページ設定
@@ -95,14 +96,17 @@ with tabs[0]:
                 # 保存ボタン
                 if st.button("💾 変更を保存", type="primary", key="save_general"):
                     # 変更を反映
+                    current_time = datetime.now(timezone.utc).isoformat()
                     for idx, row in edited_df.iterrows():
                         product_id = row["ID"]
                         db.table('Rawdata_NETSUPER_items').update({
                             "general_name": row["一般名詞"],
-                            "small_category": row["小カテゴリ"]
+                            "small_category": row["小カテゴリ"],
+                            "manually_verified": True,
+                            "last_verified_at": current_time
                         }).eq('id', product_id).execute()
 
-                    st.success(f"✅ {len(edited_df)}件の商品を更新しました")
+                    st.success(f"✅ {len(edited_df)}件の商品を更新しました（検証済みとしてマーク）")
                     st.rerun()
 
 # =============================================================================
@@ -169,14 +173,17 @@ with tabs[1]:
                 # 保存ボタン
                 if st.button("💾 変更を保存", type="primary", key="save_category"):
                     # 変更を反映
+                    current_time = datetime.now(timezone.utc).isoformat()
                     for idx, row in edited_df.iterrows():
                         product_id = row["ID"]
                         db.table('Rawdata_NETSUPER_items').update({
                             "general_name": row["一般名詞"],
-                            "small_category": row["小カテゴリ"]
+                            "small_category": row["小カテゴリ"],
+                            "manually_verified": True,
+                            "last_verified_at": current_time
                         }).eq('id', product_id).execute()
 
-                    st.success(f"✅ {len(edited_df)}件の商品を更新しました")
+                    st.success(f"✅ {len(edited_df)}件の商品を更新しました（検証済みとしてマーク）")
                     st.rerun()
 
 # =============================================================================
@@ -232,7 +239,7 @@ with tabs[2]:
     # 未分類商品の数
     st.divider()
 
-    col1, col2, col3 = st.columns(3)
+    col1, col2, col3, col4 = st.columns(4)
 
     with col1:
         total = db.table('Rawdata_NETSUPER_items').select('id', count='exact').execute()
@@ -245,3 +252,7 @@ with tabs[2]:
     with col3:
         no_category = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('small_category', 'null').execute()
         st.metric("小カテゴリ未設定", no_category.count)
+
+    with col4:
+        verified = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('manually_verified', True).execute()
+        st.metric("手動検証済み", verified.count, delta="AI学習用データ")

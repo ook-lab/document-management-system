@@ -50,11 +50,11 @@ def sync_general_names(limit: Optional[int] = None, dry_run: bool = False):
     processor = TransactionProcessor()
     db = processor.db
 
-    # 全商品を取得（AI処理のため既存データも再処理）
-    logger.info("商品データを取得中（AI再処理モード）...")
+    # general_nameが未設定の商品のみ取得（処理済みは除外）
+    logger.info("未処理の商品データを取得中...")
 
-    # AI処理のため、既存のgeneral_nameも含めて全件を再処理
-    query = db.table('Rawdata_NETSUPER_items').select('id, product_name')  # .is_('general_name', 'null')
+    # general_nameが未設定の商品のみ処理
+    query = db.table('Rawdata_NETSUPER_items').select('id, product_name').is_('general_name', 'null')
 
     if limit:
         query = query.limit(limit)

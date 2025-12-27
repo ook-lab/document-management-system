@@ -25,11 +25,8 @@ st.set_page_config(
 
 st.title("🛒 ネットスーパーカテゴリー管理")
 
-# CategoryManagerの初期化
-if 'manager' not in st.session_state:
-    st.session_state['manager'] = CategoryManager()
-
-manager = st.session_state['manager']
+# CategoryManagerの初期化（毎回最新データを読み込む）
+manager = CategoryManager()
 
 # タブで店舗を切り替え
 tabs = st.tabs(["楽天西友", "東急ストア", "ダイエー", "設定"])
@@ -216,7 +213,6 @@ with tabs[3]:
             if manager.config_path.exists():
                 manager.config_path.unlink()
                 st.success("✅ 設定ファイルを削除しました。スクリプトを再実行して初期化してください。")
-                st.session_state['manager'] = CategoryManager()
                 st.rerun()
 
     st.divider()

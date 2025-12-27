@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Dict, List
 
 from A_common.database.client import DatabaseClient
+from A_common.ai.verified_examples import VerifiedExamplesProvider
 from C_ai_common.llm_client.llm_client import LLMClient
 import logging
 
@@ -34,6 +35,7 @@ class GeminiBatchClustering:
         self.db = DatabaseClient(use_service_role=True)
         self.llm_client = LLMClient()
         self.batch_size = batch_size
+        self.verified_provider = VerifiedExamplesProvider(self.db.client)
 
     def _build_clustering_prompt(self, products: List[Dict]) -> str:
         """
@@ -45,6 +47,18 @@ class GeminiBatchClustering:
         Returns:
             Gemini用プロンプト
         """
+        # 検証済み例を取得
+        verified_examples = self.verified_provider.get_verified_examples(limit=15, diverse=True)
+        examples_text = ""
+
+        if verified_examples:
+            examples_text = "\n## 参考例（人間が検証した正しい分類）\n"
+            examples_text += "以下の分類例を参考にしてください：\n\n"
+            for ex in verified_examples[:10]:  # 最大10件表示
+                examples_text += f"- 商品名: {ex['product_name']}\n"
+                examples_text += f"  一般名詞: {ex.get('general_name', '未設定')}\n"
+                examples_text += f"  小カテゴリ: {ex.get('small_category', '未設定')}\n\n"
+
         # 商品リストをテキスト化
         product_list = []
         for idx, product in enumerate(products, start=1):
@@ -56,6 +70,8 @@ class GeminiBatchClustering:
 
         prompt = f"""あなたは商品データ整理の専門家です。以下の{len(products)}件のネットスーパー商品を分析し、
 類似商品をグループ化して「一般名詞（general_name）」と「カテゴリー」を提案してください。
+
+{examples_text}
 
 ## 重要なルール
 1. 表記ゆれを吸収: 「牛乳」「ぎゅうにゅう」「牛にゅう」などは同じグループ

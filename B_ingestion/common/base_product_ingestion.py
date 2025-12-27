@@ -169,9 +169,8 @@ class BaseProductIngestionPipeline(ABC):
         """
         today = date.today()
 
-        # 商品名の正規化
+        # 商品名を取得（サイト表記のまま保存）
         product_name = product.get("product_name", "")
-        product_name_normalized = " ".join(product_name.replace("　", " ").split())
 
         # 価格のパース（本体価格と税込価格の両方）
         # 本体価格（税抜）
@@ -222,7 +221,6 @@ class BaseProductIngestionPipeline(ABC):
 
             # 商品情報
             "product_name": product_name,
-            "product_name_normalized": product_name_normalized,
             "jan_code": product.get("jan_code"),
 
             # 価格情報
@@ -327,15 +325,19 @@ class BaseProductIngestionPipeline(ABC):
             try:
                 if jan_code and jan_code in existing_jan_codes:
                     # JANコードで既存商品を更新
+                    # general_name と keywords は除外（AI生成済みデータを保持）
+                    update_data = {k: v for k, v in product_data.items() if k not in ['general_name', 'keywords']}
                     self.db.client.table('Rawdata_NETSUPER_items').update(
-                        product_data
+                        update_data
                     ).eq('jan_code', jan_code).execute()
                     update_count += 1
                 elif not jan_code and (product_name, self.organization_name) in existing_by_name:
                     # JANコードなし商品を商品名+組織で更新
+                    # general_name と keywords は除外（AI生成済みデータを保持）
                     existing_id = existing_by_name[(product_name, self.organization_name)]
+                    update_data = {k: v for k, v in product_data.items() if k not in ['general_name', 'keywords']}
                     self.db.client.table('Rawdata_NETSUPER_items').update(
-                        product_data
+                        update_data
                     ).eq('id', existing_id).execute()
                     update_count += 1
                 else:
