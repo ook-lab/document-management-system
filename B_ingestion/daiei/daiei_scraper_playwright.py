@@ -327,9 +327,19 @@ class DaieiScraperPlaywright:
                     id_anchor = await container.query_selector('a[id]')
                     product_id = await id_anchor.get_attribute('id') if id_anchor else None
 
-                    # 商品名を取得
+                    # 商品名とURLを取得
                     name_elem = await container.query_selector('div.item_name a')
                     product_name = await name_elem.inner_text() if name_elem else None
+                    product_url = None
+                    if name_elem:
+                        href = await name_elem.get_attribute('href')
+                        if href:
+                            if href.startswith('http'):
+                                product_url = href
+                            elif href.startswith('/'):
+                                product_url = f"https://netsuper.daiei.co.jp{href}"
+                            else:
+                                product_url = f"https://netsuper.daiei.co.jp/{href}"
 
                     # 商品画像URLを取得
                     img_elem = await container.query_selector('div.item_img img')
@@ -358,12 +368,14 @@ class DaieiScraperPlaywright:
                         "price": base_price,
                         "price_tax_included": tax_price,
                         "image_url": img_src,
+                        "url": product_url,  # URLを追加
                         "in_stock": True,  # ページに表示されている = 在庫あり
                         "is_available": True,
                         "raw_data": {
                             "product_id": product_id,
                             "base_price": base_price,
-                            "tax_price": tax_price
+                            "tax_price": tax_price,
+                            "url": product_url  # raw_dataにも追加
                         }
                     }
 

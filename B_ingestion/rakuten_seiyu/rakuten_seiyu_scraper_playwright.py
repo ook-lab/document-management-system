@@ -578,6 +578,15 @@ class RakutenSeiyuScraperPlaywright:
             in_stock = item.get("inStock", True)
             is_available = item.get("isAvailable", True)
 
+            # 商品URL（複数のフィールド名をチェック）
+            product_url = item.get("url") or item.get("productUrl") or item.get("itemUrl") or item.get("link")
+
+            # URLがない場合、商品IDから構築を試みる
+            if not product_url:
+                item_id = item.get("itemId") or item.get("id") or item.get("productId")
+                if item_id:
+                    product_url = f"https://netsuper.rakuten.co.jp/seiyu/product/{item_id}/"
+
             product = {
                 "product_name": product_name,
                 "price": price,
@@ -587,6 +596,7 @@ class RakutenSeiyuScraperPlaywright:
                 "category": category,
                 "in_stock": in_stock,
                 "is_available": is_available,
+                "url": product_url,  # URLを追加
                 "raw_data": item
             }
 

@@ -320,8 +320,9 @@ class TokyuStoreScraperPlaywright:
                         if match:
                             price_tax_included = float(match.group(1))
 
-                    # 商品IDを取得（リンクから）
+                    # 商品IDとURLを取得（リンクから）
                     product_id = None
+                    product_url = None
                     link = await container.query_selector('.block-pickup-list-p--goods-name a')
                     if link:
                         href = await link.get_attribute('href')
@@ -330,6 +331,13 @@ class TokyuStoreScraperPlaywright:
                             id_match = re.search(r'/g/g(\d+)', href)
                             if id_match:
                                 product_id = id_match.group(1)
+                            # 完全なURLを構築
+                            if href.startswith('http'):
+                                product_url = href
+                            elif href.startswith('/'):
+                                product_url = f"https://www.tokyu-store.co.jp{href}"
+                            else:
+                                product_url = f"https://www.tokyu-store.co.jp/{href}"
 
                     if product_name:  # 商品名がある場合のみ追加
                         product = {
@@ -338,12 +346,14 @@ class TokyuStoreScraperPlaywright:
                             "price": price,
                             "price_tax_included": price_tax_included if price_tax_included else price,
                             "image_url": img_src,
+                            "url": product_url,  # URLを追加
                             "in_stock": True,  # ページに表示されている = 在庫あり
                             "is_available": True,
                             "raw_data": {
                                 "product_id": product_id,
                                 "price_text": price_text,
-                                "price_tax_text": price_tax_text
+                                "price_tax_text": price_tax_text,
+                                "url": product_url  # raw_dataにも追加
                             }
                         }
 
