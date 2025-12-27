@@ -97,16 +97,42 @@ with tabs[0]:
                 if st.button("💾 変更を保存", type="primary", key="save_general"):
                     # 変更を反映
                     current_time = datetime.now(timezone.utc).isoformat()
+                    success_count = 0
+                    has_verified_column = True
+
                     for idx, row in edited_df.iterrows():
                         product_id = row["ID"]
-                        db.table('Rawdata_NETSUPER_items').update({
+                        update_data = {
                             "general_name": row["一般名詞"],
-                            "small_category": row["小カテゴリ"],
-                            "manually_verified": True,
-                            "last_verified_at": current_time
-                        }).eq('id', product_id).execute()
+                            "small_category": row["小カテゴリ"]
+                        }
 
-                    st.success(f"✅ {len(edited_df)}件の商品を更新しました（検証済みとしてマーク）")
+                        # manually_verified カラムが存在する場合のみ追加
+                        if has_verified_column:
+                            update_data["manually_verified"] = True
+                            update_data["last_verified_at"] = current_time
+
+                        try:
+                            db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                            success_count += 1
+                        except Exception as e:
+                            # manually_verified カラムが存在しない場合、フラグなしで再試行
+                            if "manually_verified" in str(e) and has_verified_column:
+                                has_verified_column = False
+                                update_data = {
+                                    "general_name": row["一般名詞"],
+                                    "small_category": row["小カテゴリ"]
+                                }
+                                db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                                success_count += 1
+                            else:
+                                raise
+
+                    if has_verified_column:
+                        st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
+                    else:
+                        st.success(f"✅ {success_count}件の商品を更新しました")
+                        st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
                     st.rerun()
 
 # =============================================================================
@@ -174,16 +200,42 @@ with tabs[1]:
                 if st.button("💾 変更を保存", type="primary", key="save_category"):
                     # 変更を反映
                     current_time = datetime.now(timezone.utc).isoformat()
+                    success_count = 0
+                    has_verified_column = True
+
                     for idx, row in edited_df.iterrows():
                         product_id = row["ID"]
-                        db.table('Rawdata_NETSUPER_items').update({
+                        update_data = {
                             "general_name": row["一般名詞"],
-                            "small_category": row["小カテゴリ"],
-                            "manually_verified": True,
-                            "last_verified_at": current_time
-                        }).eq('id', product_id).execute()
+                            "small_category": row["小カテゴリ"]
+                        }
 
-                    st.success(f"✅ {len(edited_df)}件の商品を更新しました（検証済みとしてマーク）")
+                        # manually_verified カラムが存在する場合のみ追加
+                        if has_verified_column:
+                            update_data["manually_verified"] = True
+                            update_data["last_verified_at"] = current_time
+
+                        try:
+                            db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                            success_count += 1
+                        except Exception as e:
+                            # manually_verified カラムが存在しない場合、フラグなしで再試行
+                            if "manually_verified" in str(e) and has_verified_column:
+                                has_verified_column = False
+                                update_data = {
+                                    "general_name": row["一般名詞"],
+                                    "small_category": row["小カテゴリ"]
+                                }
+                                db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                                success_count += 1
+                            else:
+                                raise
+
+                    if has_verified_column:
+                        st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
+                    else:
+                        st.success(f"✅ {success_count}件の商品を更新しました")
+                        st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
                     st.rerun()
 
 # =============================================================================
@@ -254,5 +306,9 @@ with tabs[2]:
         st.metric("小カテゴリ未設定", no_category.count)
 
     with col4:
-        verified = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('manually_verified', True).execute()
-        st.metric("手動検証済み", verified.count, delta="AI学習用データ")
+        try:
+            verified = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('manually_verified', True).execute()
+            st.metric("手動検証済み", verified.count, delta="AI学習用データ")
+        except Exception:
+            # manually_verified カラムがまだ存在しない場合
+            st.metric("手動検証済み", 0, delta="要マイグレーション", delta_color="off")
