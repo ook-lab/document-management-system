@@ -8,8 +8,10 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# アプリケーションファイルをコピー
+# プロジェクトファイルをコピー
 COPY app.py .
+COPY ../.env .env
+COPY ../A_common ./A_common
 
 # ポート設定
 ENV PORT=8080
