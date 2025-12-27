@@ -79,6 +79,7 @@ if search_query:
             embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
 
         # ハイブリッド検索（複数のembedding + テキスト検索）
+        st.write(f"🔍 検索実行: hybrid_search (query={search_query})")
         result = db.rpc('hybrid_search', {
             'query_embedding': embedding_str,
             'query_text': search_query,
@@ -86,6 +87,7 @@ if search_query:
         }).execute()
 
         products = result.data
+        st.write(f"📊 検索結果: {len(products)}件取得")
 
         # スコア順にソート（高い順）
         products.sort(key=lambda x: float(x.get('final_score', 0)), reverse=True)
