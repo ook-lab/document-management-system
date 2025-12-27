@@ -297,9 +297,43 @@ async def main():
             return
 
         await pipeline.run_scheduled_categories(manual_categories=manual_categories)
+
+        # 商品データ取得後、自動的にembedding生成を実行
+        await generate_embeddings_if_needed()
     else:
         # 通常実行モード（スケジュール）
         await pipeline.run_scheduled_categories()
+
+        # 商品データ取得後、自動的にembedding生成を実行
+        await generate_embeddings_if_needed()
+
+
+async def generate_embeddings_if_needed():
+    """商品データのembedding生成（未生成のものがあれば実行）"""
+    try:
+        logger.info("")
+        logger.info("="*80)
+        logger.info("🔄 Embedding生成チェック開始")
+        logger.info("="*80)
+
+        # embedding生成スクリプトをインポート
+        import sys
+        from pathlib import Path
+
+        # netsuper_search_appをパスに追加
+        netsuper_app_path = Path(__file__).parent.parent.parent / "netsuper_search_app"
+        sys.path.insert(0, str(netsuper_app_path))
+
+        from generate_multi_embeddings import MultiEmbeddingGenerator
+
+        # embedding生成を実行
+        generator = MultiEmbeddingGenerator()
+        generator.process_products(delay=0.1)
+
+        logger.info("✅ Embedding生成処理完了")
+
+    except Exception as e:
+        logger.error(f"⚠️ Embedding生成エラー（スキップして続行）: {e}")
 
 
 if __name__ == "__main__":
