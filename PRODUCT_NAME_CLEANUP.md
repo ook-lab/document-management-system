@@ -203,30 +203,51 @@ class TransactionProcessor:
 
 ## ✅ 完了: general_name の自動設定
 
-`Rawdata_NETSUPER_items` の既存商品に `general_name` を一括設定するスクリプトを作成・実行しました。
+`Rawdata_NETSUPER_items` の既存商品に `general_name`, `small_category`, `keywords` を一括設定するシステムを構築しました。
 
-### 実行結果
+### ⚠️ 新システム: 3段階フォールバック分類
+
+**現在の推奨スクリプト:**
 
 ```bash
-# スクリプト作成済み
-K_kakeibo/sync_netsuper_general_names.py
+# 1. 既存AI生成データのクリーンアップ（必要な場合）
+python K_kakeibo/cleanup_generated_data.py --all
 
-# 実行方法
+# 2. 全商品を分類（general_name, small_category, keywords を生成）
+python -m L_product_classification.daily_auto_classifier
+
+# 3. Embedding生成
+python netsuper_search_app/generate_multi_embeddings.py
+```
+
+**処理内容:**
+- Tier 1: 辞書lookup（MASTER_Product_generalize）
+- Tier 2: コンテキストlookup（MASTER_Product_classify）
+- Tier 3: Gemini Few-shot推論
+
+---
+
+**⚠️ 廃止予定スクリプト:**
+
+`K_kakeibo/sync_netsuper_general_names.py` は general_name と keywords のみ生成するため廃止予定です。
+
+```bash
+# 【使用非推奨】旧スクリプト
 ./venv/bin/python K_kakeibo/sync_netsuper_general_names.py         # 全件処理
 ./venv/bin/python K_kakeibo/sync_netsuper_general_names.py --limit=100  # 件数指定
 ./venv/bin/python K_kakeibo/sync_netsuper_general_names.py --dry-run    # 確認のみ
 ```
 
-**実行結果（2025-12-26）:**
+**過去の実行結果（2025-12-26）:**
 - 総商品数: 1,159件
 - general_name設定済: 660件 (57%)
 - general_name未設定: 499件 (43%)
 
-**マッチング状況:**
-- MASTER_Product_generalizeの150+エントリーで57%の商品をカバー
-- 残り43%の商品は以下で対応可能:
-  1. MASTER_Product_generalizeに商品を手動追加
-  2. L_product_classification/daily_auto_classifier.py で自動クラスタリング
+**現在のシステム:**
+- 全商品に general_name, small_category, keywords を自動生成
+- 辞書ヒット時も small_category と keywords は Gemini で生成
+- UI（https://netsuper-classification.streamlit.app/）で手動修正可能
+- 修正内容は AI学習に反映
 
 **設定例:**
 ```

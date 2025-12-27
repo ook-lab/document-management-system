@@ -2,14 +2,14 @@
 AI生成データを全削除するクリーンアップスクリプト
 
 削除対象:
-1. Rawdata_NETSUPER_items の general_name, keywords (sync_netsuper_general_names.py の生成データ)
+1. Rawdata_NETSUPER_items の general_name, small_category, keywords (daily_auto_classifier.py の生成データ)
 2. Rawdata_NETSUPER_items の embedding (generate_multi_embeddings.py の生成データ)
 
 使い方:
-    # general_nameとkeywordsのみ削除（embedding は残す）
+    # general_name, small_category, keywordsのみ削除（embedding は残す）
     python K_kakeibo/cleanup_generated_data.py --general-name-only
 
-    # embeddingのみ削除（general_name, keywords は残す）
+    # embeddingのみ削除（general_name, small_category, keywords は残す）
     python K_kakeibo/cleanup_generated_data.py --embedding-only
 
     # 全て削除
@@ -39,21 +39,23 @@ from A_common.database.client import DatabaseClient
 
 def cleanup_general_names(db: DatabaseClient, dry_run: bool = False):
     """
-    Rawdata_NETSUPER_items の general_name と keywords を削除
+    Rawdata_NETSUPER_items の general_name, small_category, keywords を削除
 
     Args:
         db: DatabaseClient インスタンス
         dry_run: True の場合は確認のみで削除しない
     """
     logger.info("=" * 80)
-    logger.info("general_name と keywords の削除を開始")
+    logger.info("general_name, small_category, keywords の削除を開始")
     logger.info("=" * 80)
 
-    # 削除対象のカウント
-    result = db.client.table('Rawdata_NETSUPER_items').select('id').not_.is_('general_name', 'null').execute()
+    # 削除対象のカウント（general_name または small_category が設定されている商品）
+    result = db.client.table('Rawdata_NETSUPER_items').select('id').or_(
+        'general_name.not.is.null,small_category.not.is.null'
+    ).execute()
     count = len(result.data)
 
-    logger.info(f"削除対象: general_name が設定されている商品 {count:,} 件")
+    logger.info(f"削除対象: general_name または small_category が設定されている商品 {count:,} 件")
 
     if dry_run:
         logger.warning("🔍 DRY RUN モード: 実際の削除は行いません")
@@ -63,14 +65,16 @@ def cleanup_general_names(db: DatabaseClient, dry_run: bool = False):
         logger.info("✅ 削除対象がありません")
         return 0
 
-    # NULL に設定して削除
+    # NULL に設定して削除（全商品を対象に、これらのフィールドをNULLにする）
     try:
-        db.client.table('Rawdata_NETSUPER_items').update({
+        # すべての商品のgeneral_name, small_category, keywordsをNULLに設定
+        result = db.client.table('Rawdata_NETSUPER_items').update({
             'general_name': None,
+            'small_category': None,
             'keywords': None
-        }).not_.is_('general_name', 'null').execute()
+        }).or_('general_name.not.is.null,small_category.not.is.null').execute()
 
-        logger.info(f"✅ {count:,} 件の general_name と keywords を削除しました")
+        logger.info(f"✅ {count:,} 件の general_name, small_category, keywords を削除しました")
         return count
     except Exception as e:
         logger.error(f"❌ 削除エラー: {e}")
@@ -129,7 +133,7 @@ def main():
         logger.error("❌ エラー: 削除対象を指定してください")
         logger.info("")
         logger.info("使い方:")
-        logger.info("  python K_kakeibo/cleanup_generated_data.py --general-name-only  # general_name, keywords のみ削除")
+        logger.info("  python K_kakeibo/cleanup_generated_data.py --general-name-only  # general_name, small_category, keywords のみ削除")
         logger.info("  python K_kakeibo/cleanup_generated_data.py --embedding-only     # embedding のみ削除")
         logger.info("  python K_kakeibo/cleanup_generated_data.py --all                # 全て削除")
         logger.info("  python K_kakeibo/cleanup_generated_data.py --all --dry-run      # 確認のみ（削除しない）")
@@ -171,7 +175,7 @@ def main():
     logger.info("")
     logger.info("次のステップ:")
     if general_name_only or all_data:
-        logger.info("  python K_kakeibo/sync_netsuper_general_names.py")
+        logger.info("  python -m L_product_classification.daily_auto_classifier")
     if embedding_only or all_data:
         logger.info("  python netsuper_search_app/generate_multi_embeddings.py")
 

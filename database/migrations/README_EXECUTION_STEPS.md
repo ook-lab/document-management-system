@@ -55,34 +55,55 @@ COMMENT ON COLUMN "Rawdata_NETSUPER_items".keywords IS '商品名から抽出さ
 
 ---
 
-## Step 3: AI抽出の実行
+## Step 3: AI分類・Embedding生成の実行
 
-データベース設定が完了したら、以下のコマンドでAI抽出を実行してください。
+データベース設定が完了したら、以下の手順で商品分類とembedding生成を実行してください。
 
-### テスト実行（推奨）
+### 3-1. 既存AI生成データのクリーンアップ（必要な場合）
 
-まず10件のみテストして動作確認：
+既存のAI生成データ（general_name, small_category, keywords, embedding）をリセットする場合：
 
 ```bash
-venv/bin/python K_kakeibo/sync_netsuper_general_names.py --limit=10 --dry-run
+# 確認のみ（削除しない）
+python K_kakeibo/cleanup_generated_data.py --all --dry-run
+
+# 実際に削除
+python K_kakeibo/cleanup_generated_data.py --all
 ```
 
-結果を確認して問題なければ、本番実行へ。
+### 3-2. 商品分類（Gemini 2.5 Flash）
 
-### 本番実行
-
-全1,159件を処理（約40-50分かかります）：
+全商品に対して general_name, small_category, keywords を生成：
 
 ```bash
-venv/bin/python K_kakeibo/sync_netsuper_general_names.py
+python -m L_product_classification.daily_auto_classifier
 ```
 
 **処理内容:**
-- 各商品名からgeneral_nameとkeywordsを抽出
+- 3段階フォールバック分類システム
+  - Tier 1: 辞書lookup（MASTER_Product_generalize）
+  - Tier 2: コンテキストlookup（MASTER_Product_classify）
+  - Tier 3: Gemini Few-shot推論
+- 各商品名から general_name, small_category, keywords を生成
 - データベースに保存
 - 自動的にsearch_vectorが生成される（トリガーにより）
 
 **コスト:** 約11-12円（Gemini 2.5 Flash使用）
+
+### 3-3. Embedding生成（OpenAI）
+
+全商品に対して text-embedding-3-small で embedding を生成：
+
+```bash
+python netsuper_search_app/generate_multi_embeddings.py
+```
+
+**処理内容:**
+- general_name, small_category, keywords から embedding テキストを生成
+- OpenAI text-embedding-3-small (1536次元) で embedding 生成
+- データベースに保存
+
+**コスト:** 約5-10円（OpenAI Embedding API使用）
 
 ---
 

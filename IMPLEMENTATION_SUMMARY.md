@@ -106,21 +106,51 @@ ON "Rawdata_NETSUPER_items" USING gin(keywords);
 - Weight B (重要): `keywords` - ["Mizkan", "りんご黒酢", "カロリーゼロ", "1l"]
 - Weight C (参考): `product_name` - 元の商品名全体
 
-### Step 3: AI抽出の実行
+### Step 3: AI分類・Embedding生成の実行
 
-**全商品にgeneral_nameとkeywordsを設定:**
+**⚠️ 新システム: 3段階フォールバック分類**
+
+#### 3-1. 既存AI生成データのクリーンアップ（必要な場合）
 
 ```bash
-# テスト実行（最初の10件のみ、更新なし）
-venv/bin/python K_kakeibo/sync_netsuper_general_names.py --limit=10 --dry-run
+# 確認のみ（削除しない）
+python K_kakeibo/cleanup_generated_data.py --all --dry-run
 
-# 本番実行（全1,159件）
-venv/bin/python K_kakeibo/sync_netsuper_general_names.py
+# 実際に削除
+python K_kakeibo/cleanup_generated_data.py --all
 ```
 
-**注意:**
-- 1,159件の処理に約40-50分かかります（1件あたり約2.5秒）
-- コスト: 約2-3円（Gemini 2.5 Flash使用）
+#### 3-2. 商品分類（Gemini 2.5 Flash）
+
+**全商品に general_name, small_category, keywords を生成:**
+
+```bash
+python -m L_product_classification.daily_auto_classifier
+```
+
+**処理内容:**
+- Tier 1: 辞書lookup（MASTER_Product_generalize）
+- Tier 2: コンテキストlookup（MASTER_Product_classify）
+- Tier 3: Gemini Few-shot推論
+- コスト: 約11-12円（Gemini 2.5 Flash使用）
+
+#### 3-3. Embedding生成（OpenAI）
+
+**全商品に embedding を生成:**
+
+```bash
+python netsuper_search_app/generate_multi_embeddings.py
+```
+
+**処理内容:**
+- OpenAI text-embedding-3-small (1536次元)
+- コスト: 約5-10円
+
+---
+
+**⚠️ 廃止予定スクリプト:**
+- `K_kakeibo/sync_netsuper_general_names.py` は general_name と keywords のみ生成するため廃止予定
+- 新システムでは small_category も含めた3つすべてを Gemini で生成
 
 ---
 

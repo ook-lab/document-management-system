@@ -258,10 +258,10 @@ class DailyAutoClassifier:
 
     async def process_unclassified_products(self):
         """未分類商品を一括処理"""
-        # 未分類商品を取得
+        # 未分類商品を取得（general_name が NULL の商品のみ）
         result = self.db.client.table('Rawdata_NETSUPER_items').select(
             '*'
-        ).eq('needs_approval', True).limit(1000).execute()
+        ).is_('general_name', 'null').limit(1000).execute()
 
         products = result.data
         logger.info(f"Found {len(products)} unclassified products")

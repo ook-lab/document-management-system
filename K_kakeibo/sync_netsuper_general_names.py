@@ -1,7 +1,24 @@
 """
-Rawdata_NETSUPER_itemsの既存商品にgeneral_nameを一括設定
+【廃止予定】Rawdata_NETSUPER_itemsの既存商品にgeneral_nameを一括設定
 
-使い方:
+⚠️ このスクリプトは廃止予定です。
+代わりに L_product_classification/daily_auto_classifier.py を使用してください。
+
+理由:
+- このスクリプトは general_name と keywords のみ生成
+- 新しいスクリプトは general_name, small_category, keywords の3つすべてを Gemini 2.5 Flash で生成
+
+正しい実行手順:
+    # 1. 既存データを全削除
+    python K_kakeibo/cleanup_generated_data.py --all
+
+    # 2. 全商品を分類（general_name, small_category, keywords を生成）
+    python -m L_product_classification.daily_auto_classifier
+
+    # 3. embedding を生成
+    python netsuper_search_app/generate_multi_embeddings.py
+
+【旧スクリプトの使い方】（使用非推奨）
     # 全商品を更新
     python K_kakeibo/sync_netsuper_general_names.py
 

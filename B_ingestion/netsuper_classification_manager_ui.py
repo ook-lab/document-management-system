@@ -29,6 +29,70 @@ if not SUPABASE_URL or not SUPABASE_KEY:
 
 db = create_client(SUPABASE_URL, SUPABASE_KEY)
 
+# セッション状態の初期化
+if 'general_name_index' not in st.session_state:
+    st.session_state.general_name_index = 0
+if 'category_index' not in st.session_state:
+    st.session_state.category_index = 0
+
+# 一般名詞リスト取得（キャッシュ）
+@st.cache_data(ttl=60)
+def get_general_names():
+    result = db.table('Rawdata_NETSUPER_items').select(
+        'general_name'
+    ).not_.is_('general_name', 'null').execute()
+    return sorted(list(set([r['general_name'] for r in result.data if r.get('general_name')])))
+
+# カテゴリ階層を構築（キャッシュ）
+@st.cache_data(ttl=60)
+def build_category_hierarchy():
+    """MASTER_Categories_productから階層パスを構築"""
+    result = db.table('MASTER_Categories_product').select('id, name, parent_id').execute()
+
+    categories = {cat['id']: cat for cat in result.data}
+
+    def get_path(cat_id):
+        """カテゴリIDから階層パスを取得"""
+        path = []
+        current_id = cat_id
+        while current_id:
+            cat = categories.get(current_id)
+            if cat:
+                path.insert(0, cat['name'])
+                current_id = cat['parent_id']
+            else:
+                break
+        return ' > '.join(path)
+
+    # 各カテゴリのパスを構築
+    paths = {}
+    for cat_id, cat in categories.items():
+        paths[cat['name']] = get_path(cat_id)
+
+    return paths
+
+# 小カテゴリリスト取得（キャッシュ）
+@st.cache_data(ttl=60)
+def get_small_categories():
+    """小カテゴリ名を取得し、階層パス付きでソート"""
+    result = db.table('Rawdata_NETSUPER_items').select(
+        'small_category'
+    ).not_.is_('small_category', 'null').execute()
+
+    unique_categories = list(set([r['small_category'] for r in result.data if r.get('small_category')]))
+
+    # 階層パスを取得
+    hierarchy = build_category_hierarchy()
+
+    # {表示名: カテゴリ名} のマッピング
+    category_display = {}
+    for cat in unique_categories:
+        path = hierarchy.get(cat, cat)  # パスがない場合はカテゴリ名のみ
+        category_display[path] = cat
+
+    # 階層パスでソート
+    return category_display
+
 # タブで表示方法を切り替え
 tabs = st.tabs(["一般名詞で分類", "小カテゴリで分類", "統計情報"])
 
@@ -38,22 +102,35 @@ tabs = st.tabs(["一般名詞で分類", "小カテゴリで分類", "統計情�
 with tabs[0]:
     st.header("一般名詞（general_name）ごとに商品を確認・修正")
 
-    # 一般名詞のリストを取得
-    result = db.table('Rawdata_NETSUPER_items').select(
-        'general_name'
-    ).not_.is_('general_name', 'null').execute()
-
-    general_names = sorted(list(set([r['general_name'] for r in result.data if r.get('general_name')])))
+    general_names = get_general_names()
 
     if not general_names:
         st.info("一般名詞が設定されている商品がありません。")
     else:
-        # 一般名詞を選択
-        selected_general_name = st.selectbox(
-            "一般名詞を選択",
-            general_names,
-            key="general_name_select"
+        # 検索ボックス
+        search_term = st.text_input(
+            "🔍 一般名詞を検索",
+            placeholder="例: 牛乳、卵、パン...",
+            key="general_name_search"
         )
+
+        # 検索フィルタリング
+        if search_term:
+            filtered_names = [name for name in general_names if search_term.lower() in name.lower()]
+        else:
+            filtered_names = general_names
+
+        if not filtered_names:
+            st.warning(f"「{search_term}」に一致する一般名詞が見つかりません。")
+        else:
+            # 一般名詞を選択
+            selected_general_name = st.selectbox(
+                f"一般名詞を選択（{len(filtered_names)}件）",
+                filtered_names,
+                index=min(st.session_state.general_name_index, len(filtered_names)-1),
+                key="general_name_select",
+                on_change=lambda: setattr(st.session_state, 'general_name_index', filtered_names.index(st.session_state.general_name_select) if st.session_state.general_name_select in filtered_names else 0)
+            )
 
         if selected_general_name:
             # 選択した一般名詞の商品を取得
@@ -141,30 +218,32 @@ with tabs[0]:
 with tabs[1]:
     st.header("小カテゴリ（small_category）ごとに商品を確認・修正")
 
-    # 小カテゴリのリストを取得
-    result = db.table('Rawdata_NETSUPER_items').select(
-        'small_category'
-    ).not_.is_('small_category', 'null').execute()
+    category_display = get_small_categories()  # {表示パス: カテゴリ名}
 
-    small_categories = sorted(list(set([r['small_category'] for r in result.data if r.get('small_category')])))
-
-    if not small_categories:
+    if not category_display:
         st.info("小カテゴリが設定されている商品がありません。")
     else:
-        # 小カテゴリを選択
-        selected_category = st.selectbox(
-            "小カテゴリを選択",
-            small_categories,
-            key="category_select"
+        # 表示パスのリスト（ソート済み）
+        display_paths = sorted(category_display.keys())
+
+        # 小カテゴリを選択（階層パス表示）
+        selected_path = st.selectbox(
+            "小カテゴリを選択（階層表示）",
+            display_paths,
+            index=min(st.session_state.category_index, len(display_paths)-1),
+            key="category_select",
+            on_change=lambda: setattr(st.session_state, 'category_index', display_paths.index(st.session_state.category_select) if st.session_state.category_select in display_paths else 0)
         )
 
-        if selected_category:
+        if selected_path:
+            # 表示パスから実際のカテゴリ名を取得
+            selected_category = category_display[selected_path]
             # 選択した小カテゴリの商品を取得
             products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, organization, current_price_tax_included'
             ).eq('small_category', selected_category).limit(100).execute()
 
-            st.subheader(f"小カテゴリ: {selected_category} ({len(products.data)}件)")
+            st.subheader(f"📂 {selected_path} ({len(products.data)}件)")
 
             if products.data:
                 # データフレームに変換

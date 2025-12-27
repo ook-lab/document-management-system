@@ -184,7 +184,10 @@ LIMIT 10;
 1. ✅ keywordsカラムの追加（完了）
 2. ⏳ 重み付きsearch_vectorの生成SQLをSupabase Dashboardで実行
 3. ⏳ トリガーの作成（自動更新用）
-4. ⏳ sync_netsuper_general_names.pyでAI抽出を実行してキーワードを生成
+4. ⏳ AI分類・Embedding生成の実行
+   - `python -m L_product_classification.daily_auto_classifier` で general_name, small_category, keywords を生成
+   - `python netsuper_search_app/generate_multi_embeddings.py` で embedding を生成
+   - ⚠️ `sync_netsuper_general_names.py` は廃止予定（small_category を生成しないため）
 5. ⏳ 検索機能の実装・テスト
 
 ---
