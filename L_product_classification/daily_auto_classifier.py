@@ -127,7 +127,7 @@ class DailyAutoClassifier:
 
         examples_str = "\n".join(examples_text)
 
-        prompt = f"""あなたは商品分類の専門家です。以下の過去の分類実績を参考に、新しい商品の「一般名詞（general_name）」を推定してください。
+        prompt = f"""あなたは商品分類の専門家です。以下の過去の分類実績を参考に、新しい商品の「一般名詞（general_name）」「小カテゴリ（small_category）」「キーワード（keywords）」を推定してください。
 
 ## 過去の分類実績（参考例）
 {examples_str}
@@ -140,12 +140,15 @@ class DailyAutoClassifier:
 以下のJSON形式で回答してください。
 
 {{
-  "general_name": "推定された一般名詞",
+  "general_name": "推定された一般名詞（例: 牛乳、食パン、トマト）",
+  "small_category": "小カテゴリ（例: 乳製品、パン類、野菜）",
+  "keywords": ["キーワード1", "キーワード2", "キーワード3"],
   "confidence": 0.85,
   "reasoning": "判断理由"
 }}
 
 **confidence**: 0.0〜1.0の信頼度
+**keywords**: 検索に役立つ3-5個の単語
 """
 
         try:

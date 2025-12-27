@@ -294,18 +294,23 @@ async def main():
 
 
 async def generate_embeddings_if_needed():
-    """商品データのembedding生成（未生成のものがあれば実行）"""
+    """商品データの分類・embedding生成（未生成のものがあれば実行）"""
     try:
         logger.info("")
         logger.info("="*80)
-        logger.info("🔄 Embedding生成チェック開始")
+        logger.info("🔄 商品分類・Embedding生成チェック開始")
         logger.info("="*80)
 
-        # embedding生成スクリプトをインポート
-        import sys
-        from pathlib import Path
+        # ステップ1: general_name と keywords を設定
+        logger.info("ステップ1: general_name & keywords 設定")
+        kakeibo_path = Path(__file__).parent.parent.parent / "K_kakeibo"
+        sys.path.insert(0, str(kakeibo_path))
 
-        # netsuper_search_appをパスに追加
+        from sync_netsuper_general_names import sync_general_names
+        sync_general_names(limit=None, dry_run=False)
+
+        # ステップ2: Embedding生成
+        logger.info("ステップ2: Embedding生成")
         netsuper_app_path = Path(__file__).parent.parent.parent / "netsuper_search_app"
         sys.path.insert(0, str(netsuper_app_path))
 
@@ -315,10 +320,10 @@ async def generate_embeddings_if_needed():
         generator = MultiEmbeddingGenerator()
         generator.process_products(delay=0.1)
 
-        logger.info("✅ Embedding生成処理完了")
+        logger.info("✅ 商品分類・Embedding生成処理完了")
 
     except Exception as e:
-        logger.error(f"⚠️ Embedding生成エラー（スキップして続行）: {e}")
+        logger.error(f"⚠️ 商品分類・Embedding生成エラー（スキップして続行）: {e}")
 
 
 if __name__ == "__main__":
