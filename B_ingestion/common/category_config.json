@@ -456,7 +456,7 @@
   "daiei": [
     {
       "name": "野菜・果物",
-      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1001",
+      "url": "https://daiei.eorder.ne.jp/category/vegetables",
       "enabled": true,
       "start_date": "2025-12-23",
       "interval_days": 14,
@@ -521,9 +521,9 @@
       "name": "調味料・即席食品",
       "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1008",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-11",
       "interval_days": 14,
-      "last_run": null,
+      "last_run": "2025-12-27",
       "notes": ""
     },
     {
@@ -537,7 +537,7 @@
     },
     {
       "name": "菓子",
-      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1010",
+      "url": "https://daiei.eorder.ne.jp/category/snacks",
       "enabled": true,
       "start_date": "2025-12-23",
       "interval_days": 14,
@@ -546,7 +546,7 @@
     },
     {
       "name": "飲料",
-      "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1011",
+      "url": "https://daiei.eorder.ne.jp/category/drinks",
       "enabled": true,
       "start_date": "2025-12-23",
       "interval_days": 14,

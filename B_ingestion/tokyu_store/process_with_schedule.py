@@ -306,13 +306,16 @@ async def generate_embeddings_if_needed():
         logger.info("🔄 商品分類・Embedding生成チェック開始")
         logger.info("="*80)
 
-        # ステップ1: general_name と keywords を設定
-        logger.info("ステップ1: general_name & keywords 設定")
-        kakeibo_path = Path(__file__).parent.parent.parent / "K_kakeibo"
-        sys.path.insert(0, str(kakeibo_path))
+        # ステップ1: Gemini 2.5 Flash で general_name, small_category, keywords を生成
+        logger.info("ステップ1: Gemini 2.5 Flash で商品分類生成")
+        classification_path = Path(__file__).parent.parent.parent / "L_product_classification"
+        sys.path.insert(0, str(classification_path))
 
-        from sync_netsuper_general_names import sync_general_names
-        sync_general_names(limit=None, dry_run=False)
+        from daily_auto_classifier import DailyAutoClassifier
+
+        classifier = DailyAutoClassifier()
+        result = await classifier.process_unclassified_products()
+        logger.info(f"✅ 分類完了: {result.get('classified_count', 0)}件")
 
         # ステップ2: Embedding生成
         logger.info("ステップ2: Embedding生成")

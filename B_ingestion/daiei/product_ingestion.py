@@ -88,6 +88,36 @@ class DaieiProductIngestionPipeline(BaseProductIngestionPipeline):
         if self.scraper:
             await self.scraper.close()
 
+    async def discover_categories(self) -> List[Dict[str, str]]:
+        """
+        カテゴリーを取得（ダイエーは静的リスト）
+
+        Returns:
+            カテゴリー情報のリスト [{"name": "カテゴリー名", "url": "URL"}]
+        """
+        logger.info("🔍 カテゴリーを取得中（ダイエーは静的リスト）...")
+
+        # ダイエーのカテゴリーは動的取得が難しいため、静的リストを使用
+        # 今後、スクレイピングで取得できるようになったら実装を変更
+        categories = [
+            {"name": "野菜・果物", "url": "https://daiei.eorder.ne.jp/category/vegetables"},
+            {"name": "精肉", "url": "https://daiei.eorder.ne.jp/category/meat"},
+            {"name": "鮮魚", "url": "https://daiei.eorder.ne.jp/category/fish"},
+            {"name": "惣菜", "url": "https://daiei.eorder.ne.jp/category/deli"},
+            {"name": "冷凍食品", "url": "https://daiei.eorder.ne.jp/category/frozen"},
+            {"name": "乳製品・卵", "url": "https://daiei.eorder.ne.jp/category/dairy"},
+            {"name": "パン・シリアル", "url": "https://daiei.eorder.ne.jp/category/bread"},
+            {"name": "麺類", "url": "https://daiei.eorder.ne.jp/category/noodles"},
+            {"name": "缶詰・瓶詰", "url": "https://daiei.eorder.ne.jp/category/canned"},
+            {"name": "調味料", "url": "https://daiei.eorder.ne.jp/category/seasoning"},
+            {"name": "飲料", "url": "https://daiei.eorder.ne.jp/category/drinks"},
+            {"name": "菓子", "url": "https://daiei.eorder.ne.jp/category/snacks"},
+            {"name": "日用品", "url": "https://daiei.eorder.ne.jp/category/household"},
+        ]
+
+        logger.info(f"✅ {len(categories)}件のカテゴリーを取得")
+        return categories
+
 
 async def main():
     """テスト実行用のメイン関数"""

@@ -162,6 +162,8 @@ class DailyAutoClassifier:
             if response.get("success"):
                 content = json.loads(response.get("content", "{}"))
                 general_name = content.get("general_name")
+                small_category = content.get("small_category")
+                keywords = content.get("keywords", [])
                 confidence = content.get("confidence", 0.5)
 
                 # Tier 2でcategory_idを取得
@@ -186,13 +188,15 @@ class DailyAutoClassifier:
 
                 return {
                     "general_name": general_name,
+                    "small_category": small_category,
+                    "keywords": keywords,
                     "category_id": category_id,
                     "confidence": confidence
                 }
 
         except Exception as e:
             logger.error(f"Gemini classification error: {e}")
-            return {"general_name": None, "category_id": None, "confidence": 0.0}
+            return {"general_name": None, "small_category": None, "keywords": [], "category_id": None, "confidence": 0.0}
 
     async def classify_product(self, product: Dict) -> Dict:
         """
@@ -255,6 +259,8 @@ class DailyAutoClassifier:
             # Rawdata_NETSUPER_itemsを更新
             update_data = {
                 "general_name": classification.get("general_name"),
+                "small_category": classification.get("small_category"),
+                "keywords": classification.get("keywords", []),
                 "category_id": classification.get("category_id"),
                 "classification_confidence": classification.get("confidence"),
                 "needs_approval": True  # 常に手動承認必須（自動承認は無効）
