@@ -41,21 +41,19 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY)
 st.title("🛒 ネットスーパー横断検索")
 st.markdown("**楽天西友・東急ストア・ダイエー**の商品を一括検索！類似度の高い順に表示します")
 
-# URLのクエリパラメータから検索キーワードを取得
-default_query = st.query_params.get("q", "")
-
 # 検索欄
 st.subheader("🔍 商品を検索")
 col1, col2 = st.columns([4, 1])
 with col1:
-    search_query = st.text_input("商品名", value=default_query, placeholder="例: 牛乳、卵、パン", label_visibility="collapsed", key="search_input")
+    search_input = st.text_input("商品名", placeholder="例: 牛乳、卵、パン", label_visibility="collapsed")
 with col2:
     search_button = st.button("検索", type="primary", use_container_width=True)
 
-# 検索ボタンが押されたらクエリパラメータを更新
-if search_button and search_query:
-    st.query_params["q"] = search_query
-    st.rerun()
+# ボタンクリック時のみ、その場の入力値で検索（キャッシュ一切なし）
+search_query = None
+if search_button and search_input:
+    search_query = search_input
+    st.query_params["q"] = search_input
 
 def generate_query_embedding(query: str) -> list:
     """検索クエリをベクトル化"""
@@ -67,42 +65,71 @@ def generate_query_embedding(query: str) -> list:
 
 
 if search_query:
-    # デバッグ情報（開発時のみ表示、本番では削除可能）
-    st.caption(f"🔍 検索中: **{search_query}**")
+    # 複数キーワード検索対応
+    keywords = search_query.split()
 
     # ベクトル検索
     try:
-        # 検索クエリをベクトル化
         with st.spinner("検索中..."):
-            query_embedding = generate_query_embedding(search_query)
-            # vector型として渡すために文字列形式に変換
-            embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
+            # 各キーワードで個別に検索してスコアを合算
+            all_results = {}  # product_id -> {product_data, total_score}
 
-        # ハイブリッド検索（複数のembedding + テキスト検索）
-        st.write(f"🔍 検索実行: hybrid_search (query={search_query})")
-        result = db.rpc('hybrid_search', {
-            'query_embedding': embedding_str,
-            'query_text': search_query,
-            'match_count': 200
-        }).execute()
+            for keyword in keywords:
+                # 各キーワードをベクトル化
+                query_embedding = generate_query_embedding(keyword)
+                embedding_str = '[' + ','.join(map(str, query_embedding)) + ']'
 
-        products = result.data
-        st.write(f"📊 検索結果: {len(products)}件取得")
+                # ハイブリッド検索
+                result = db.rpc('hybrid_search', {
+                    'query_embedding': embedding_str,
+                    'query_text': keyword,
+                    'match_count': 200
+                }).execute()
 
-        # スコア順にソート（高い順）
-        products.sort(key=lambda x: float(x.get('final_score', 0)), reverse=True)
+                # 結果を集計
+                for product in result.data:
+                    product_id = product['id']
+                    score = float(product.get('final_score', 0))
 
-        # 上位20件のみ表示
-        display_products = products[:20]
+                    if product_id in all_results:
+                        # 既存の商品：スコアを加算
+                        all_results[product_id]['total_score'] += score
+                    else:
+                        # 新規の商品：データとスコアを保存
+                        product['total_score'] = score
+                        all_results[product_id] = product
+
+            # 全キーワードが商品名に含まれる場合、大幅ボーナス
+            if len(keywords) > 1:
+                for product in all_results.values():
+                    product_name_lower = product.get('product_name', '').lower()
+                    all_match = all(kw.lower() in product_name_lower for kw in keywords)
+                    if all_match:
+                        product['total_score'] += 0.5  # 大幅ボーナス
+
+            # 辞書から商品リストに変換
+            products = list(all_results.values())
+
+            # 合算スコアでソート（関連度の高い順）
+            products.sort(key=lambda x: float(x.get('total_score', 0)), reverse=True)
+
+        # 上位20件を取得
+        top_products = products[:20]
+
+        # 上位20件を価格の安い順に並べ替え
+        display_products = sorted(
+            top_products,
+            key=lambda x: float(x.get('current_price_tax_included') or 999999)
+        )
 
         if display_products:
             st.success(f"✅ {len(display_products)}件の商品を表示中（検索結果: {len(products)}件）")
 
             # 商品一覧表示
             for i, product in enumerate(display_products, 1):
-                # ユニークなキーを使用してコンテナを作成
+                # コンテナキー（商品IDとインデックスのみ、キャッシュなし）
                 product_id = product.get('id', i)
-                with st.container(key=f"product_{product_id}_{i}"):
+                with st.container(key=f"p_{product_id}_{i}"):
                     col1, col2 = st.columns([1, 4])
 
                     with col1:
@@ -116,9 +143,13 @@ if search_query:
                         # 商品情報
                         st.markdown(f"### {i}. {product['product_name']}")
 
-                        # 価格（大きく表示）
-                        price = product.get('current_price_tax_included', 0)
-                        st.markdown(f"## ¥{price:,.0f} (税込)")
+                        # 価格（税込と本体を並記）
+                        price_tax_included = product.get('current_price_tax_included', 0)
+                        price_base = product.get('current_price', 0)
+                        if price_base and price_base != price_tax_included:
+                            st.markdown(f"## ¥{price_tax_included:,.0f} <small style='font-size:0.6em; color:#666;'>（本体 ¥{price_base:,.0f}）</small>", unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"## ¥{price_tax_included:,.0f}")
 
                         # 店舗名
                         organization = product.get('organization', '不明')
@@ -138,9 +169,10 @@ if search_query:
                             if product_url:
                                 st.markdown(f"[🔗 商品ページを開く]({product_url})")
 
-                        # 検索スコア（デバッグ用、必要に応じて表示）
-                        if product.get('final_score'):
-                            st.caption(f"類似度: {product['final_score']:.3f}")
+                        # 検索スコア（複数キーワードの場合は合算スコア）
+                        score = product.get('total_score') or product.get('final_score', 0)
+                        if score:
+                            st.caption(f"スコア: {score:.3f}")
 
                     st.divider()
         else:
