@@ -37,12 +37,22 @@ class DailyAutoClassifier:
         Returns:
             general_name（見つからない場合はNone）
         """
+        # まず正規化されていない商品名で検索
         result = self.db.client.table('MASTER_Product_generalize').select(
             'general_name'
         ).eq('raw_keyword', product_name).execute()
 
         if result.data:
             return result.data[0]["general_name"]
+
+        # 見つからない場合は正規化された商品名（小文字化）で検索
+        result = self.db.client.table('MASTER_Product_generalize').select(
+            'general_name'
+        ).eq('raw_keyword', product_name.lower()).execute()
+
+        if result.data:
+            return result.data[0]["general_name"]
+
         return None
 
     async def tier2_lookup(
@@ -225,8 +235,13 @@ class DailyAutoClassifier:
 
             if category_id:
                 logger.info(f"✓ Tier 2 hit: {general_name} → {category_id}")
+                # 辞書ヒット時もsmall_categoryとkeywordsを生成（Gemini使用）
+                # コストを抑えるため、general_nameは辞書から、small_categoryとkeywordsのみGemini生成
+                gemini_result = await self.gemini_classify_with_fewshot(product, [])
                 return {
                     "general_name": general_name,
+                    "small_category": gemini_result.get("small_category"),
+                    "keywords": gemini_result.get("keywords", []),
                     "category_id": category_id,
                     "confidence": 1.0,
                     "source": "tier2"
