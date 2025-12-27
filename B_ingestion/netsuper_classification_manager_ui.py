@@ -6,14 +6,8 @@
 
 import streamlit as st
 import pandas as pd
-from pathlib import Path
-import sys
-
-# プロジェクトルートをパスに追加
-root_dir = Path(__file__).parent.parent
-sys.path.insert(0, str(root_dir))
-
-from A_common.database.client import DatabaseClient
+import os
+from supabase import create_client
 
 # ページ設定
 st.set_page_config(
@@ -24,8 +18,15 @@ st.set_page_config(
 
 st.title("🏷️ ネットスーパー商品分類管理")
 
-# データベース接続
-db = DatabaseClient(use_service_role=True)
+# Supabase接続
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+if not SUPABASE_URL or not SUPABASE_KEY:
+    st.error("環境変数 SUPABASE_URL と SUPABASE_KEY を設定してください")
+    st.stop()
+
+db = create_client(SUPABASE_URL, SUPABASE_KEY)
 
 # タブで表示方法を切り替え
 tabs = st.tabs(["一般名詞で分類", "小カテゴリで分類", "統計情報"])
@@ -37,7 +38,7 @@ with tabs[0]:
     st.header("一般名詞（general_name）ごとに商品を確認・修正")
 
     # 一般名詞のリストを取得
-    result = db.client.table('Rawdata_NETSUPER_items').select(
+    result = db.table('Rawdata_NETSUPER_items').select(
         'general_name'
     ).not_.is_('general_name', 'null').execute()
 
@@ -55,7 +56,7 @@ with tabs[0]:
 
         if selected_general_name:
             # 選択した一般名詞の商品を取得
-            products = db.client.table('Rawdata_NETSUPER_items').select(
+            products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, organization, current_price_tax_included'
             ).eq('general_name', selected_general_name).limit(100).execute()
 
@@ -96,7 +97,7 @@ with tabs[0]:
                     # 変更を反映
                     for idx, row in edited_df.iterrows():
                         product_id = row["ID"]
-                        db.client.table('Rawdata_NETSUPER_items').update({
+                        db.table('Rawdata_NETSUPER_items').update({
                             "general_name": row["一般名詞"],
                             "small_category": row["小カテゴリ"]
                         }).eq('id', product_id).execute()
@@ -111,7 +112,7 @@ with tabs[1]:
     st.header("小カテゴリ（small_category）ごとに商品を確認・修正")
 
     # 小カテゴリのリストを取得
-    result = db.client.table('Rawdata_NETSUPER_items').select(
+    result = db.table('Rawdata_NETSUPER_items').select(
         'small_category'
     ).not_.is_('small_category', 'null').execute()
 
@@ -129,7 +130,7 @@ with tabs[1]:
 
         if selected_category:
             # 選択した小カテゴリの商品を取得
-            products = db.client.table('Rawdata_NETSUPER_items').select(
+            products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, organization, current_price_tax_included'
             ).eq('small_category', selected_category).limit(100).execute()
 
@@ -170,7 +171,7 @@ with tabs[1]:
                     # 変更を反映
                     for idx, row in edited_df.iterrows():
                         product_id = row["ID"]
-                        db.client.table('Rawdata_NETSUPER_items').update({
+                        db.table('Rawdata_NETSUPER_items').update({
                             "general_name": row["一般名詞"],
                             "small_category": row["小カテゴリ"]
                         }).eq('id', product_id).execute()
@@ -190,7 +191,7 @@ with tabs[2]:
         st.subheader("一般名詞別の商品数")
 
         # 一般名詞ごとの商品数を集計
-        result = db.client.table('Rawdata_NETSUPER_items').select(
+        result = db.table('Rawdata_NETSUPER_items').select(
             'general_name'
         ).not_.is_('general_name', 'null').execute()
 
@@ -211,7 +212,7 @@ with tabs[2]:
         st.subheader("小カテゴリ別の商品数")
 
         # 小カテゴリごとの商品数を集計
-        result = db.client.table('Rawdata_NETSUPER_items').select(
+        result = db.table('Rawdata_NETSUPER_items').select(
             'small_category'
         ).not_.is_('small_category', 'null').execute()
 
@@ -234,13 +235,13 @@ with tabs[2]:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        total = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').execute()
+        total = db.table('Rawdata_NETSUPER_items').select('id', count='exact').execute()
         st.metric("総商品数", total.count)
 
     with col2:
-        no_general = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('general_name', 'null').execute()
+        no_general = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('general_name', 'null').execute()
         st.metric("一般名詞未設定", no_general.count)
 
     with col3:
-        no_category = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('small_category', 'null').execute()
+        no_category = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('small_category', 'null').execute()
         st.metric("小カテゴリ未設定", no_category.count)
