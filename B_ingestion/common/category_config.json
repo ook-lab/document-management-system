@@ -139,18 +139,18 @@
       "name": "食油・カレー・スープ・調味料",
       "url": "https://netsuper.rakuten.co.jp/seiyu/search/110012/?l-id=_leftnavi_110012&sort=1",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-04",
       "interval_days": 7,
-      "last_run": null,
+      "last_run": "2025-12-27",
       "notes": ""
     },
     {
       "name": "缶詰・粉類・乾物",
       "url": "https://netsuper.rakuten.co.jp/seiyu/search/110013/?l-id=_leftnavi_110013&sort=1",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-04",
       "interval_days": 7,
-      "last_run": null,
+      "last_run": "2025-12-27",
       "notes": ""
     },
     {
@@ -294,9 +294,9 @@
       "name": "牛乳・乳製品・卵",
       "url": "https://ns.tokyu-bell.jp/shop/c/cC50",
       "enabled": true,
-      "start_date": "2026-01-01",
+      "start_date": "2026-01-04",
       "interval_days": 7,
-      "last_run": "2025-12-24",
+      "last_run": "2025-12-27",
       "notes": ""
     },
     {
@@ -312,9 +312,9 @@
       "name": "チルド総菜・豆腐・納豆・漬物など",
       "url": "https://ns.tokyu-bell.jp/shop/c/cC52",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-04",
       "interval_days": 7,
-      "last_run": null,
+      "last_run": "2025-12-27",
       "notes": ""
     },
     {
@@ -494,9 +494,9 @@
       "name": "パン・乳製品",
       "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1005",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-11",
       "interval_days": 14,
-      "last_run": null,
+      "last_run": "2025-12-27",
       "notes": ""
     },
     {
@@ -512,9 +512,9 @@
       "name": "冷蔵食品",
       "url": "https://netsuper.daiei.co.jp/0726/item/item.php?classL=2&classS=1&ilc_code=1007",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-11",
       "interval_days": 14,
-      "last_run": null,
+      "last_run": "2025-12-27",
       "notes": ""
     },
     {
