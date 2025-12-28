@@ -316,54 +316,44 @@ with tabs[1]:
     products = None
     display_path = ""
 
-    # 大分類のみ選択（中分類が「選択してください」）
-    if selected_large and selected_large != "選択してください" and (selected_medium is None or selected_medium == "選択してください"):
-        # この大分類配下の全商品を取得（category_idで絞り込み）
+    # 再帰的な子孫ID取得関数（共通）
+    def get_all_descendant_ids(cat_name):
         tree = get_category_tree()
-        if selected_large in tree:
-            # 大分類のIDを取得
-            large_cat_id = tree[selected_large]['id']
-            # この大分類配下の全てのカテゴリーIDを取得（再帰的に）
-            def get_all_descendant_ids(cat_name):
-                ids = [tree[cat_name]['id']]
-                for child in tree[cat_name]['children']:
-                    ids.extend(get_all_descendant_ids(child))
-                return ids
+        if cat_name not in tree:
+            return []
+        ids = [tree[cat_name]['id']]
+        for child in tree[cat_name]['children']:
+            ids.extend(get_all_descendant_ids(child))
+        return ids
 
-            all_cat_ids = get_all_descendant_ids(selected_large)
-            # category_idで絞り込み
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, organization, current_price_tax_included'
-            ).in_('category_id', all_cat_ids).limit(1000).execute()
-            display_path = f"📂 {selected_large}"
-
-    # 大+中分類選択（小分類が「選択してください」）
-    elif selected_medium and selected_medium not in ["選択してください", "未分類"] and (selected_small is None or selected_small == "選択してください"):
-        # この中分類配下の全商品を取得
-        tree = get_category_tree()
-        if selected_medium in tree:
-            def get_all_descendant_ids(cat_name):
-                ids = [tree[cat_name]['id']]
-                for child in tree[cat_name]['children']:
-                    ids.extend(get_all_descendant_ids(child))
-                return ids
-
-            all_cat_ids = get_all_descendant_ids(selected_medium)
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, organization, current_price_tax_included'
-            ).in_('category_id', all_cat_ids).limit(1000).execute()
-            display_path = f"📂 {selected_large} > {selected_medium}"
-
-    # 小分類まで選択
-    elif selected_small and selected_small != "選択してください":
+    # 小分類まで選択されている場合
+    if selected_small and selected_small != "選択してください":
         products = db.table('Rawdata_NETSUPER_items').select(
-            'id, product_name, general_name, small_category, organization, current_price_tax_included'
+            'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
         ).eq('small_category', selected_small).limit(100).execute()
 
         if selected_large == "未分類":
             display_path = f"📂 未分類 > 未分類 > {selected_small}"
         else:
             display_path = f"📂 {selected_large} > {selected_medium} > {selected_small}"
+
+    # 大+中分類選択、小分類は未選択
+    elif selected_medium and selected_medium not in ["選択してください", "未分類", None]:
+        all_cat_ids = get_all_descendant_ids(selected_medium)
+        if all_cat_ids:
+            products = db.table('Rawdata_NETSUPER_items').select(
+                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+            ).in_('category_id', all_cat_ids).limit(1000).execute()
+            display_path = f"📂 {selected_large} > {selected_medium} （配下全て）"
+
+    # 大分類のみ選択、中分類は未選択
+    elif selected_large and selected_large not in ["選択してください", "未分類"]:
+        all_cat_ids = get_all_descendant_ids(selected_large)
+        if all_cat_ids:
+            products = db.table('Rawdata_NETSUPER_items').select(
+                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+            ).in_('category_id', all_cat_ids).limit(1000).execute()
+            display_path = f"📂 {selected_large} （配下全て）"
 
     if products and products.data:
         st.subheader(f"{display_path} ({len(products.data)}件)")
