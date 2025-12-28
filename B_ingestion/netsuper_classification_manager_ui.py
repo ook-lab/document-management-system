@@ -311,45 +311,49 @@ with tabs[0]:
 
                     # 保存ボタン
                     if st.button("💾 変更を保存", type="primary", key="save_general"):
-                        # 変更を反映
-                        current_time = datetime.now(timezone.utc).isoformat()
-                        success_count = 0
-                        has_verified_column = True
+                        try:
+                            # 変更を反映
+                            current_time = datetime.now(timezone.utc).isoformat()
+                            success_count = 0
+                            has_verified_column = True
 
-                        for idx, row in edited_df.iterrows():
-                            product_id = row["ID"]
-                            update_data = {
-                                "general_name": row["一般名詞"],
-                                "small_category": row["小カテゴリ"]
-                            }
+                            for idx, row in edited_df.iterrows():
+                                product_id = row["ID"]
+                                update_data = {
+                                    "general_name": row["一般名詞"],
+                                    "small_category": row["小カテゴリ"]
+                                }
 
-                            # manually_verified カラムが存在する場合のみ追加
-                            if has_verified_column:
-                                update_data["manually_verified"] = True
-                                update_data["last_verified_at"] = current_time
+                                # manually_verified カラムが存在する場合のみ追加
+                                if has_verified_column:
+                                    update_data["manually_verified"] = True
+                                    update_data["last_verified_at"] = current_time
 
-                            try:
-                                db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
-                                success_count += 1
-                            except Exception as e:
-                                # manually_verified カラムが存在しない場合、フラグなしで再試行
-                                if "manually_verified" in str(e) and has_verified_column:
-                                    has_verified_column = False
-                                    update_data = {
-                                        "general_name": row["一般名詞"],
-                                        "small_category": row["小カテゴリ"]
-                                    }
+                                try:
                                     db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
                                     success_count += 1
-                                else:
-                                    raise
+                                except Exception as e:
+                                    # manually_verified カラムが存在しない場合、フラグなしで再試行
+                                    if "manually_verified" in str(e) and has_verified_column:
+                                        has_verified_column = False
+                                        update_data = {
+                                            "general_name": row["一般名詞"],
+                                            "small_category": row["小カテゴリ"]
+                                        }
+                                        db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                                        success_count += 1
+                                    else:
+                                        raise
 
-                        if has_verified_column:
-                            st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
-                        else:
-                            st.success(f"✅ {success_count}件の商品を更新しました")
-                            st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
-                        st.rerun()
+                            if has_verified_column:
+                                st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
+                            else:
+                                st.success(f"✅ {success_count}件の商品を更新しました")
+                                st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
+                            st.rerun()
+                        except Exception as e:
+                            st.error(f"❌ 保存中にエラーが発生しました: {str(e)}")
+                            st.exception(e)
 
 # =============================================================================
 # タブ2: 小カテゴリで分類（3段階連動プルダウン + 未分類対応）
@@ -565,85 +569,96 @@ with tabs[1]:
             if not category_name or category_name == "未分類":
                 return None
 
-            # 既存カテゴリーを検索
-            query = db.table('MASTER_Categories_product').select('id, name, parent_id')
-            if parent_id:
-                result = query.eq('name', category_name).eq('parent_id', parent_id).execute()
-            else:
-                result = query.eq('name', category_name).is_('parent_id', 'null').execute()
+            try:
+                # 既存カテゴリーを検索
+                query = db.table('MASTER_Categories_product').select('id, name, parent_id')
+                if parent_id:
+                    result = query.eq('name', category_name).eq('parent_id', parent_id).execute()
+                else:
+                    result = query.eq('name', category_name).is_('parent_id', 'null').execute()
 
-            if result.data:
+                if result.data:
+                    return result.data[0]['id']
+
+                # 新規作成
+                new_cat = {
+                    'name': category_name,
+                    'parent_id': parent_id
+                }
+                result = db.table('MASTER_Categories_product').insert(new_cat).execute()
+
+                if not result.data:
+                    raise Exception(f"カテゴリ '{category_name}' の作成に失敗しました（レスポンスが空です）")
+
                 return result.data[0]['id']
-
-            # 新規作成
-            new_cat = {
-                'name': category_name,
-                'parent_id': parent_id
-            }
-            result = db.table('MASTER_Categories_product').insert(new_cat).execute()
-            return result.data[0]['id']
+            except Exception as e:
+                raise Exception(f"カテゴリ '{category_name}' の取得/作成中にエラーが発生しました: {str(e)}")
 
         # 保存ボタン
         if st.button("💾 変更を保存", type="primary", key="save_category"):
-            # 変更を反映
-            current_time = datetime.now(timezone.utc).isoformat()
-            success_count = 0
-            has_verified_column = True
+            try:
+                # 変更を反映
+                current_time = datetime.now(timezone.utc).isoformat()
+                success_count = 0
+                has_verified_column = True
 
-            for idx, row in edited_df.iterrows():
-                product_id = row["_id"]
+                for idx, row in edited_df.iterrows():
+                    product_id = row["_id"]
 
-                # カテゴリー階層を作成/取得
-                large_name = row["大分類"]
-                medium_name = row["中分類"]
-                small_name = row["小分類"]
+                    # カテゴリー階層を作成/取得
+                    large_name = row["大分類"]
+                    medium_name = row["中分類"]
+                    small_name = row["小分類"]
 
-                # 大分類 → 中分類 → 小分類の順に作成/取得
-                large_id = get_or_create_category(large_name, parent_id=None)
-                medium_id = get_or_create_category(medium_name, parent_id=large_id) if large_id else None
-                small_id = get_or_create_category(small_name, parent_id=medium_id) if medium_id else None
+                    # 大分類 → 中分類 → 小分類の順に作成/取得
+                    large_id = get_or_create_category(large_name, parent_id=None)
+                    medium_id = get_or_create_category(medium_name, parent_id=large_id) if large_id else None
+                    small_id = get_or_create_category(small_name, parent_id=medium_id) if medium_id else None
 
-                # 小分類のIDが取得できなかった場合、small_nameだけで検索
-                if not small_id and small_name and small_name != "未分類":
-                    small_id = get_or_create_category(small_name, parent_id=None)
+                    # 小分類のIDが取得できなかった場合、small_nameだけで検索
+                    if not small_id and small_name and small_name != "未分類":
+                        small_id = get_or_create_category(small_name, parent_id=None)
 
-                update_data = {
-                    "general_name": row["一般名詞"],
-                    "small_category": small_name if small_name != "未分類" else None,
-                    "category_id": small_id
-                }
+                    update_data = {
+                        "general_name": row["一般名詞"],
+                        "small_category": small_name if small_name != "未分類" else None,
+                        "category_id": small_id
+                    }
 
-                # manually_verified カラムが存在する場合のみ追加
-                if has_verified_column:
-                    update_data["manually_verified"] = True
-                    update_data["last_verified_at"] = current_time
+                    # manually_verified カラムが存在する場合のみ追加
+                    if has_verified_column:
+                        update_data["manually_verified"] = True
+                        update_data["last_verified_at"] = current_time
 
-                try:
-                    db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
-                    success_count += 1
-                except Exception as e:
-                    # manually_verified カラムが存在しない場合、フラグなしで再試行
-                    if "manually_verified" in str(e) and has_verified_column:
-                        has_verified_column = False
-                        update_data = {
-                            "general_name": row["一般名詞"],
-                            "small_category": small_name if small_name != "未分類" else None,
-                            "category_id": small_id
-                        }
+                    try:
                         db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
                         success_count += 1
-                    else:
-                        raise
+                    except Exception as e:
+                        # manually_verified カラムが存在しない場合、フラグなしで再試行
+                        if "manually_verified" in str(e) and has_verified_column:
+                            has_verified_column = False
+                            update_data = {
+                                "general_name": row["一般名詞"],
+                                "small_category": small_name if small_name != "未分類" else None,
+                                "category_id": small_id
+                            }
+                            db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                            success_count += 1
+                        else:
+                            raise
 
-            # キャッシュをクリア（新しいカテゴリーが追加された場合）
-            st.cache_data.clear()
+                # キャッシュをクリア（新しいカテゴリーが追加された場合）
+                st.cache_data.clear()
 
-            if has_verified_column:
-                st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
-            else:
-                st.success(f"✅ {success_count}件の商品を更新しました")
-                st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
-            st.rerun()
+                if has_verified_column:
+                    st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
+                else:
+                    st.success(f"✅ {success_count}件の商品を更新しました")
+                    st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
+                st.rerun()
+            except Exception as e:
+                st.error(f"❌ 保存中にエラーが発生しました: {str(e)}")
+                st.exception(e)
 
 # =============================================================================
 # タブ3: 統計情報
