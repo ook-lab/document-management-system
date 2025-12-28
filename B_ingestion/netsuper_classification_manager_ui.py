@@ -101,28 +101,94 @@ def get_category_tree():
 
     return tree
 
-# 大分類（親なし）を取得
+# 大分類（親なし）を取得（商品数付き）
 @st.cache_data(ttl=60)
 def get_large_categories():
-    """大分類（parent_id が null）を取得"""
-    result = db.table('MASTER_Categories_product').select('name').is_('parent_id', 'null').execute()
-    return sorted([cat['name'] for cat in result.data])
+    """大分類（parent_id が null）を取得（商品1件以上のみ、件数表示）"""
+    # 全大分類を取得
+    categories = db.table('MASTER_Categories_product').select('id, name').is_('parent_id', 'null').execute()
 
-# 中分類を取得
+    # 各大分類配下の商品数をカウント
+    cat_with_counts = {}
+    tree = get_category_tree()
+
+    for cat in categories.data:
+        cat_name = cat['name']
+        # 配下の全カテゴリーIDを取得
+        def get_all_descendant_ids(name):
+            if name not in tree:
+                return []
+            ids = [tree[name]['id']]
+            for child in tree[name]['children']:
+                ids.extend(get_all_descendant_ids(child))
+            return ids
+
+        all_ids = get_all_descendant_ids(cat_name)
+        if all_ids:
+            # 商品数をカウント
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
+            count = count_result.count if count_result.count else 0
+
+            # 商品が1件以上ある場合のみ追加
+            if count > 0:
+                cat_with_counts[f"{cat_name} ({count}件)"] = cat_name
+
+    return cat_with_counts
+
+# 中分類を取得（商品数付き）
 def get_medium_categories(large_category_name):
-    """指定した大分類の子カテゴリを取得"""
+    """指定した大分類の子カテゴリを取得（商品1件以上のみ、件数表示）"""
     tree = get_category_tree()
-    if large_category_name in tree:
-        return sorted(tree[large_category_name]['children'])
-    return []
+    if large_category_name not in tree:
+        return {}
 
-# 小分類を取得
+    children = tree[large_category_name]['children']
+    cat_with_counts = {}
+
+    for child_name in children:
+        # 配下の全カテゴリーIDを取得
+        def get_all_descendant_ids(name):
+            if name not in tree:
+                return []
+            ids = [tree[name]['id']]
+            for c in tree[name]['children']:
+                ids.extend(get_all_descendant_ids(c))
+            return ids
+
+        all_ids = get_all_descendant_ids(child_name)
+        if all_ids:
+            # 商品数をカウント
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
+            count = count_result.count if count_result.count else 0
+
+            # 商品が1件以上ある場合のみ追加
+            if count > 0:
+                cat_with_counts[f"{child_name} ({count}件)"] = child_name
+
+    return cat_with_counts
+
+# 小分類を取得（商品数付き）
 def get_small_categories_by_medium(medium_category_name):
-    """指定した中分類の子カテゴリを取得"""
+    """指定した中分類の子カテゴリを取得（商品1件以上のみ、件数表示）"""
     tree = get_category_tree()
-    if medium_category_name in tree:
-        return sorted(tree[medium_category_name]['children'])
-    return []
+    if medium_category_name not in tree:
+        return {}
+
+    children = tree[medium_category_name]['children']
+    cat_with_counts = {}
+
+    for child_name in children:
+        if child_name in tree:
+            cat_id = tree[child_name]['id']
+            # 商品数をカウント（小分類は直接カウント）
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
+            count = count_result.count if count_result.count else 0
+
+            # 商品が1件以上ある場合のみ追加
+            if count > 0:
+                cat_with_counts[f"{child_name} ({count}件)"] = child_name
+
+    return cat_with_counts
 
 # タブで表示方法を切り替え
 tabs = st.tabs(["一般名詞で分類", "小カテゴリで分類", "統計情報"])
@@ -249,42 +315,58 @@ with tabs[0]:
 with tabs[1]:
     st.header("小カテゴリ（small_category）ごとに商品を確認・修正")
 
-    # 大分類を取得
-    large_categories = get_large_categories()
+    # 大分類を取得（{表示名: 実名} の辞書）
+    large_categories_dict = get_large_categories()
+    large_display_names = list(large_categories_dict.keys())
 
     col1, col2, col3 = st.columns(3)
 
     with col1:
         # 大分類プルダウン（「未分類」を追加）
-        selected_large = st.selectbox(
+        selected_large_display = st.selectbox(
             "🏢 大分類",
-            ["選択してください", "未分類"] + large_categories,
+            ["選択してください", "未分類"] + large_display_names,
             key="large_cat_select"
         )
 
+    # 表示名から実名を取得
+    if selected_large_display in large_categories_dict:
+        selected_large = large_categories_dict[selected_large_display]
+    else:
+        selected_large = selected_large_display  # "選択してください" or "未分類"
+
     # 中分類を取得
-    medium_categories = []
+    medium_categories_dict = {}
     if selected_large and selected_large not in ["選択してください", "未分類"]:
-        medium_categories = get_medium_categories(selected_large)
+        medium_categories_dict = get_medium_categories(selected_large)
+    medium_display_names = list(medium_categories_dict.keys())
 
     with col2:
         # 中分類プルダウン（「未分類」を追加）
         if selected_large == "選択してください":
             st.selectbox("📂 中分類", ["大分類を選択してください"], disabled=True)
+            selected_medium_display = None
             selected_medium = None
         elif selected_large == "未分類":
-            selected_medium = st.selectbox("📂 中分類", ["未分類"], key="medium_cat_select")
-        elif medium_categories:
-            selected_medium = st.selectbox(
+            selected_medium_display = st.selectbox("📂 中分類", ["未分類"], key="medium_cat_select")
+            selected_medium = "未分類"
+        elif medium_display_names:
+            selected_medium_display = st.selectbox(
                 "📂 中分類",
-                ["選択してください", "未分類"] + medium_categories,
+                ["選択してください", "未分類"] + medium_display_names,
                 key="medium_cat_select"
             )
+            # 表示名から実名を取得
+            if selected_medium_display in medium_categories_dict:
+                selected_medium = medium_categories_dict[selected_medium_display]
+            else:
+                selected_medium = selected_medium_display
         else:
-            selected_medium = st.selectbox("📂 中分類", ["未分類"], key="medium_cat_select")
+            selected_medium_display = st.selectbox("📂 中分類", ["未分類"], key="medium_cat_select")
+            selected_medium = "未分類"
 
     # 小分類を取得
-    small_categories = []
+    small_categories_dict = {}
     if selected_medium and selected_medium not in ["選択してください"]:
         if selected_medium == "未分類":
             # 未分類の場合、階層なし小カテゴリーを全て取得
@@ -293,23 +375,34 @@ with tabs[1]:
 
             # MASTER_Categories_productに存在するカテゴリーを除外
             tree = get_category_tree()
-            small_categories = sorted([cat for cat in all_small if cat not in tree])
+            small_list = sorted([cat for cat in all_small if cat not in tree])
+            # リストを辞書に変換（未分類の場合は件数表示なし）
+            small_categories_dict = {cat: cat for cat in small_list}
         else:
-            small_categories = get_small_categories_by_medium(selected_medium)
+            small_categories_dict = get_small_categories_by_medium(selected_medium)
+
+    small_display_names = list(small_categories_dict.keys())
 
     with col3:
         # 小分類プルダウン
         if selected_medium is None or selected_medium == "選択してください":
             st.selectbox("📄 小分類", ["中分類を選択してください"], disabled=True)
+            selected_small_display = None
             selected_small = None
-        elif small_categories:
-            selected_small = st.selectbox(
+        elif small_display_names:
+            selected_small_display = st.selectbox(
                 "📄 小分類",
-                ["選択してください"] + small_categories,
+                ["選択してください"] + small_display_names,
                 key="small_cat_select"
             )
+            # 表示名から実名を取得
+            if selected_small_display in small_categories_dict:
+                selected_small = small_categories_dict[selected_small_display]
+            else:
+                selected_small = selected_small_display
         else:
             st.selectbox("📄 小分類", ["該当なし"], disabled=True)
+            selected_small_display = None
             selected_small = None
 
     # 商品を表示（部分選択対応）
