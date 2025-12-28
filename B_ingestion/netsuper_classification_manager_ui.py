@@ -32,8 +32,12 @@ db = create_client(SUPABASE_URL, SUPABASE_KEY)
 # セッション状態の初期化
 if 'general_name_index' not in st.session_state:
     st.session_state.general_name_index = 0
-if 'category_index' not in st.session_state:
-    st.session_state.category_index = 0
+if 'large_category' not in st.session_state:
+    st.session_state.large_category = None
+if 'medium_category' not in st.session_state:
+    st.session_state.medium_category = None
+if 'small_category' not in st.session_state:
+    st.session_state.small_category = None
 
 # 一般名詞リスト取得（キャッシュ）
 @st.cache_data(ttl=60)
@@ -71,27 +75,54 @@ def build_category_hierarchy():
 
     return paths
 
-# 小カテゴリリスト取得（キャッシュ）
+# カテゴリ階層取得（キャッシュ）
 @st.cache_data(ttl=60)
-def get_small_categories():
-    """小カテゴリ名を取得し、階層パス付きでソート"""
-    result = db.table('Rawdata_NETSUPER_items').select(
-        'small_category'
-    ).not_.is_('small_category', 'null').execute()
+def get_category_tree():
+    """MASTER_Categories_productから階層構造を取得"""
+    result = db.table('MASTER_Categories_product').select('id, name, parent_id').execute()
+    categories = {cat['id']: cat for cat in result.data}
 
-    unique_categories = list(set([r['small_category'] for r in result.data if r.get('small_category')]))
+    # {category_name: {id, parent_id, children}} の辞書を構築
+    tree = {}
+    for cat in result.data:
+        tree[cat['name']] = {
+            'id': cat['id'],
+            'parent_id': cat['parent_id'],
+            'children': []
+        }
 
-    # 階層パスを取得
-    hierarchy = build_category_hierarchy()
+    # 親子関係を構築
+    for cat_name, cat_data in tree.items():
+        if cat_data['parent_id']:
+            # 親カテゴリの名前を見つける
+            parent_name = next((name for name, data in tree.items() if data['id'] == cat_data['parent_id']), None)
+            if parent_name:
+                tree[parent_name]['children'].append(cat_name)
 
-    # {表示名: カテゴリ名} のマッピング
-    category_display = {}
-    for cat in unique_categories:
-        path = hierarchy.get(cat, cat)  # パスがない場合はカテゴリ名のみ
-        category_display[path] = cat
+    return tree
 
-    # 階層パスでソート
-    return category_display
+# 大分類（親なし）を取得
+@st.cache_data(ttl=60)
+def get_large_categories():
+    """大分類（parent_id が null）を取得"""
+    result = db.table('MASTER_Categories_product').select('name').is_('parent_id', 'null').execute()
+    return sorted([cat['name'] for cat in result.data])
+
+# 中分類を取得
+def get_medium_categories(large_category_name):
+    """指定した大分類の子カテゴリを取得"""
+    tree = get_category_tree()
+    if large_category_name in tree:
+        return sorted(tree[large_category_name]['children'])
+    return []
+
+# 小分類を取得
+def get_small_categories_by_medium(medium_category_name):
+    """指定した中分類の子カテゴリを取得"""
+    tree = get_category_tree()
+    if medium_category_name in tree:
+        return sorted(tree[medium_category_name]['children'])
+    return []
 
 # タブで表示方法を切り替え
 tabs = st.tabs(["一般名詞で分類", "小カテゴリで分類", "統計情報"])
@@ -213,37 +244,69 @@ with tabs[0]:
                         st.rerun()
 
 # =============================================================================
-# タブ2: 小カテゴリで分類
+# タブ2: 小カテゴリで分類（3段階連動プルダウン）
 # =============================================================================
 with tabs[1]:
     st.header("小カテゴリ（small_category）ごとに商品を確認・修正")
 
-    category_display = get_small_categories()  # {表示パス: カテゴリ名}
+    # 大分類を取得
+    large_categories = get_large_categories()
 
-    if not category_display:
-        st.info("小カテゴリが設定されている商品がありません。")
+    if not large_categories:
+        st.info("カテゴリーが登録されていません。")
     else:
-        # 表示パスのリスト（ソート済み）
-        display_paths = sorted(category_display.keys())
+        col1, col2, col3 = st.columns(3)
 
-        # 小カテゴリを選択（階層パス表示）
-        selected_path = st.selectbox(
-            "小カテゴリを選択（階層表示）",
-            display_paths,
-            index=min(st.session_state.category_index, len(display_paths)-1),
-            key="category_select",
-            on_change=lambda: setattr(st.session_state, 'category_index', display_paths.index(st.session_state.category_select) if st.session_state.category_select in display_paths else 0)
-        )
+        with col1:
+            # 大分類プルダウン
+            selected_large = st.selectbox(
+                "🏢 大分類",
+                ["選択してください"] + large_categories,
+                key="large_cat_select"
+            )
 
-        if selected_path:
-            # 表示パスから実際のカテゴリ名を取得
-            selected_category = category_display[selected_path]
+        # 中分類を取得（大分類が選択されている場合）
+        medium_categories = []
+        if selected_large and selected_large != "選択してください":
+            medium_categories = get_medium_categories(selected_large)
+
+        with col2:
+            # 中分類プルダウン
+            if medium_categories:
+                selected_medium = st.selectbox(
+                    "📂 中分類",
+                    ["選択してください"] + medium_categories,
+                    key="medium_cat_select"
+                )
+            else:
+                st.selectbox("📂 中分類", ["大分類を選択してください"], disabled=True)
+                selected_medium = None
+
+        # 小分類を取得（中分類が選択されている場合）
+        small_categories = []
+        if selected_medium and selected_medium != "選択してください":
+            small_categories = get_small_categories_by_medium(selected_medium)
+
+        with col3:
+            # 小分類プルダウン
+            if small_categories:
+                selected_small = st.selectbox(
+                    "📄 小分類",
+                    small_categories,
+                    key="small_cat_select"
+                )
+            else:
+                st.selectbox("📄 小分類", ["中分類を選択してください"], disabled=True)
+                selected_small = None
+
+        # 小分類が選択されたら商品を表示
+        if selected_small:
             # 選択した小カテゴリの商品を取得
             products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, organization, current_price_tax_included'
-            ).eq('small_category', selected_category).limit(100).execute()
+            ).eq('small_category', selected_small).limit(100).execute()
 
-            st.subheader(f"📂 {selected_path} ({len(products.data)}件)")
+            st.subheader(f"📂 {selected_large} > {selected_medium} > {selected_small} ({len(products.data)}件)")
 
             if products.data:
                 # データフレームに変換
@@ -272,7 +335,7 @@ with tabs[1]:
                         "価格": st.column_config.NumberColumn("価格", disabled=True, width="small")
                     },
                     hide_index=True,
-                    key=f"editor_category_{selected_category}"
+                    key=f"editor_category_{selected_small}"
                 )
 
                 # 保存ボタン
