@@ -140,12 +140,12 @@ def get_large_categories():
         # category_idでカウント
         count = 0
         if all_ids:
-            count_result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
             count += count_result.count if count_result.count else 0
 
         # small_category（テキスト）でもカウント
         for name in all_names:
-            count_result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', name).execute()
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', name).execute()
             count += count_result.count if count_result.count else 0
 
         # 商品が1件以上ある場合のみ追加
@@ -189,12 +189,12 @@ def get_medium_categories(large_category_name):
         # category_idでカウント
         count = 0
         if all_ids:
-            count_result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
             count += count_result.count if count_result.count else 0
 
         # small_category（テキスト）でもカウント
         for name in all_names:
-            count_result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', name).execute()
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', name).execute()
             count += count_result.count if count_result.count else 0
 
         # 商品が1件以上ある場合のみ追加
@@ -219,11 +219,11 @@ def get_small_categories_by_medium(medium_category_name):
         if child_name in tree:
             cat_id = tree[child_name]['id']
             # category_idでカウント
-            count_by_id = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
+            count_by_id = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
             count += count_by_id.count if count_by_id.count else 0
 
         # small_category（テキストフィールド）でもカウント
-        count_by_name = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', child_name).execute()
+        count_by_name = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', child_name).execute()
         count += count_by_name.count if count_by_name.count else 0
 
         # 商品が1件以上ある場合のみ追加
