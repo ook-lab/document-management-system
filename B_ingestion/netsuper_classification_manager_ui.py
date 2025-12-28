@@ -465,6 +465,16 @@ with tabs[1]:
             ids.extend(get_all_descendant_ids(child))
         return ids
 
+    # 再帰的な子孫名取得関数（共通）
+    def get_all_descendant_names(cat_name):
+        tree = get_category_tree()
+        if cat_name not in tree:
+            return []
+        names = [cat_name]
+        for child in tree[cat_name]['children']:
+            names.extend(get_all_descendant_names(child))
+        return names
+
     # 小分類まで選択されている場合
     if selected_small and selected_small != "選択してください":
         products = db.table('Rawdata_NETSUPER_items').select(
@@ -479,20 +489,62 @@ with tabs[1]:
     # 大+中分類選択、小分類は未選択
     elif selected_medium and selected_medium not in ["選択してください", "未分類", None]:
         all_cat_ids = get_all_descendant_ids(selected_medium)
+        all_cat_names = get_all_descendant_names(selected_medium)
+
+        # category_id と small_category の両方で検索
+        products_list = []
         if all_cat_ids:
-            products = db.table('Rawdata_NETSUPER_items').select(
+            result1 = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
             ).in_('category_id', all_cat_ids).limit(1000).execute()
-            display_path = f"📂 {selected_large} > {selected_medium} （配下全て）"
+            products_list.extend(result1.data)
+
+        for name in all_cat_names:
+            result2 = db.table('Rawdata_NETSUPER_items').select(
+                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+            ).eq('small_category', name).limit(1000).execute()
+            products_list.extend(result2.data)
+
+        # 重複を除去（IDでユニーク化）
+        seen_ids = set()
+        unique_products = []
+        for p in products_list:
+            if p['id'] not in seen_ids:
+                seen_ids.add(p['id'])
+                unique_products.append(p)
+
+        products = type('obj', (object,), {'data': unique_products[:1000]})()
+        display_path = f"📂 {selected_large} > {selected_medium} （配下全て）"
 
     # 大分類のみ選択、中分類は未選択
     elif selected_large and selected_large not in ["選択してください", "未分類"]:
         all_cat_ids = get_all_descendant_ids(selected_large)
+        all_cat_names = get_all_descendant_names(selected_large)
+
+        # category_id と small_category の両方で検索
+        products_list = []
         if all_cat_ids:
-            products = db.table('Rawdata_NETSUPER_items').select(
+            result1 = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
             ).in_('category_id', all_cat_ids).limit(1000).execute()
-            display_path = f"📂 {selected_large} （配下全て）"
+            products_list.extend(result1.data)
+
+        for name in all_cat_names:
+            result2 = db.table('Rawdata_NETSUPER_items').select(
+                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+            ).eq('small_category', name).limit(1000).execute()
+            products_list.extend(result2.data)
+
+        # 重複を除去（IDでユニーク化）
+        seen_ids = set()
+        unique_products = []
+        for p in products_list:
+            if p['id'] not in seen_ids:
+                seen_ids.add(p['id'])
+                unique_products.append(p)
+
+        products = type('obj', (object,), {'data': unique_products[:1000]})()
+        display_path = f"📂 {selected_large} （配下全て）"
 
     if products and products.data:
         st.subheader(f"{display_path} ({len(products.data)}件)")
