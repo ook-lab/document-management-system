@@ -19,15 +19,15 @@ st.set_page_config(
 
 st.title("🏷️ ネットスーパー商品分類管理")
 
-# Supabase接続
+# Supabase接続（サービスロールキーを使用してRLS制限を回避）
 SUPABASE_URL = os.getenv("SUPABASE_URL")
-SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
 
-if not SUPABASE_URL or not SUPABASE_KEY:
-    st.error("環境変数 SUPABASE_URL と SUPABASE_KEY を設定してください")
+if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
+    st.error("環境変数 SUPABASE_URL と SUPABASE_SERVICE_ROLE_KEY を設定してください")
     st.stop()
 
-db = create_client(SUPABASE_URL, SUPABASE_KEY)
+db = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
 # セッション状態の初期化
 if 'general_name_index' not in st.session_state:
