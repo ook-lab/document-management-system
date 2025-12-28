@@ -513,7 +513,11 @@ with tabs[1]:
                 seen_ids.add(p['id'])
                 unique_products.append(p)
 
-        products = type('obj', (object,), {'data': unique_products[:1000]})()
+        # Supabaseレスポンスと同じ構造のオブジェクトを作成
+        class _Result:
+            def __init__(self, data):
+                self.data = data
+        products = _Result(unique_products[:1000])
         display_path = f"📂 {selected_large} > {selected_medium} （配下全て）"
 
     # 大分類のみ選択、中分類は未選択
@@ -543,7 +547,11 @@ with tabs[1]:
                 seen_ids.add(p['id'])
                 unique_products.append(p)
 
-        products = type('obj', (object,), {'data': unique_products[:1000]})()
+        # Supabaseレスポンスと同じ構造のオブジェクトを作成
+        class _Result:
+            def __init__(self, data):
+                self.data = data
+        products = _Result(unique_products[:1000])
         display_path = f"📂 {selected_large} （配下全て）"
 
     if products and products.data:
