@@ -525,6 +525,9 @@ with tabs[1]:
         all_cat_ids = get_all_descendant_ids(selected_large)
         all_cat_names = get_all_descendant_names(selected_large)
 
+        # デバッグ情報
+        st.info(f"🔍 デバッグ: 「{selected_large}」の配下カテゴリ {len(all_cat_names)}件を検索中...")
+
         # category_id と small_category の両方で検索
         products_list = []
         if all_cat_ids:
@@ -532,12 +535,18 @@ with tabs[1]:
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
             ).in_('category_id', all_cat_ids).limit(1000).execute()
             products_list.extend(result1.data)
+            if len(result1.data) > 0:
+                st.info(f"  category_id検索: {len(result1.data)}件")
 
         for name in all_cat_names:
             result2 = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
             ).eq('small_category', name).limit(1000).execute()
+            if len(result2.data) > 0:
+                st.info(f"  「{name}」: {len(result2.data)}件")
             products_list.extend(result2.data)
+
+        st.info(f"検索結果合計: {len(products_list)}件（重複含む）")
 
         # 重複を除去（IDでユニーク化）
         seen_ids = set()
@@ -546,6 +555,8 @@ with tabs[1]:
             if p['id'] not in seen_ids:
                 seen_ids.add(p['id'])
                 unique_products.append(p)
+
+        st.info(f"重複除去後: {len(unique_products)}件")
 
         # Supabaseレスポンスと同じ構造のオブジェクトを作成
         class _Result:
