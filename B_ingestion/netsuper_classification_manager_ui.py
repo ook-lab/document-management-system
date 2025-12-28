@@ -244,7 +244,7 @@ with tabs[0]:
                         st.rerun()
 
 # =============================================================================
-# タブ2: 小カテゴリで分類（3段階連動プルダウン）
+# タブ2: 小カテゴリで分類（3段階連動プルダウン + 未分類対応）
 # =============================================================================
 with tabs[1]:
     st.header("小カテゴリ（small_category）ごとに商品を確認・修正")
@@ -252,133 +252,229 @@ with tabs[1]:
     # 大分類を取得
     large_categories = get_large_categories()
 
-    if not large_categories:
-        st.info("カテゴリーが登録されていません。")
-    else:
-        col1, col2, col3 = st.columns(3)
+    col1, col2, col3 = st.columns(3)
 
-        with col1:
-            # 大分類プルダウン
-            selected_large = st.selectbox(
-                "🏢 大分類",
-                ["選択してください"] + large_categories,
-                key="large_cat_select"
+    with col1:
+        # 大分類プルダウン（「未分類」を追加）
+        selected_large = st.selectbox(
+            "🏢 大分類",
+            ["選択してください", "未分類"] + large_categories,
+            key="large_cat_select"
+        )
+
+    # 中分類を取得
+    medium_categories = []
+    if selected_large and selected_large not in ["選択してください", "未分類"]:
+        medium_categories = get_medium_categories(selected_large)
+
+    with col2:
+        # 中分類プルダウン（「未分類」を追加）
+        if selected_large == "選択してください":
+            st.selectbox("📂 中分類", ["大分類を選択してください"], disabled=True)
+            selected_medium = None
+        elif selected_large == "未分類":
+            selected_medium = st.selectbox("📂 中分類", ["未分類"], key="medium_cat_select")
+        elif medium_categories:
+            selected_medium = st.selectbox(
+                "📂 中分類",
+                ["選択してください", "未分類"] + medium_categories,
+                key="medium_cat_select"
             )
+        else:
+            selected_medium = st.selectbox("📂 中分類", ["未分類"], key="medium_cat_select")
 
-        # 中分類を取得（大分類が選択されている場合）
-        medium_categories = []
-        if selected_large and selected_large != "選択してください":
-            medium_categories = get_medium_categories(selected_large)
+    # 小分類を取得
+    small_categories = []
+    if selected_medium and selected_medium not in ["選択してください"]:
+        if selected_medium == "未分類":
+            # 未分類の場合、階層なし小カテゴリーを全て取得
+            result = db.table('Rawdata_NETSUPER_items').select('small_category').not_.is_('small_category', 'null').execute()
+            all_small = list(set([r['small_category'] for r in result.data if r.get('small_category')]))
 
-        with col2:
-            # 中分類プルダウン
-            if medium_categories:
-                selected_medium = st.selectbox(
-                    "📂 中分類",
-                    ["選択してください"] + medium_categories,
-                    key="medium_cat_select"
-                )
-            else:
-                st.selectbox("📂 中分類", ["大分類を選択してください"], disabled=True)
-                selected_medium = None
-
-        # 小分類を取得（中分類が選択されている場合）
-        small_categories = []
-        if selected_medium and selected_medium != "選択してください":
+            # MASTER_Categories_productに存在するカテゴリーを除外
+            tree = get_category_tree()
+            small_categories = sorted([cat for cat in all_small if cat not in tree])
+        else:
             small_categories = get_small_categories_by_medium(selected_medium)
 
-        with col3:
-            # 小分類プルダウン
-            if small_categories:
-                selected_small = st.selectbox(
-                    "📄 小分類",
-                    small_categories,
-                    key="small_cat_select"
-                )
-            else:
-                st.selectbox("📄 小分類", ["中分類を選択してください"], disabled=True)
-                selected_small = None
+    with col3:
+        # 小分類プルダウン
+        if selected_medium is None or selected_medium == "選択してください":
+            st.selectbox("📄 小分類", ["中分類を選択してください"], disabled=True)
+            selected_small = None
+        elif small_categories:
+            selected_small = st.selectbox(
+                "📄 小分類",
+                ["選択してください"] + small_categories,
+                key="small_cat_select"
+            )
+        else:
+            st.selectbox("📄 小分類", ["該当なし"], disabled=True)
+            selected_small = None
 
-        # 小分類が選択されたら商品を表示
-        if selected_small:
-            # 選択した小カテゴリの商品を取得
+    # 商品を表示（部分選択対応）
+    products = None
+    display_path = ""
+
+    # 大分類のみ選択（中分類が「選択してください」）
+    if selected_large and selected_large != "選択してください" and (selected_medium is None or selected_medium == "選択してください"):
+        # この大分類配下の全商品を取得（category_idで絞り込み）
+        tree = get_category_tree()
+        if selected_large in tree:
+            # 大分類のIDを取得
+            large_cat_id = tree[selected_large]['id']
+            # この大分類配下の全てのカテゴリーIDを取得（再帰的に）
+            def get_all_descendant_ids(cat_name):
+                ids = [tree[cat_name]['id']]
+                for child in tree[cat_name]['children']:
+                    ids.extend(get_all_descendant_ids(child))
+                return ids
+
+            all_cat_ids = get_all_descendant_ids(selected_large)
+            # category_idで絞り込み
             products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, organization, current_price_tax_included'
-            ).eq('small_category', selected_small).limit(100).execute()
+            ).in_('category_id', all_cat_ids).limit(1000).execute()
+            display_path = f"📂 {selected_large}"
 
-            st.subheader(f"📂 {selected_large} > {selected_medium} > {selected_small} ({len(products.data)}件)")
+    # 大+中分類選択（小分類が「選択してください」）
+    elif selected_medium and selected_medium not in ["選択してください", "未分類"] and (selected_small is None or selected_small == "選択してください"):
+        # この中分類配下の全商品を取得
+        tree = get_category_tree()
+        if selected_medium in tree:
+            def get_all_descendant_ids(cat_name):
+                ids = [tree[cat_name]['id']]
+                for child in tree[cat_name]['children']:
+                    ids.extend(get_all_descendant_ids(child))
+                return ids
 
-            if products.data:
-                # データフレームに変換
-                df_data = []
-                for p in products.data:
-                    df_data.append({
-                        "ID": p['id'],
-                        "商品名": p['product_name'],
-                        "一般名詞": p.get('general_name', ''),
-                        "小カテゴリ": p.get('small_category', ''),
-                        "店舗": p.get('organization', ''),
-                        "価格": p.get('current_price_tax_included', 0)
-                    })
+            all_cat_ids = get_all_descendant_ids(selected_medium)
+            products = db.table('Rawdata_NETSUPER_items').select(
+                'id, product_name, general_name, small_category, organization, current_price_tax_included'
+            ).in_('category_id', all_cat_ids).limit(1000).execute()
+            display_path = f"📂 {selected_large} > {selected_medium}"
 
-                df = pd.DataFrame(df_data)
+    # 小分類まで選択
+    elif selected_small and selected_small != "選択してください":
+        products = db.table('Rawdata_NETSUPER_items').select(
+            'id, product_name, general_name, small_category, organization, current_price_tax_included'
+        ).eq('small_category', selected_small).limit(100).execute()
 
-                # データエディタで編集
-                edited_df = st.data_editor(
-                    df,
-                    column_config={
-                        "ID": st.column_config.TextColumn("ID", disabled=True, width="small"),
-                        "商品名": st.column_config.TextColumn("商品名", disabled=True, width="large"),
-                        "一般名詞": st.column_config.TextColumn("一般名詞", width="medium"),
-                        "小カテゴリ": st.column_config.TextColumn("小カテゴリ", width="medium"),
-                        "店舗": st.column_config.TextColumn("店舗", disabled=True, width="medium"),
-                        "価格": st.column_config.NumberColumn("価格", disabled=True, width="small")
-                    },
-                    hide_index=True,
-                    key=f"editor_category_{selected_small}"
-                )
+        if selected_large == "未分類":
+            display_path = f"📂 未分類 > 未分類 > {selected_small}"
+        else:
+            display_path = f"📂 {selected_large} > {selected_medium} > {selected_small}"
 
-                # 保存ボタン
-                if st.button("💾 変更を保存", type="primary", key="save_category"):
-                    # 変更を反映
-                    current_time = datetime.now(timezone.utc).isoformat()
-                    success_count = 0
-                    has_verified_column = True
+    if products and products.data:
+        st.subheader(f"{display_path} ({len(products.data)}件)")
 
-                    for idx, row in edited_df.iterrows():
-                        product_id = row["ID"]
+        # カテゴリー名からID逆引き用の辞書を作成
+        tree = get_category_tree()
+
+        # 各商品のcategory_idから大・中・小カテゴリーを取得する関数
+        def get_category_hierarchy_from_id(category_id):
+            if not category_id:
+                return "未分類", "未分類", ""
+
+            # category_idから該当するカテゴリー名を見つける
+            cat_name = next((name for name, data in tree.items() if data['id'] == category_id), None)
+            if not cat_name:
+                return "未分類", "未分類", ""
+
+            # 小カテゴリー名
+            small = cat_name
+
+            # 中カテゴリー名（親）
+            parent_id = tree[cat_name]['parent_id']
+            medium = next((name for name, data in tree.items() if data['id'] == parent_id), "未分類") if parent_id else "未分類"
+
+            # 大カテゴリー名（親の親）
+            if medium != "未分類" and tree[medium]['parent_id']:
+                large = next((name for name, data in tree.items() if data['id'] == tree[medium]['parent_id']), "未分類")
+            else:
+                large = "未分類"
+
+            return large, medium, small
+
+        # データフレームに変換（ID列を削除、大中分類を追加）
+        df_data = []
+        for p in products.data:
+            large, medium, small = get_category_hierarchy_from_id(p.get('category_id'))
+            # small_categoryフィールドがあればそれを優先
+            if p.get('small_category'):
+                small = p.get('small_category')
+
+            df_data.append({
+                "_id": p['id'],  # 内部用（非表示）
+                "商品名": p['product_name'],
+                "一般名詞": p.get('general_name', ''),
+                "大分類": large,
+                "中分類": medium,
+                "小分類": small,
+                "店舗": p.get('organization', ''),
+                "価格": p.get('current_price_tax_included', 0)
+            })
+
+        df = pd.DataFrame(df_data)
+
+        # データエディタで編集
+        edited_df = st.data_editor(
+            df,
+            column_config={
+                "_id": None,  # 非表示
+                "商品名": st.column_config.TextColumn("商品名", disabled=True, width="large"),
+                "一般名詞": st.column_config.TextColumn("一般名詞", width="medium"),
+                "大分類": st.column_config.TextColumn("大分類", width="small"),
+                "中分類": st.column_config.TextColumn("中分類", width="small"),
+                "小分類": st.column_config.TextColumn("小分類", width="medium"),
+                "店舗": st.column_config.TextColumn("店舗", disabled=True, width="small"),
+                "価格": st.column_config.NumberColumn("価格", disabled=True, width="small")
+            },
+            hide_index=True,
+            key=f"editor_category_{selected_large}_{selected_medium}_{selected_small}"
+        )
+
+        # 保存ボタン
+        if st.button("💾 変更を保存", type="primary", key="save_category"):
+            # 変更を反映
+            current_time = datetime.now(timezone.utc).isoformat()
+            success_count = 0
+            has_verified_column = True
+
+            for idx, row in edited_df.iterrows():
+                product_id = row["_id"]
+                update_data = {
+                    "general_name": row["一般名詞"],
+                    "small_category": row["小分類"]
+                }
+
+                # manually_verified カラムが存在する場合のみ追加
+                if has_verified_column:
+                    update_data["manually_verified"] = True
+                    update_data["last_verified_at"] = current_time
+
+                try:
+                    db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                    success_count += 1
+                except Exception as e:
+                    # manually_verified カラムが存在しない場合、フラグなしで再試行
+                    if "manually_verified" in str(e) and has_verified_column:
+                        has_verified_column = False
                         update_data = {
                             "general_name": row["一般名詞"],
-                            "small_category": row["小カテゴリ"]
+                            "small_category": row["小分類"]
                         }
-
-                        # manually_verified カラムが存在する場合のみ追加
-                        if has_verified_column:
-                            update_data["manually_verified"] = True
-                            update_data["last_verified_at"] = current_time
-
-                        try:
-                            db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
-                            success_count += 1
-                        except Exception as e:
-                            # manually_verified カラムが存在しない場合、フラグなしで再試行
-                            if "manually_verified" in str(e) and has_verified_column:
-                                has_verified_column = False
-                                update_data = {
-                                    "general_name": row["一般名詞"],
-                                    "small_category": row["小カテゴリ"]
-                                }
-                                db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
-                                success_count += 1
-                            else:
-                                raise
-
-                    if has_verified_column:
-                        st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
+                        db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                        success_count += 1
                     else:
-                        st.success(f"✅ {success_count}件の商品を更新しました")
-                        st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
-                    st.rerun()
+                        raise
+
+            if has_verified_column:
+                st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
+            else:
+                st.success(f"✅ {success_count}件の商品を更新しました")
+                st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
+            st.rerun()
 
 # =============================================================================
 # タブ3: 統計情報
