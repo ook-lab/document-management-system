@@ -10,6 +10,7 @@ D_stage_a_classifier から完全移行
 import json
 from typing import Dict, Any, Optional
 from pathlib import Path
+from string import Template
 from loguru import logger
 
 from C_ai_common.llm_client.llm_client import LLMClient
@@ -112,8 +113,9 @@ class StageISynthesis:
         # Stage H の結果をJSON文字列化
         stageH_json = json.dumps(stageH_result, ensure_ascii=False, indent=2)
 
-        # テンプレート変数を置換
-        prompt = prompt_template.format(
+        # string.Templateを使用してテンプレート変数を置換（JSONの{}と競合しない）
+        template = Template(prompt_template)
+        prompt = template.substitute(
             combined_text=combined_text,
             stageH_result=stageH_json
         )

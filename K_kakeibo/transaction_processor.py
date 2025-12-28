@@ -877,7 +877,7 @@ keywords: ["豚ひき肉", "日本ハム", "200g"]
                 tier="stageh_extraction",
                 prompt=prompt,
                 model_name="gemini-2.5-flash",
-                max_output_tokens=200
+                max_output_tokens=8192
             )
 
             if response.get("success"):

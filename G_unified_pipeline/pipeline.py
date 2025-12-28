@@ -35,6 +35,22 @@ from K_kakeibo.kakeibo_db_handler import KakeiboDBHandler
 class UnifiedDocumentPipeline:
     """統合ドキュメント処理パイプライン (Stage E-K) - 設定ベース版"""
 
+    @staticmethod
+    def _sanitize_text(text: str) -> str:
+        """
+        テキストからnull文字を除去
+
+        Args:
+            text: 入力テキスト
+
+        Returns:
+            サニタイズ済みテキスト
+        """
+        if not text:
+            return text
+        # null文字 (\u0000) を除去
+        return text.replace('\u0000', '')
+
     def __init__(
         self,
         llm_client: Optional[LLMClient] = None,
@@ -102,7 +118,15 @@ class UnifiedDocumentPipeline:
             # Stage E: Pre-processing
             # ============================================
             logger.info("[Stage E] Pre-processing開始...")
-            extracted_text = self.stage_e.process(file_path, mime_type)
+            stage_e_result = self.stage_e.extract_text(file_path, mime_type)
+
+            # Stage E の結果をチェック
+            if not stage_e_result.get('success'):
+                error_msg = f"Stage E失敗: {stage_e_result.get('error', 'テキスト抽出エラー')}"
+                logger.error(f"[Stage E失敗] {error_msg}")
+                return {'success': False, 'error': error_msg}
+
+            extracted_text = stage_e_result.get('text', '')
             logger.info(f"[Stage E完了] 抽出テキスト長: {len(extracted_text)}文字")
 
             # ============================================
@@ -137,6 +161,12 @@ class UnifiedDocumentPipeline:
                 model=model_g,
                 mode="integrate"  # 統合モード
             )
+
+            # Stage G の結果をチェック（空のコンテンツは警告のみ、エラーではない）
+            if not combined_text or not combined_text.strip():
+                logger.warning(f"[Stage G警告] 統合テキストが空です（テキストのないドキュメントの可能性）")
+                combined_text = ""  # 空文字列として継続
+
             logger.info(f"[Stage G完了] 統合テキスト: {len(combined_text)}文字")
 
             # ============================================
@@ -206,9 +236,21 @@ class UnifiedDocumentPipeline:
                     model=model_h
                 )
 
+                # Stage H の結果をチェック
+                if not stageH_result or not isinstance(stageH_result, dict):
+                    error_msg = "Stage H失敗: 構造化結果が不正です"
+                    logger.error(f"[Stage H失敗] {error_msg}")
+                    return {'success': False, 'error': error_msg}
+
+                # フォールバック結果をエラーとして検出
+                stageH_metadata = stageH_result.get('metadata', {})
+                if stageH_metadata.get('extraction_failed'):
+                    error_msg = "Stage H失敗: JSON抽出に失敗しました（フォールバック結果）"
+                    logger.error(f"[Stage H失敗] {error_msg}")
+                    return {'success': False, 'error': error_msg}
+
                 document_date = stageH_result.get('document_date')
                 tags = stageH_result.get('tags', [])
-                stageH_metadata = stageH_result.get('metadata', {})
                 logger.info(f"[Stage H完了]")
 
             # ============================================
@@ -234,7 +276,20 @@ class UnifiedDocumentPipeline:
                     model=model_i
                 )
 
+                # Stage I の結果をチェック
+                if not stageI_result or not isinstance(stageI_result, dict):
+                    error_msg = "Stage I失敗: 統合・要約結果が不正です"
+                    logger.error(f"[Stage I失敗] {error_msg}")
+                    return {'success': False, 'error': error_msg}
+
                 summary = stageI_result.get('summary', '')
+
+                # フォールバック結果をエラーとして検出
+                if summary == '処理に失敗しました':
+                    error_msg = "Stage I失敗: 要約生成に失敗しました（フォールバック結果）"
+                    logger.error(f"[Stage I失敗] {error_msg}")
+                    return {'success': False, 'error': error_msg}
+
                 relevant_date = stageI_result.get('relevant_date')
                 logger.info(f"[Stage I完了]")
 
@@ -256,14 +311,18 @@ class UnifiedDocumentPipeline:
             # ============================================
             document_id = existing_document_id
             try:
+                # テキストフィールドをサニタイズ（null文字を除去）
+                sanitized_combined_text = self._sanitize_text(combined_text)
+                sanitized_summary = self._sanitize_text(summary)
+
                 doc_data = {
                     'source_id': source_id,
                     'source_type': 'unified_pipeline',
                     'file_name': file_name,
                     'workspace': workspace,
                     'doc_type': doc_type,
-                    'attachment_text': combined_text,
-                    'summary': summary,
+                    'attachment_text': sanitized_combined_text,
+                    'summary': sanitized_summary,
                     'tags': tags,
                     'document_date': document_date,
                     'metadata': stageH_metadata,
@@ -312,15 +371,29 @@ class UnifiedDocumentPipeline:
                     logger.warning(f"[Stage K 警告] 既存チャンク削除エラー（継続）: {e}")
 
             # 新しいチャンクを保存
-            self.stage_k.process(chunks, document_id)
-            logger.info(f"[Stage K完了] {len(chunks)}チャンク保存")
+            stage_k_result = self.stage_k.embed_and_save(document_id, chunks)
+
+            # Stage K の結果をチェック（厳格モード: 1つでも失敗したら全体失敗）
+            if not stage_k_result.get('success'):
+                error_msg = f"Stage K失敗: {stage_k_result.get('failed_count', 0)}/{len(chunks)}チャンク保存失敗"
+                logger.error(f"[Stage K失敗] {error_msg}")
+                return {'success': False, 'error': error_msg}
+
+            # 部分的失敗もエラーとして扱う（厳格モード）
+            failed_count = stage_k_result.get('failed_count', 0)
+            if failed_count > 0:
+                error_msg = f"Stage K部分失敗: {failed_count}/{len(chunks)}チャンク保存失敗"
+                logger.error(f"[Stage K失敗] {error_msg}")
+                return {'success': False, 'error': error_msg}
+
+            logger.info(f"[Stage K完了] {stage_k_result.get('saved_count', 0)}/{len(chunks)}チャンク保存")
 
             return {
                 'success': True,
                 'document_id': document_id,
                 'summary': summary,
                 'tags': tags,
-                'chunks_count': len(chunks)
+                'chunks_count': stage_k_result.get('saved_count', 0)
             }
 
         except Exception as e:

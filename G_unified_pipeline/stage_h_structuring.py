@@ -13,6 +13,7 @@ import json
 import json_repair
 from typing import Dict, Any, Optional
 from pathlib import Path
+from string import Template
 from loguru import logger
 from datetime import datetime
 
@@ -64,6 +65,7 @@ class StageHStructuring:
 
         try:
             # プロンプト構築
+            logger.info("[Stage H] プロンプト構築中...")
             full_prompt = self._build_prompt(
                 prompt_template=prompt,
                 file_name=file_name,
@@ -71,13 +73,16 @@ class StageHStructuring:
                 workspace=workspace,
                 combined_text=combined_text
             )
+            logger.info(f"[Stage H] プロンプト構築完了 ({len(full_prompt)}文字)")
 
             # LLM呼び出し
+            logger.info("[Stage H] Claude呼び出し中...")
             response = self.llm.call_model(
                 tier="default",
                 prompt=full_prompt,
                 model_name=model
             )
+            logger.info(f"[Stage H] Claude応答受信: success={response.get('success')}")
 
             if not response.get("success"):
                 logger.error(f"[Stage H エラー] LLM呼び出し失敗: {response.get('error')}")
@@ -85,6 +90,7 @@ class StageHStructuring:
 
             # JSON抽出（リトライ機能付き）
             content = response.get("content", "")
+            logger.info(f"[Stage H] ===== Claudeレスポンス全文 =====\n{content}\n[Stage H] ===== レスポンス終了 =====")
             result = self._extract_json_with_retry(content, model=model, max_retries=2)
 
             # 結果の整形
@@ -119,8 +125,9 @@ class StageHStructuring:
         Returns:
             構築されたプロンプト
         """
-        # テンプレート変数を置換
-        prompt = prompt_template.format(
+        # string.Templateを使用してテンプレート変数を置換（JSONの{}と競合しない）
+        template = Template(prompt_template)
+        prompt = template.substitute(
             file_name=file_name,
             doc_type=doc_type,
             workspace=workspace,
@@ -178,24 +185,45 @@ class StageHStructuring:
         Raises:
             Exception: JSON抽出に失敗した場合
         """
-        # ```json ブロックを探す
-        json_match = re.search(r'```json\s*\n(.*?)\n```', content, re.DOTALL)
-        if json_match:
-            json_str = json_match.group(1)
-        else:
-            # ブロックがない場合、全体をJSONとして扱う
-            json_str = content
+        # 複数のパターンでJSONブロックを探す
+        patterns = [
+            r'```json\s*(.*?)```',  # ```json ... ``` (改行を柔軟に)
+            r'```\s*(.*?)```',      # ``` ... ```
+            r'\{[\s\S]*?\}',        # { ... } (非貪欲)
+        ]
+
+        json_str = None
+        for pattern in patterns:
+            match = re.search(pattern, content, re.DOTALL)
+            if match:
+                json_str = match.group(1) if match.lastindex else match.group(0)
+                json_str = json_str.strip()
+                # { で始まるか確認
+                if json_str.startswith('{'):
+                    break
+                else:
+                    json_str = None
+
+        if not json_str:
+            # パターンマッチしない場合、{ ... } を直接探す
+            match = re.search(r'\{[\s\S]*\}', content, re.DOTALL)
+            if match:
+                json_str = match.group(0).strip()
+            else:
+                json_str = content.strip()
 
         # JSONパース
         try:
             return json.loads(json_str)
         except json.JSONDecodeError as e:
             # json_repair で修復を試みる
-            logger.warning(f"[Stage H] JSON解析失敗、修復を試みます: {e}")
+            logger.error(f"[Stage H] JSON解析失敗: {e}")
+            logger.error(f"[Stage H] 抽出されたJSON（最初の500文字）:\n{json_str[:500]}")
             try:
                 return json_repair.loads(json_str)
             except Exception as repair_error:
                 logger.error(f"[Stage H] JSON修復も失敗: {repair_error}")
+                logger.error(f"[Stage H] 修復失敗したJSON全文:\n{json_str}")
                 raise
 
     def _retry_json_extraction(

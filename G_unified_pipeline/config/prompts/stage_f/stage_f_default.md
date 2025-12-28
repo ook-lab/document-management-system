@@ -25,28 +25,28 @@
 JSON形式で以下の構造で出力してください：
 
 ```json
-{
+{{
   "full_text": "抽出した全テキスト（改行や空白を保持）",
-  "layout_info": {
+  "layout_info": {{
     "sections": [
-      {
+      {{
         "type": "heading/paragraph/table/list",
         "content": "セクションの内容",
         "level": 1
-      }
+      }}
     ],
     "tables": [
-      {
+      {{
         "rows": [["セル1", "セル2"], ["セル3", "セル4"]],
         "caption": "表のキャプション"
-      }
+      }}
     ]
-  },
-  "visual_elements": {
+  }},
+  "visual_elements": {{
     "emphasized_text": ["強調されているテキスト"],
     "notes": ["注釈・コメント"]
-  }
-}
+  }}
+}}
 ```
 
 **重要:**

@@ -31,8 +31,9 @@ BEGIN
     RAISE NOTICE '  - より正確な分類が期待できる';
     RAISE NOTICE '';
     RAISE NOTICE '次のステップ:';
-    RAISE NOTICE '  1. python K_kakeibo/sync_netsuper_general_names.py';
-    RAISE NOTICE '  2. python netsuper_search_app/generate_multi_embeddings.py';
+    RAISE NOTICE '  1. python K_kakeibo/cleanup_generated_data.py --all';
+    RAISE NOTICE '  2. python -m L_product_classification.daily_auto_classifier';
+    RAISE NOTICE '  3. python netsuper_search_app/generate_multi_embeddings.py';
     RAISE NOTICE '====================================================================';
 END $$;
 

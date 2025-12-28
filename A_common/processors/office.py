@@ -135,3 +135,22 @@ class OfficeProcessor:
         except Exception as e:
             # logger.error(f"PPTXテキスト抽出エラー ({file_path}): {e}")
             return {"content": "", "metadata": {"file_type": "pptx", "error": str(e)}, "success": False, "error_message": str(e)}
+
+    def extract_text(self, file_path: str) -> Dict[str, Any]:
+        """ファイルタイプに応じてテキストを抽出する（ディスパッチメソッド）"""
+        file_path = Path(file_path)
+        extension = file_path.suffix.lower()
+
+        if extension == '.docx':
+            return self.extract_from_docx(file_path)
+        elif extension == '.xlsx':
+            return self.extract_from_xlsx(file_path)
+        elif extension == '.pptx':
+            return self.extract_from_pptx(file_path)
+        else:
+            return {
+                "content": "",
+                "metadata": {"file_type": extension, "error": "Unsupported file type"},
+                "success": False,
+                "error_message": f"Unsupported file type: {extension}"
+            }

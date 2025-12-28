@@ -60,16 +60,21 @@ class StageKEmbedding:
 
         for chunk in chunks:
             try:
+                # null文字を除去
+                chunk_text = chunk['chunk_text'].replace('\u0000', '') if chunk['chunk_text'] else ''
+
                 # Embedding生成
-                embedding = self.llm_client.generate_embedding(chunk['chunk_text'])
+                embedding = self.llm_client.generate_embedding(chunk_text)
 
                 # search_indexに保存
                 chunk_data = {
                     'document_id': document_id,
-                    'chunk_content': chunk['chunk_text'],
+                    'chunk_content': chunk_text,
+                    'chunk_size': len(chunk_text),
                     'chunk_type': chunk['chunk_type'],
                     'embedding': embedding,
-                    'search_weight': chunk.get('search_weight', 1.0)
+                    'search_weight': chunk.get('search_weight', 1.0),
+                    'chunk_index': chunk.get('chunk_index', 0)
                 }
 
                 self.db.client.table('10_ix_search_index').insert(chunk_data).execute()
@@ -95,4 +100,4 @@ class StageKEmbedding:
             chunks: チャンクリスト
             document_id: ドキュメントID
         """
-        self.embed_and_save(chunks, document_id)
+        self.embed_and_save(document_id, chunks)

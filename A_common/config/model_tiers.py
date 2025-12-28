@@ -24,7 +24,7 @@ class ModelTier:
         "model": "gemini-2.5-flash",
         "description": "100万トークンコンテキスト、高速で安定した対話応答",
         "temperature": 0.7,
-        "max_tokens": 4096,
+        "max_tokens": 65536,  # Gemini 2.5 Flashの最大出力トークン数
         "cost_per_1k_tokens": 0.0003
     }
 

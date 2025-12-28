@@ -260,20 +260,37 @@ class CategoryManager:
         updates: Dict[str, Any]
     ):
         """
-        カテゴリー情報を更新
+        カテゴリー情報を更新（存在しない場合は新規作成）
 
         Args:
             store_name: 店舗名
             category_name: カテゴリー名
             updates: 更新する内容（enabled, next_run_datetime, interval_days など）
         """
+        # 店舗が存在しない場合は作成
+        if store_name not in self.config:
+            self.config[store_name] = []
+
         category = self._find_category(store_name, category_name)
         if category is not None:
+            # 既存カテゴリーを更新
             category.update(updates)
             self.save_config()
             logger.info(f"カテゴリー {category_name} を更新しました")
         else:
-            logger.warning(f"カテゴリー {category_name} が見つかりません（店舗: {store_name}）")
+            # 新規カテゴリーを作成
+            new_category = {
+                "name": category_name,
+                "url": updates.get("url", ""),
+                "enabled": updates.get("enabled", True),
+                "start_date": updates.get("start_date", datetime.now().strftime("%Y-%m-%d")),
+                "interval_days": updates.get("interval_days", 7),
+                "last_run": updates.get("last_run", None),
+                "notes": updates.get("notes", "")
+            }
+            self.config[store_name].append(new_category)
+            self.save_config()
+            logger.info(f"✅ 新規カテゴリー {category_name} を追加しました（店舗: {store_name}）")
 
 
 if __name__ == "__main__":

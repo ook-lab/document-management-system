@@ -375,14 +375,15 @@ class ClassroomReprocessorV2:
                 local_path = self.drive.download_file(file_id, file_name, self.temp_dir)
                 logger.info(f"ダウンロード完了: {local_path}")
 
-                # Stage E-K で処理
+                # Stage E-K で処理（既存ドキュメントを更新）
                 result = await self._process_document_stages(
                     file_path=Path(local_path),
                     file_name=file_name,
                     doc_type=file_meta.get('doc_type', 'other'),
                     workspace=workspace_to_use,
                     mime_type=file_meta.get('mimeType', 'application/octet-stream'),
-                    source_id=file_id
+                    source_id=file_id,
+                    existing_document_id=document_id  # 既存ドキュメントを更新
                 )
 
                 if result and result.get('success'):
@@ -520,19 +521,33 @@ class ClassroomReprocessorV2:
                 'workspace': doc.get('workspace', 'unknown')
             }
 
-            stageh_result = stageh_extractor.extract_metadata(
+            stageh_result = stageH_extractor.process(
                 file_name=file_name,
-                stagea_result=stagei_result_for_stageh,  # doc_typeとworkspaceのみ
+                doc_type=doc.get('doc_type', 'unknown'),
                 workspace=doc.get('workspace', 'unknown'),
-                attachment_text=attachment_text if attachment_text else None,
-                display_subject=display_subject if display_subject else None,
-                display_post_text=display_post_text if display_post_text else None,
+                combined_text=text_content,
+                prompt=yaml_string,
+                model='claude-haiku-4-5-20251001'
             )
+
+            # Stage Hの結果をチェック
+            if not stageh_result or not isinstance(stageh_result, dict):
+                error_msg = "Stage H失敗: 構造化結果が不正です"
+                logger.error(f"[Stage H失敗] {error_msg}")
+                await self._mark_as_failed(queue_id, error_msg)
+                return
 
             # Stage Hの結果を取得
             document_date = stageh_result.get('document_date')
             tags = stageh_result.get('tags', [])
             stageh_metadata = stageh_result.get('metadata', {})
+
+            # フォールバック結果をエラーとして検出
+            if stageh_metadata.get('extraction_failed'):
+                error_msg = "Stage H失敗: JSON抽出に失敗しました（フォールバック結果）"
+                logger.error(f"[Stage H失敗] {error_msg}")
+                await self._mark_as_failed(queue_id, error_msg)
+                return
 
             logger.info(f"[Stage H] 完了: metadata_fields={len(stageh_metadata)}")
 
@@ -876,19 +891,33 @@ class ClassroomReprocessorV2:
                 'workspace': doc.get('workspace', 'unknown')
             }
 
-            stagec_result = stageh_extractor.extract_metadata(
+            stagec_result = stageH_extractor.process(
                 file_name=file_name,
-                stagea_result=stagea_result_for_stagec,
+                doc_type=doc.get('doc_type', 'unknown'),
                 workspace=doc.get('workspace', 'unknown'),
-                attachment_text=None,  # 動画は処理しない
-                display_subject=display_subject if display_subject else None,
-                display_post_text=display_post_text if display_post_text else None,
+                combined_text=text_content,
+                prompt=yaml_string,
+                model='claude-haiku-4-5-20251001'
             )
+
+            # Stage Hの結果をチェック
+            if not stagec_result or not isinstance(stagec_result, dict):
+                error_msg = "Stage H失敗: 構造化結果が不正です"
+                logger.error(f"[Stage H失敗] {error_msg}")
+                await self._mark_as_failed(document_id, error_msg)
+                return
 
             # Stage Hの結果を取得
             document_date = stagec_result.get('document_date')
             tags = stagec_result.get('tags', [])
             stagec_metadata = stagec_result.get('metadata', {})
+
+            # フォールバック結果をエラーとして検出
+            if stagec_metadata.get('extraction_failed'):
+                error_msg = "Stage H失敗: JSON抽出に失敗しました（フォールバック結果）"
+                logger.error(f"[Stage H失敗] {error_msg}")
+                await self._mark_as_failed(document_id, error_msg)
+                return
 
             logger.info(f"[Stage H] 完了: metadata_fields={len(stagec_metadata)}")
 

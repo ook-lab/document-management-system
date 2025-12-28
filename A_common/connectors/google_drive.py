@@ -167,11 +167,20 @@ class GoogleDriveConnector:
             return str(dest_path)
 
         except Exception as e:
-            # loguruのフォーマットエラーを回避するため、文字列連結を使用
-            logger.error("ファイルダウンロードエラー: " + file_name)
-            logger.error(f"エラー内容: {str(e)}")
-            logger.error(f"エラータイプ: {type(e).__name__}")
-            logger.debug("エラー詳細", exc_info=True)
+            # 404エラー（ファイル未存在）は想定内の動作なのでINFOレベルで記録
+            error_str = str(e)
+            is_404 = 'File not found' in error_str or '404' in error_str or 'not found' in error_str.lower()
+
+            if is_404:
+                logger.info(f"ファイルが見つかりません（想定内）: {file_name}")
+                logger.debug(f"404詳細: {error_str}")
+            else:
+                # 404以外の実際のエラーはERRORレベルで記録
+                logger.error("ファイルダウンロードエラー: " + file_name)
+                logger.error(f"エラー内容: {error_str}")
+                logger.error(f"エラータイプ: {type(e).__name__}")
+                logger.debug("エラー詳細", exc_info=True)
+
             # エラーを再スローして呼び出し側で処理できるようにする
             raise
 

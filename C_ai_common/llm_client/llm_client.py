@@ -53,7 +53,7 @@ class LLMClient:
         image_data: Union[str, List[str]],
         model: str = "gemini-2.5-flash-lite",
         temperature: float = 0.0,
-        max_tokens: int = 2048
+        max_tokens: int = 8192
     ) -> str:
         """
         画像データを使ってGemini Vision APIを呼び出し
@@ -168,6 +168,15 @@ class LLMClient:
         provider = config["provider"]
         # kwargsからmodel_nameが渡されていればそれを優先、なければconfigから取得
         model_name = kwargs.pop('model_name', None) or config["model"]
+
+        # モデル名からプロバイダーを自動判定（明示的なmodel_name指定時）
+        if model_name:
+            if 'claude' in model_name.lower():
+                provider = AIProvider.CLAUDE
+            elif 'gemini' in model_name.lower():
+                provider = AIProvider.GEMINI
+            elif 'gpt' in model_name.lower() or 'text-embedding' in model_name.lower():
+                provider = AIProvider.OPENAI
 
         if provider == AIProvider.GEMINI:
             if not self.gemini_api_key:
@@ -326,9 +335,15 @@ class LLMClient:
             from loguru import logger
             logger.debug(f"[Claude CALL] Model: {model_name}, Prompt start: {prompt[:300]}...")
 
+            # Claudeの最大トークン数制限を適用
+            max_tokens = config.get("max_tokens", 8192)
+            # Claude Haiku 4.5: 64000, Claude 3.x系: 4096-8192
+            if max_tokens > 64000:
+                max_tokens = 64000
+
             response = self.anthropic_client.messages.create(
                 model=model_name,
-                max_tokens=config.get("max_tokens", 4096),
+                max_tokens=max_tokens,
                 temperature=config.get("temperature", 0.0),
                 messages=[
                     {"role": "user", "content": prompt}
@@ -365,7 +380,7 @@ class LLMClient:
         try:
             # ✅ GPT-5.1では max_completion_tokens を使用、旧モデルでは max_tokens（後方互換性）
             max_completion_tokens = config.get("max_completion_tokens")
-            max_tokens = config.get("max_tokens", 2048)
+            max_tokens = config.get("max_tokens", 16384)
 
             # パラメータを動的に構築
             api_params = {

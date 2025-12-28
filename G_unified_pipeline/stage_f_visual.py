@@ -135,6 +135,12 @@ class StageFVisualAnalyzer:
             logger.error(f"[Stage F エラー] ファイルが存在しません: {file_path}")
             return ""
 
+        # Gemini Vision APIがサポートしていないファイルタイプをスキップ
+        unsupported_extensions = {'.pptx', '.ppt', '.doc', '.docx', '.xls', '.xlsx'}
+        if file_path.suffix.lower() in unsupported_extensions:
+            logger.info(f"[Stage F] スキップ: {file_path.suffix} はVision APIでサポートされていません")
+            return ""
+
         try:
             # Gemini Vision でOCR + レイアウト解析
             vision_raw = self.llm_client.generate_with_vision(

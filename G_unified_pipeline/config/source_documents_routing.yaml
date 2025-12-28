@@ -50,6 +50,24 @@ routing:
           prompt_key: "classroom"
           model_key: "classroom"
 
+    # 早稲田アカデミー
+    waseda_academy:
+      description: "早稲田アカデミーのドキュメント"
+      schema: "classroom"
+      stages:
+        stage_f:
+          prompt_key: "classroom"
+          model_key: "classroom"
+        stage_g:
+          prompt_key: "classroom"
+          model_key: "classroom"
+        stage_h:
+          prompt_key: "classroom"
+          model_key: "classroom"
+        stage_i:
+          prompt_key: "classroom"
+          model_key: "classroom"
+
   # ============================================
   # doc_type ベースのルート（優先順位2）
   # ============================================
@@ -77,6 +95,12 @@ routing:
       description: "Google Classroomドキュメント"
       schema: "classroom"
       stages:
+        stage_f:
+          prompt_key: "classroom"
+          model_key: "classroom"
+        stage_g:
+          prompt_key: "classroom"
+          model_key: "classroom"
         stage_h:
           prompt_key: "classroom"
           model_key: "classroom"

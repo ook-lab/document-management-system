@@ -295,8 +295,8 @@ class WasedaNoticeIngestionPipeline:
                     'file_type': 'pdf',
                     'doc_type': '早稲アカオンライン',  # 固定値
                     'workspace': 'waseda_academy',
-                    'person': '育哉',  # 担当者
-                    'organization': '早稲田アカデミー',  # 組織
+                    'person': ['育哉'],  # 担当者（配列形式）
+                    'organization': ['早稲田アカデミー'],  # 組織（配列形式）
                     'attachment_text': '',  # 空（process_queued_documents.py で抽出）
                     'summary': '',  # 空（process_queued_documents.py で生成）
                     'tags': [category.get('label', 'その他')],

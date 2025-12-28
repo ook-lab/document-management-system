@@ -7,6 +7,7 @@ Stage F で抽出した生テキストをAIが読める形式に整形
 - 重要性: 視覚情報を失わずに構造化（Stage H）に渡すための重要工程
 """
 from typing import Dict, Any
+from string import Template
 from loguru import logger
 
 from C_ai_common.llm_client.llm_client import LLMClient
@@ -137,8 +138,9 @@ class StageGTextFormatter:
         logger.info(f"[Stage G] Text Formatting開始... (model={model})")
 
         try:
-            # プロンプトテンプレートに vision_raw を挿入 (.replace() を使用してJSON内の { } を保護)
-            prompt = prompt_template.replace('{vision_raw}', vision_raw)
+            # string.Templateを使用してテンプレート変数を置換（JSONの{}と競合しない）
+            template = Template(prompt_template)
+            prompt = template.substitute(vision_raw=vision_raw)
 
             response = self.llm_client.call_model(
                 tier="default",

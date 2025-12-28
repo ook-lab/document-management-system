@@ -27,29 +27,29 @@
 JSON形式で以下の構造で出力してください：
 
 ```json
-{
+{{
   "full_text": "抽出した全テキスト（改行や空白を保持）",
-  "layout_info": {
+  "layout_info": {{
     "sections": [
-      {
+      {{
         "type": "heading/product_group/sale_section",
         "content": "セクションの内容",
         "level": 1
-      }
+      }}
     ],
     "product_items": [
-      {
+      {{
         "position": "左上",
         "text": "商品名と価格のテキスト"
-      }
+      }}
     ]
-  },
-  "visual_elements": {
+  }},
+  "visual_elements": {{
     "emphasized_prices": ["198円", "特価380円"],
     "sale_periods": ["3/15～3/20"],
     "notes": ["ポイント5倍", "数量限定"]
-  }
-}
+  }}
+}}
 ```
 
 **重要:**
