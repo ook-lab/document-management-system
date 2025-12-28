@@ -104,7 +104,7 @@ def get_category_tree():
 # 大分類（親なし）を取得（商品数付き）
 @st.cache_data(ttl=60)
 def get_large_categories():
-    """大分類（parent_id が null）を取得（件数表示）"""
+    """大分類（parent_id が null）を取得（商品1件以上のみ、件数表示）"""
     # 全大分類を取得
     categories = db.table('MASTER_Categories_product').select('id, name').is_('parent_id', 'null').execute()
 
@@ -116,6 +116,15 @@ def get_large_categories():
         cat_name = cat['name']
         cat_id = cat['id']
 
+        # 配下の全カテゴリー名を取得（small_categoryとのマッチング用）
+        def get_all_descendant_names(name):
+            if name not in tree:
+                return []
+            names = [name]
+            for child in tree[name]['children']:
+                names.extend(get_all_descendant_names(child))
+            return names
+
         # 配下の全カテゴリーIDを取得
         def get_all_descendant_ids(name):
             if name not in tree:
@@ -126,23 +135,28 @@ def get_large_categories():
             return ids
 
         all_ids = get_all_descendant_ids(cat_name)
+        all_names = get_all_descendant_names(cat_name)
 
-        # ツリーに存在しない場合は、IDだけで商品数をカウント
-        if not all_ids:
-            all_ids = [cat_id]
+        # category_idでカウント
+        count = 0
+        if all_ids:
+            count_result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
+            count += count_result.count if count_result.count else 0
 
-        # 商品数をカウント
-        count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
-        count = count_result.count if count_result.count else 0
+        # small_category（テキスト）でもカウント
+        for name in all_names:
+            count_result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', name).execute()
+            count += count_result.count if count_result.count else 0
 
-        # 全カテゴリーを表示（商品数も表示）
-        cat_with_counts[f"{cat_name} ({count}件)"] = cat_name
+        # 商品が1件以上ある場合のみ追加
+        if count > 0:
+            cat_with_counts[f"{cat_name} ({count}件)"] = cat_name
 
     return cat_with_counts
 
 # 中分類を取得（商品数付き）
 def get_medium_categories(large_category_name):
-    """指定した大分類の子カテゴリを取得（件数表示）"""
+    """指定した大分類の子カテゴリを取得（商品1件以上のみ、件数表示）"""
     tree = get_category_tree()
     if large_category_name not in tree:
         return {}
@@ -151,6 +165,15 @@ def get_medium_categories(large_category_name):
     cat_with_counts = {}
 
     for child_name in children:
+        # 配下の全カテゴリー名を取得
+        def get_all_descendant_names(name):
+            if name not in tree:
+                return []
+            names = [name]
+            for c in tree[name]['children']:
+                names.extend(get_all_descendant_names(c))
+            return names
+
         # 配下の全カテゴリーIDを取得
         def get_all_descendant_ids(name):
             if name not in tree:
@@ -161,20 +184,22 @@ def get_medium_categories(large_category_name):
             return ids
 
         all_ids = get_all_descendant_ids(child_name)
+        all_names = get_all_descendant_names(child_name)
 
-        # ツリーに存在しない場合でも、直接IDで検索
-        if not all_ids and child_name in tree:
-            all_ids = [tree[child_name]['id']]
-
+        # category_idでカウント
+        count = 0
         if all_ids:
-            # 商品数をカウント
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
-            count = count_result.count if count_result.count else 0
-        else:
-            count = 0
+            count_result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
+            count += count_result.count if count_result.count else 0
 
-        # 全カテゴリーを表示（商品数も表示）
-        cat_with_counts[f"{child_name} ({count}件)"] = child_name
+        # small_category（テキスト）でもカウント
+        for name in all_names:
+            count_result = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', name).execute()
+            count += count_result.count if count_result.count else 0
+
+        # 商品が1件以上ある場合のみ追加
+        if count > 0:
+            cat_with_counts[f"{child_name} ({count}件)"] = child_name
 
     return cat_with_counts
 
@@ -189,15 +214,21 @@ def get_small_categories_by_medium(medium_category_name):
     cat_with_counts = {}
 
     for child_name in children:
+        # category_idとsmall_categoryの両方でカウント
         count = 0
         if child_name in tree:
             cat_id = tree[child_name]['id']
-            # 商品数をカウント（小分類は直接カウント）
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
-            count = count_result.count if count_result.count else 0
+            # category_idでカウント
+            count_by_id = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
+            count += count_by_id.count if count_by_id.count else 0
 
-        # 全カテゴリーを表示（商品数も表示）
-        cat_with_counts[f"{child_name} ({count}件)"] = child_name
+        # small_category（テキストフィールド）でもカウント
+        count_by_name = db.client.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', child_name).execute()
+        count += count_by_name.count if count_by_name.count else 0
+
+        # 商品が1件以上ある場合のみ追加
+        if count > 0:
+            cat_with_counts[f"{child_name} ({count}件)"] = child_name
 
     return cat_with_counts
 
