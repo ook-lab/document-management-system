@@ -135,18 +135,12 @@ def get_large_categories():
             return ids
 
         all_ids = get_all_descendant_ids(cat_name)
-        all_names = get_all_descendant_names(cat_name)
 
-        # category_idでカウント
+        # category_id（UUID）でカウント
         count = 0
         if all_ids:
             count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
-            count += count_result.count if count_result.count else 0
-
-        # small_category（テキスト）でもカウント
-        for name in all_names:
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', name).execute()
-            count += count_result.count if count_result.count else 0
+            count = count_result.count if count_result.count else 0
 
         # 商品が1件以上ある場合のみ追加
         if count > 0:
@@ -184,18 +178,12 @@ def get_medium_categories(large_category_name):
             return ids
 
         all_ids = get_all_descendant_ids(child_name)
-        all_names = get_all_descendant_names(child_name)
 
-        # category_idでカウント
+        # category_id（UUID）でカウント
         count = 0
         if all_ids:
             count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
-            count += count_result.count if count_result.count else 0
-
-        # small_category（テキスト）でもカウント
-        for name in all_names:
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', name).execute()
-            count += count_result.count if count_result.count else 0
+            count = count_result.count if count_result.count else 0
 
         # 商品が1件以上ある場合のみ追加
         if count > 0:
@@ -214,17 +202,12 @@ def get_small_categories_by_medium(medium_category_name):
     cat_with_counts = {}
 
     for child_name in children:
-        # category_idとsmall_categoryの両方でカウント
+        # category_id（UUID）でカウント
         count = 0
         if child_name in tree:
             cat_id = tree[child_name]['id']
-            # category_idでカウント
-            count_by_id = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
-            count += count_by_id.count if count_by_id.count else 0
-
-        # small_category（テキストフィールド）でもカウント
-        count_by_name = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('small_category', child_name).execute()
-        count += count_by_name.count if count_by_name.count else 0
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
+            count = count_result.count if count_result.count else 0
 
         # 商品が1件以上ある場合のみ追加
         if count > 0:
@@ -477,9 +460,16 @@ with tabs[1]:
 
     # 小分類まで選択されている場合
     if selected_small and selected_small != "選択してください":
-        products = db.table('Rawdata_NETSUPER_items').select(
-            'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-        ).eq('small_category', selected_small).limit(100).execute()
+        tree = get_category_tree()
+        if selected_small in tree:
+            small_id = tree[selected_small]['id']
+            products = db.table('Rawdata_NETSUPER_items').select(
+                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+            ).eq('category_id', small_id).limit(100).execute()
+        else:
+            products = db.table('Rawdata_NETSUPER_items').select(
+                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+            ).limit(0).execute()  # 該当なし
 
         if selected_large == "未分類":
             display_path = f"📂 未分類 > 未分類 > {selected_small}"
@@ -489,80 +479,33 @@ with tabs[1]:
     # 大+中分類選択、小分類は未選択
     elif selected_medium and selected_medium not in ["選択してください", "未分類", None]:
         all_cat_ids = get_all_descendant_ids(selected_medium)
-        all_cat_names = get_all_descendant_names(selected_medium)
 
-        # category_id と small_category の両方で検索
-        products_list = []
+        # category_id（UUID）で検索
         if all_cat_ids:
-            result1 = db.table('Rawdata_NETSUPER_items').select(
+            products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
             ).in_('category_id', all_cat_ids).limit(1000).execute()
-            products_list.extend(result1.data)
-
-        for name in all_cat_names:
-            result2 = db.table('Rawdata_NETSUPER_items').select(
+        else:
+            products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-            ).eq('small_category', name).limit(1000).execute()
-            products_list.extend(result2.data)
+            ).limit(0).execute()  # 該当なし
 
-        # 重複を除去（IDでユニーク化）
-        seen_ids = set()
-        unique_products = []
-        for p in products_list:
-            if p['id'] not in seen_ids:
-                seen_ids.add(p['id'])
-                unique_products.append(p)
-
-        # Supabaseレスポンスと同じ構造のオブジェクトを作成
-        class _Result:
-            def __init__(self, data):
-                self.data = data
-        products = _Result(unique_products[:1000])
         display_path = f"📂 {selected_large} > {selected_medium} （配下全て）"
 
     # 大分類のみ選択、中分類は未選択
     elif selected_large and selected_large not in ["選択してください", "未分類"]:
         all_cat_ids = get_all_descendant_ids(selected_large)
-        all_cat_names = get_all_descendant_names(selected_large)
 
-        # デバッグ情報
-        st.info(f"🔍 デバッグ: 「{selected_large}」の配下カテゴリ {len(all_cat_names)}件を検索中...")
-
-        # category_id と small_category の両方で検索
-        products_list = []
+        # category_id（UUID）で検索
         if all_cat_ids:
-            result1 = db.table('Rawdata_NETSUPER_items').select(
+            products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
             ).in_('category_id', all_cat_ids).limit(1000).execute()
-            products_list.extend(result1.data)
-            if len(result1.data) > 0:
-                st.info(f"  category_id検索: {len(result1.data)}件")
-
-        for name in all_cat_names:
-            result2 = db.table('Rawdata_NETSUPER_items').select(
+        else:
+            products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-            ).eq('small_category', name).limit(1000).execute()
-            if len(result2.data) > 0:
-                st.info(f"  「{name}」: {len(result2.data)}件")
-            products_list.extend(result2.data)
+            ).limit(0).execute()  # 該当なし
 
-        st.info(f"検索結果合計: {len(products_list)}件（重複含む）")
-
-        # 重複を除去（IDでユニーク化）
-        seen_ids = set()
-        unique_products = []
-        for p in products_list:
-            if p['id'] not in seen_ids:
-                seen_ids.add(p['id'])
-                unique_products.append(p)
-
-        st.info(f"重複除去後: {len(unique_products)}件")
-
-        # Supabaseレスポンスと同じ構造のオブジェクトを作成
-        class _Result:
-            def __init__(self, data):
-                self.data = data
-        products = _Result(unique_products[:1000])
         display_path = f"📂 {selected_large} （配下全て）"
 
     if products and products.data:
