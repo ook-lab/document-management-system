@@ -132,85 +132,85 @@ with tabs[0]:
                 on_change=lambda: setattr(st.session_state, 'general_name_index', filtered_names.index(st.session_state.general_name_select) if st.session_state.general_name_select in filtered_names else 0)
             )
 
-        if selected_general_name:
-            # 選択した一般名詞の商品を取得
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, organization, current_price_tax_included'
-            ).eq('general_name', selected_general_name).limit(100).execute()
+            if selected_general_name:
+                # 選択した一般名詞の商品を取得
+                products = db.table('Rawdata_NETSUPER_items').select(
+                    'id, product_name, general_name, small_category, organization, current_price_tax_included'
+                ).eq('general_name', selected_general_name).limit(100).execute()
 
-            st.subheader(f"一般名詞: {selected_general_name} ({len(products.data)}件)")
+                st.subheader(f"一般名詞: {selected_general_name} ({len(products.data)}件)")
 
-            if products.data:
-                # データフレームに変換
-                df_data = []
-                for p in products.data:
-                    df_data.append({
-                        "ID": p['id'],
-                        "商品名": p['product_name'],
-                        "一般名詞": p.get('general_name', ''),
-                        "小カテゴリ": p.get('small_category', ''),
-                        "店舗": p.get('organization', ''),
-                        "価格": p.get('current_price_tax_included', 0)
-                    })
+                if products.data:
+                    # データフレームに変換
+                    df_data = []
+                    for p in products.data:
+                        df_data.append({
+                            "ID": p['id'],
+                            "商品名": p['product_name'],
+                            "一般名詞": p.get('general_name', ''),
+                            "小カテゴリ": p.get('small_category', ''),
+                            "店舗": p.get('organization', ''),
+                            "価格": p.get('current_price_tax_included', 0)
+                        })
 
-                df = pd.DataFrame(df_data)
+                    df = pd.DataFrame(df_data)
 
-                # データエディタで編集
-                edited_df = st.data_editor(
-                    df,
-                    column_config={
-                        "ID": st.column_config.TextColumn("ID", disabled=True, width="small"),
-                        "商品名": st.column_config.TextColumn("商品名", disabled=True, width="large"),
-                        "一般名詞": st.column_config.TextColumn("一般名詞", width="medium"),
-                        "小カテゴリ": st.column_config.TextColumn("小カテゴリ", width="medium"),
-                        "店舗": st.column_config.TextColumn("店舗", disabled=True, width="medium"),
-                        "価格": st.column_config.NumberColumn("価格", disabled=True, width="small")
-                    },
-                    hide_index=True,
-                    key=f"editor_general_{selected_general_name}"
-                )
+                    # データエディタで編集
+                    edited_df = st.data_editor(
+                        df,
+                        column_config={
+                            "ID": st.column_config.TextColumn("ID", disabled=True, width="small"),
+                            "商品名": st.column_config.TextColumn("商品名", disabled=True, width="large"),
+                            "一般名詞": st.column_config.TextColumn("一般名詞", width="medium"),
+                            "小カテゴリ": st.column_config.TextColumn("小カテゴリ", width="medium"),
+                            "店舗": st.column_config.TextColumn("店舗", disabled=True, width="medium"),
+                            "価格": st.column_config.NumberColumn("価格", disabled=True, width="small")
+                        },
+                        hide_index=True,
+                        key=f"editor_general_{selected_general_name}"
+                    )
 
-                # 保存ボタン
-                if st.button("💾 変更を保存", type="primary", key="save_general"):
-                    # 変更を反映
-                    current_time = datetime.now(timezone.utc).isoformat()
-                    success_count = 0
-                    has_verified_column = True
+                    # 保存ボタン
+                    if st.button("💾 変更を保存", type="primary", key="save_general"):
+                        # 変更を反映
+                        current_time = datetime.now(timezone.utc).isoformat()
+                        success_count = 0
+                        has_verified_column = True
 
-                    for idx, row in edited_df.iterrows():
-                        product_id = row["ID"]
-                        update_data = {
-                            "general_name": row["一般名詞"],
-                            "small_category": row["小カテゴリ"]
-                        }
+                        for idx, row in edited_df.iterrows():
+                            product_id = row["ID"]
+                            update_data = {
+                                "general_name": row["一般名詞"],
+                                "small_category": row["小カテゴリ"]
+                            }
 
-                        # manually_verified カラムが存在する場合のみ追加
-                        if has_verified_column:
-                            update_data["manually_verified"] = True
-                            update_data["last_verified_at"] = current_time
+                            # manually_verified カラムが存在する場合のみ追加
+                            if has_verified_column:
+                                update_data["manually_verified"] = True
+                                update_data["last_verified_at"] = current_time
 
-                        try:
-                            db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
-                            success_count += 1
-                        except Exception as e:
-                            # manually_verified カラムが存在しない場合、フラグなしで再試行
-                            if "manually_verified" in str(e) and has_verified_column:
-                                has_verified_column = False
-                                update_data = {
-                                    "general_name": row["一般名詞"],
-                                    "small_category": row["小カテゴリ"]
-                                }
+                            try:
                                 db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
                                 success_count += 1
-                            else:
-                                raise
+                            except Exception as e:
+                                # manually_verified カラムが存在しない場合、フラグなしで再試行
+                                if "manually_verified" in str(e) and has_verified_column:
+                                    has_verified_column = False
+                                    update_data = {
+                                        "general_name": row["一般名詞"],
+                                        "small_category": row["小カテゴリ"]
+                                    }
+                                    db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                                    success_count += 1
+                                else:
+                                    raise
 
-                    if has_verified_column:
-                        st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
-                    else:
-                        st.success(f"✅ {success_count}件の商品を更新しました")
-                        st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
-                    st.rerun()
+                        if has_verified_column:
+                            st.success(f"✅ {success_count}件の商品を更新しました（検証済みとしてマーク）")
+                        else:
+                            st.success(f"✅ {success_count}件の商品を更新しました")
+                            st.info("💡 ヒント: マイグレーション実行後、検証済みフラグが自動的に付くようになります")
+                        st.rerun()
 
 # =============================================================================
 # タブ2: 小カテゴリで分類
