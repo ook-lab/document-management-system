@@ -102,14 +102,6 @@ def get_large_categories():
         if count > 0:
             cat_with_counts[f"{large_name} ({count}件)"] = large_name
 
-    # 未分類の商品数をカウント
-    unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
-    unclassified_count = unclassified_result.count if unclassified_result.count else 0
-
-    # 未分類が1件以上ある場合のみ追加
-    if unclassified_count > 0:
-        cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
-
     return cat_with_counts
 
 # 中分類を取得（商品数付き）
@@ -117,17 +109,6 @@ def get_large_categories():
 def get_medium_categories(large_category_name):
     """指定した大分類の中分類を取得（商品1件以上のみ、件数表示）"""
     cat_with_counts = {}
-
-    # 未分類の場合
-    if large_category_name == "未分類":
-        # 未分類の商品数をカウント
-        unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
-        unclassified_count = unclassified_result.count if unclassified_result.count else 0
-
-        if unclassified_count > 0:
-            cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
-
-        return cat_with_counts
 
     # この大分類に属するDISTINCT medium_categoryを取得
     categories = db.table('MASTER_Categories_product').select('medium_category').eq('large_category', large_category_name).execute()
@@ -157,17 +138,6 @@ def get_medium_categories(large_category_name):
 def get_small_categories_by_medium(large_category_name, medium_category_name):
     """指定した大分類・中分類の小分類を取得（商品1件以上のみ、件数表示）"""
     cat_with_counts = {}
-
-    # 未分類の場合
-    if large_category_name == "未分類" or medium_category_name == "未分類":
-        # 未分類の商品数をカウント
-        unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
-        unclassified_count = unclassified_result.count if unclassified_result.count else 0
-
-        if unclassified_count > 0:
-            cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
-
-        return cat_with_counts
 
     # この大分類・中分類に属するDISTINCT small_categoryを取得
     categories = db.table('MASTER_Categories_product').select('small_category, id').eq('large_category', large_category_name).eq('medium_category', medium_category_name).execute()
@@ -340,23 +310,20 @@ with tabs[1]:
 
     # 中分類を取得
     medium_categories_dict = {}
-    if selected_large and selected_large not in ["選択してください", "未分類"]:
+    if selected_large and selected_large not in ["選択してください"]:
         medium_categories_dict = get_medium_categories(selected_large)
     medium_display_names = list(medium_categories_dict.keys())
 
     with col2:
-        # 中分類プルダウン（「未分類」を追加）
+        # 中分類プルダウン
         if selected_large == "選択してください":
             st.selectbox("📂 中分類", ["大分類を選択してください"], disabled=True)
             selected_medium_display = None
             selected_medium = None
-        elif selected_large == "未分類":
-            selected_medium_display = st.selectbox("📂 中分類", ["未分類"], key="medium_cat_select")
-            selected_medium = "未分類"
         elif medium_display_names:
             selected_medium_display = st.selectbox(
                 "📂 中分類",
-                ["選択してください", "未分類"] + medium_display_names,
+                ["選択してください"] + medium_display_names,
                 key="medium_cat_select"
             )
             # 表示名から実名を取得
@@ -365,19 +332,14 @@ with tabs[1]:
             else:
                 selected_medium = selected_medium_display
         else:
-            selected_medium_display = st.selectbox("📂 中分類", ["未分類"], key="medium_cat_select")
-            selected_medium = "未分類"
+            st.selectbox("📂 中分類", ["該当なし"], disabled=True)
+            selected_medium_display = None
+            selected_medium = None
 
     # 小分類を取得
     small_categories_dict = {}
     if selected_medium and selected_medium not in ["選択してください"]:
-        if selected_medium == "未分類":
-            # 未分類の場合、階層なし小カテゴリーを全て取得
-            result = db.table('Rawdata_NETSUPER_items').select('small_category').not_.is_('small_category', 'null').execute()
-            all_small = list(set([r['small_category'] for r in result.data if r.get('small_category')]))
-            small_categories_dict = {cat: cat for cat in all_small}
-        else:
-            small_categories_dict = get_small_categories_by_medium(selected_large, selected_medium)
+        small_categories_dict = get_small_categories_by_medium(selected_large, selected_medium)
 
     small_display_names = list(small_categories_dict.keys())
 
@@ -422,7 +384,7 @@ with tabs[1]:
             return []
 
         # 大+中分類選択、小分類は未選択
-        elif medium and medium not in ["選択してください", "未分類", None]:
+        elif medium and medium not in ["選択してください", None]:
             cat_result = db.table('MASTER_Categories_product').select('id').eq(
                 'large_category', large
             ).eq('medium_category', medium).execute()
@@ -437,7 +399,7 @@ with tabs[1]:
             return []
 
         # 大分類のみ選択、中分類は未選択
-        elif large and large not in ["選択してください", "未分類"]:
+        elif large and large not in ["選択してください"]:
             cat_result = db.table('MASTER_Categories_product').select('id').eq(
                 'large_category', large
             ).execute()
@@ -459,13 +421,10 @@ with tabs[1]:
     # 表示パスを設定
     display_path = ""
     if selected_small and selected_small != "選択してください":
-        if selected_large == "未分類":
-            display_path = f"📂 未分類 > 未分類 > {selected_small}"
-        else:
-            display_path = f"📂 {selected_large} > {selected_medium} > {selected_small}"
-    elif selected_medium and selected_medium not in ["選択してください", "未分類", None]:
+        display_path = f"📂 {selected_large} > {selected_medium} > {selected_small}"
+    elif selected_medium and selected_medium not in ["選択してください", None]:
         display_path = f"📂 {selected_large} > {selected_medium} （配下全て）"
-    elif selected_large and selected_large not in ["選択してください", "未分類"]:
+    elif selected_large and selected_large not in ["選択してください"]:
         display_path = f"📂 {selected_large} （配下全て）"
 
     if products_data:
