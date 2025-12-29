@@ -102,6 +102,17 @@ def get_large_categories():
         if count > 0:
             cat_with_counts[f"{large_name} ({count}件)"] = large_name
 
+    # category_id IS NULL の商品（未分類）を追加
+    unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
+    unclassified_count = unclassified_result.count if unclassified_result.count else 0
+
+    if unclassified_count > 0:
+        # MASTER_Categories_productに「未分類」が既に存在する場合は表示名を変える
+        if any("未分類" in key for key in cat_with_counts.keys()):
+            cat_with_counts[f"未分類(カテゴリ未設定) ({unclassified_count}件)"] = "未分類(カテゴリ未設定)"
+        else:
+            cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
+
     return cat_with_counts
 
 # 中分類を取得（商品数付き）
@@ -109,6 +120,14 @@ def get_large_categories():
 def get_medium_categories(large_category_name):
     """指定した大分類の中分類を取得（商品1件以上のみ、件数表示）"""
     cat_with_counts = {}
+
+    # category_id IS NULL（未分類）の場合
+    if large_category_name == "未分類" or large_category_name == "未分類(カテゴリ未設定)":
+        unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
+        unclassified_count = unclassified_result.count if unclassified_result.count else 0
+        if unclassified_count > 0:
+            cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
+        return cat_with_counts
 
     # この大分類に属するDISTINCT medium_categoryを取得
     categories = db.table('MASTER_Categories_product').select('medium_category').eq('large_category', large_category_name).execute()
@@ -138,6 +157,14 @@ def get_medium_categories(large_category_name):
 def get_small_categories_by_medium(large_category_name, medium_category_name):
     """指定した大分類・中分類の小分類を取得（商品1件以上のみ、件数表示）"""
     cat_with_counts = {}
+
+    # category_id IS NULL（未分類）の場合
+    if medium_category_name == "未分類":
+        unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
+        unclassified_count = unclassified_result.count if unclassified_result.count else 0
+        if unclassified_count > 0:
+            cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
+        return cat_with_counts
 
     # この大分類・中分類に属するDISTINCT small_categoryを取得
     categories = db.table('MASTER_Categories_product').select('small_category, id').eq('large_category', large_category_name).eq('medium_category', medium_category_name).execute()
@@ -371,6 +398,13 @@ with tabs[1]:
         """カテゴリに応じた商品を取得（5分間キャッシュ）"""
         # 小分類まで選択されている場合
         if small and small != "選択してください":
+            # 未分類（category_id IS NULL）の場合
+            if small == "未分類":
+                result = db.table('Rawdata_NETSUPER_items').select(
+                    'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+                ).is_('category_id', 'null').limit(1000).execute()
+                return result.data
+
             cat_result = db.table('MASTER_Categories_product').select('id').eq(
                 'large_category', large
             ).eq('medium_category', medium).eq('small_category', small).execute()
