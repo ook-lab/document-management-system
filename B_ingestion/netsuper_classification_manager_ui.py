@@ -474,6 +474,7 @@ with tabs[1]:
             large, medium, small = get_category_info(p.get('category_id'))
 
             df_data.append({
+                "選択": False,  # チェックボックス
                 "_id": p['id'],  # 内部用（非表示）
                 "商品名": p['product_name'],
                 "一般名詞": p.get('general_name', ''),
@@ -486,10 +487,26 @@ with tabs[1]:
 
         df = pd.DataFrame(df_data)
 
+        # 一括設定UI
+        st.markdown("---")
+        st.subheader("📦 選択した商品に一括適用")
+
+        col_bulk1, col_bulk2, col_bulk3, col_bulk4 = st.columns([2, 2, 2, 1])
+
+        with col_bulk1:
+            bulk_large = st.text_input("🏢 大分類", key="bulk_large", placeholder="例: 食品類")
+        with col_bulk2:
+            bulk_medium = st.text_input("📂 中分類", key="bulk_medium", placeholder="例: 調味料")
+        with col_bulk3:
+            bulk_small = st.text_input("📄 小分類", key="bulk_small", placeholder="例: 味噌")
+
+        st.markdown("---")
+
         # データエディタで編集
         edited_df = st.data_editor(
             df,
             column_config={
+                "選択": st.column_config.CheckboxColumn("選択", default=False, width="small"),
                 "_id": None,  # 非表示
                 "商品名": st.column_config.TextColumn("商品名", disabled=True, width="large"),
                 "一般名詞": st.column_config.TextColumn("一般名詞", width="medium"),
@@ -542,7 +559,58 @@ with tabs[1]:
             except Exception as e:
                 raise Exception(f"カテゴリ '{category_full_name}' の取得/作成中にエラーが発生しました: {str(e)}")
 
-        # 保存ボタン
+        # 一括適用ボタン
+        col_btn1, col_btn2 = st.columns([1, 3])
+
+        with col_btn1:
+            if st.button("📦 選択した商品に一括適用", type="primary", key="bulk_apply"):
+                # 選択された商品を取得
+                selected_rows = edited_df[edited_df["選択"] == True]
+
+                if len(selected_rows) == 0:
+                    st.warning("⚠️ 商品が選択されていません")
+                elif not bulk_large or not bulk_medium or not bulk_small:
+                    st.warning("⚠️ 大分類・中分類・小分類をすべて入力してください")
+                else:
+                    try:
+                        # カテゴリを取得/作成
+                        category_id = get_or_create_category(bulk_large, bulk_medium, bulk_small)
+
+                        if not category_id:
+                            st.error("❌ カテゴリの作成に失敗しました")
+                        else:
+                            # 選択された商品を一括更新
+                            current_time = datetime.now(timezone.utc).isoformat()
+                            success_count = 0
+
+                            for idx, row in selected_rows.iterrows():
+                                product_id = row["_id"]
+
+                                update_data = {
+                                    "small_category": bulk_small,
+                                    "category_id": category_id
+                                }
+
+                                try:
+                                    db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
+                                    success_count += 1
+                                except Exception as e:
+                                    st.error(f"❌ 商品ID {product_id} の更新に失敗: {str(e)}")
+
+                            # キャッシュをクリア
+                            st.cache_data.clear()
+
+                            st.success(f"✅ {success_count}件の商品を一括更新しました")
+                            st.rerun()
+
+                    except Exception as e:
+                        st.error(f"❌ 一括適用中にエラーが発生しました: {str(e)}")
+                        st.exception(e)
+
+        with col_btn2:
+            st.caption(f"選択中: {len(edited_df[edited_df['選択'] == True])}件")
+
+        # 個別編集保存ボタン
         if st.button("💾 変更を保存", type="primary", key="save_category"):
             try:
                 # 変更を反映
@@ -582,7 +650,7 @@ with tabs[1]:
                             update_data = {
                                 "general_name": row["一般名詞"],
                                 "small_category": small_name if small_name != "未分類" else None,
-                                "category_id": small_id
+                                "category_id": category_id
                             }
                             db.table('Rawdata_NETSUPER_items').update(update_data).eq('id', product_id).execute()
                             success_count += 1
