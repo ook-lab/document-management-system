@@ -15,21 +15,20 @@ general_name_embedding を使って階層的にクラスタリング
 import os
 import numpy as np
 from sklearn.cluster import KMeans
-from openai import OpenAI
 from supabase import create_client
 from typing import List, Dict, Tuple
 import json
+from C_ai_common.llm_client.llm_client import LLMClient
 
 # 設定
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
-if not all([SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, OPENAI_API_KEY]):
+if not all([SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY]):
     raise Exception("環境変数を設定してください")
 
 db = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
-openai_client = OpenAI(api_key=OPENAI_API_KEY)
+llm_client = LLMClient()
 
 # クラスタ数設定
 N_SMALL_CATEGORIES = 150  # 小分類の数
@@ -125,14 +124,19 @@ def name_cluster_with_ai(cluster_products: List[Dict], cluster_id: int) -> str:
 カテゴリ名のみを回答してください。説明は不要です。"""
 
     try:
-        response = openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[{"role": "user", "content": prompt}],
+        response = llm_client.call_model(
+            tier="stageh_extraction",
+            prompt=prompt,
+            model_name="gemini-2.5-flash-lite",
             temperature=0.3,
-            max_tokens=20
+            max_output_tokens=20
         )
 
-        category_name = response.choices[0].message.content.strip()
+        if response.get("success"):
+            category_name = response.get("content", "").strip()
+        else:
+            raise Exception(response.get("error", "Unknown error"))
+
         print(f"  クラスタ {cluster_id}: {category_name} ({len(cluster_products)}件)")
         return category_name
 
@@ -223,13 +227,17 @@ def hierarchical_clustering(cluster_names: Dict[int, str], products: List[Dict],
 中分類名のみを回答してください。"""
 
         try:
-            response = openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=[{"role": "user", "content": prompt}],
+            response = llm_client.call_model(
+                tier="stageh_extraction",
+                prompt=prompt,
+                model_name="gemini-2.5-flash-lite",
                 temperature=0.3,
-                max_tokens=20
+                max_output_tokens=20
             )
-            medium_name = response.choices[0].message.content.strip()
+            if response.get("success"):
+                medium_name = response.get("content", "").strip()
+            else:
+                medium_name = f"中分類{medium_id}"
         except:
             medium_name = f"中分類{medium_id}"
 
