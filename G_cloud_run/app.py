@@ -144,14 +144,59 @@ def search_documents():
         # Embeddingを生成（拡張されたクエリを使用）
         embedding = llm_client.generate_embedding(expanded_query)
 
+        # ✅ 時系列フィルタを検出
+        date_filter = _detect_date_filter(query)
+        print(f"[DEBUG] 時系列フィルタ検出: {date_filter}")
+
+        # ✅ クエリタイプを検出
+        query_type_info = _detect_query_type(query)
+        print(f"[DEBUG] クエリタイプ検出: {query_type_info['type']} (focus: {query_type_info['focus']})")
+
+        # ✅ クロスリファレンスを検出
+        referenced_file = _detect_cross_reference(query)
+        cross_reference_results = []
+        if referenced_file:
+            print(f"[DEBUG] クロスリファレンス検出: {referenced_file}")
+            # 参照されたファイルを検索
+            try:
+                cross_ref_response = db_client.client.table('Rawdata_FILE_AND_MAIL').select('*').ilike('file_name', f'%{referenced_file}%').limit(3).execute()
+                if cross_ref_response.data:
+                    # 検索結果の形式に変換
+                    for doc in cross_ref_response.data:
+                        cross_reference_results.append({
+                            'id': doc.get('id'),
+                            'file_name': doc.get('file_name'),
+                            'doc_type': doc.get('doc_type'),
+                            'workspace': doc.get('workspace'),
+                            'document_date': doc.get('document_date'),
+                            'metadata': doc.get('metadata', {}),
+                            'summary': doc.get('summary'),
+                            'content': doc.get('attachment_text', ''),
+                            'similarity': 1.0,  # 最高スコア（参照されたファイル）
+                            'is_cross_reference': True  # クロスリファレンスフラグ
+                        })
+                    print(f"[DEBUG] クロスリファレンス結果: {len(cross_reference_results)} 件")
+            except Exception as e:
+                print(f"[WARNING] クロスリファレンス検索エラー: {e}")
+
         # ベクトル検索を実行（同期ラッパーを使用）
         # 拡張されたクエリをテキスト検索にも使用
         results = db_client.search_documents_sync(
             expanded_query,
             embedding,
             limit,
-            doc_types if doc_types else None
+            doc_types if doc_types else None,
+            date_filter=date_filter  # 時系列フィルタを渡す
         )
+
+        # ✅ クロスリファレンス結果を先頭に追加
+        if cross_reference_results:
+            # 重複を避ける：クロスリファレンス結果と同じIDのものは除外
+            cross_ref_ids = {doc['id'] for doc in cross_reference_results}
+            results = [doc for doc in results if doc.get('id') not in cross_ref_ids]
+            # クロスリファレンス結果を先頭に
+            results = cross_reference_results + results
+            print(f"[DEBUG] クロスリファレンス結果を先頭に追加: 合計 {len(results)} 件")
 
         print(f"[DEBUG] 検索結果: {len(results)} 件（doc_types={doc_types}）")
 
@@ -160,7 +205,8 @@ def search_documents():
         response_data = {
             'success': True,
             'results': results,
-            'count': len(results)
+            'count': len(results),
+            'query_type': query_type_info  # クエリタイプ情報を含める
         }
 
         # クエリ拡張情報を含める（デバッグ用）
@@ -585,9 +631,158 @@ def _group_documents_by_file(documents: List[Dict[str, Any]]) -> List[Dict[str, 
     return result
 
 
+def _detect_date_filter(query: str) -> Optional[str]:
+    """
+    クエリから時系列フィルタを検出
+
+    Args:
+        query: ユーザーのクエリ
+
+    Returns:
+        'recent': 最近1週間
+        'this_week': 今週
+        'this_month': 今月
+        'today': 今日
+        None: フィルタなし
+    """
+    import re
+    from datetime import datetime, timedelta
+
+    query_lower = query.lower()
+
+    # 今日
+    if re.search(r'(今日|きょう|本日)', query):
+        return 'today'
+
+    # 今週
+    if re.search(r'(今週|こんしゅう|this week)', query):
+        return 'this_week'
+
+    # 今月
+    if re.search(r'(今月|こんげつ|this month)', query):
+        return 'this_month'
+
+    # 最新・最近
+    if re.search(r'(最新|最近|さいきん|さいしん|new|latest|recent)', query):
+        return 'recent'
+
+    return None
+
+
+def _detect_cross_reference(query: str) -> Optional[str]:
+    """
+    クエリからクロスリファレンス（他の文書への参照）を検出
+
+    Args:
+        query: ユーザーのクエリ
+
+    Returns:
+        参照されているファイル名、またはNone
+    """
+    import re
+
+    # パターン1: "○○.pdfを参照", "○○.docxを参照" など
+    match = re.search(r'([^\s]+?\.(pdf|docx?|xlsx?|pptx?|txt|png|jpe?g))\s*(を|の)?参照', query, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    # パターン2: "参照: ○○", "参照：○○"
+    match = re.search(r'参照[:：]\s*([^\s]+)', query)
+    if match:
+        return match.group(1)
+
+    # パターン3: "see ○○.pdf", "refer to ○○.pdf"
+    match = re.search(r'(?:see|refer to|reference)\s+([^\s]+?\.(pdf|docx?|xlsx?|pptx?|txt|png|jpe?g))', query, re.IGNORECASE)
+    if match:
+        return match.group(1)
+
+    # パターン4: "○○という文書", "○○というファイル"
+    match = re.search(r'([^\s]+)\s*という(?:文書|ファイル|ドキュメント)', query)
+    if match:
+        return match.group(1)
+
+    return None
+
+
+def _detect_query_type(query: str) -> Dict[str, Any]:
+    """
+    クエリのタイプを検出
+
+    Args:
+        query: ユーザーのクエリ
+
+    Returns:
+        {
+            'type': str,  # 'who', 'when', 'what', 'where', 'how', 'why', 'general'
+            'focus': str,  # 検出されたフォーカス
+            'keywords': List[str]  # 検出されたキーワード
+        }
+    """
+    import re
+
+    query_lower = query.lower()
+
+    # 優先順位順に検出
+
+    # When: 時間に関する質問
+    if re.search(r'(いつ|何時|何日|何月|何年|when|期限|締切|締め切り|デッドライン|予定|スケジュール)', query):
+        return {
+            'type': 'when',
+            'focus': 'time_date',
+            'keywords': ['document_date', 'deadline', 'schedule', 'weekly_schedule']
+        }
+
+    # Who: 人に関する質問
+    if re.search(r'(誰|だれ|who|先生|teacher|from|送信者|差出人)', query):
+        return {
+            'type': 'who',
+            'focus': 'person',
+            'keywords': ['sender', 'teacher', 'author', 'display_sender']
+        }
+
+    # Where: 場所に関する質問
+    if re.search(r'(どこ|where|場所|教室|クラス|classroom)', query):
+        return {
+            'type': 'where',
+            'focus': 'location',
+            'keywords': ['location', 'classroom', 'place']
+        }
+
+    # How: 方法・手順に関する質問
+    if re.search(r'(どうやって|どのように|how|方法|手順|やり方)', query):
+        return {
+            'type': 'how',
+            'focus': 'method',
+            'keywords': ['procedure', 'method', 'steps']
+        }
+
+    # Why: 理由に関する質問
+    if re.search(r'(なぜ|why|理由|原因)', query):
+        return {
+            'type': 'why',
+            'focus': 'reason',
+            'keywords': ['reason', 'cause', 'purpose']
+        }
+
+    # What: 物事・内容に関する質問（デフォルト）
+    if re.search(r'(何|なに|what|内容|詳細)', query):
+        return {
+            'type': 'what',
+            'focus': 'content',
+            'keywords': ['content', 'subject', 'topic']
+        }
+
+    # General: 一般的な質問
+    return {
+        'type': 'general',
+        'focus': 'general',
+        'keywords': []
+    }
+
+
 def _build_context(documents: List[Dict[str, Any]]) -> str:
     """
-    検索結果からコンテキストを構築
+    検索結果からコンテキストを構築（チャンクベース）
 
     Args:
         documents: 検索結果のリスト
@@ -598,34 +793,52 @@ def _build_context(documents: List[Dict[str, Any]]) -> str:
     if not documents:
         return "関連する文書が見つかりませんでした。"
 
-    # 同じドキュメントのチャンクをグルーピング
-    grouped_documents = _group_documents_by_file(documents)
+    import json
 
     context_parts = []
-    for idx, doc in enumerate(grouped_documents, 1):
+    total_chunks = 0
+
+    for doc_idx, doc in enumerate(documents, 1):
         file_name = doc.get('file_name', '無題')
         doc_type = doc.get('doc_type', '不明')
-        # ✅ contentを優先的に使用、フォールバックとしてsummary, attachment_textをチェック
-        content = doc.get('content') or doc.get('summary') or doc.get('attachment_text', '')
         similarity = doc.get('similarity', 0)
-        metadata = doc.get('metadata', {})
+        all_chunks = doc.get('all_chunks', [])
 
         # 基本情報
         context_part = f"""
-【文書{idx}】
+【文書{doc_idx}】
 ファイル名: {file_name}
 文書タイプ: {doc_type}
-類似度: {similarity:.2f}"""
+類似度: {similarity:.2f}
+チャンク数: {len(all_chunks)}個
+"""
 
-        # コンテンツ追加（contentが空でない場合）
-        if content:
-            context_part += f"\n内容: {content}"
+        # ✅ ヒットした全チャンクを追加
+        if all_chunks:
+            context_part += "\n【ヒットしたチャンク】"
+            for chunk_idx, chunk in enumerate(all_chunks, 1):
+                chunk_type = chunk.get('chunk_type', 'unknown')
+                chunk_content = chunk.get('chunk_content', '')
+                chunk_metadata = chunk.get('chunk_metadata', {})
+                search_weight = chunk.get('search_weight', 1.0)
 
-        # メタデータを整形して追加
-        if metadata:
-            formatted_metadata = _format_metadata(metadata)
-            if formatted_metadata:
-                context_part += f"\n\n詳細情報:\n{formatted_metadata}"
+                context_part += f"\n\n  チャンク{chunk_idx} (タイプ: {chunk_type}, 重み: {search_weight})"
+                context_part += f"\n  内容: {chunk_content}"
+
+                # ✅ chunk_metadataに構造化データがある場合は追加
+                if chunk_metadata:
+                    original_structure = chunk_metadata.get('original_structure')
+                    if original_structure:
+                        context_part += f"\n\n  【構造化データ（JSON）】"
+                        context_part += f"\n  ```json\n{json.dumps(original_structure, ensure_ascii=False, indent=2)}\n  ```"
+                        context_part += "\n  ※上記の構造化データを参照して、表の行・列の関係や階層構造を正確に把握してください"
+
+                total_chunks += 1
+        else:
+            # フォールバック: all_chunksがない場合（後方互換性）
+            summary = doc.get('summary', '')
+            if summary:
+                context_part += f"\n\n要約: {summary}"
 
         context_parts.append(context_part)
 
@@ -633,8 +846,115 @@ def _build_context(documents: List[Dict[str, Any]]) -> str:
     final_context = "\n".join(context_parts)
     print(f"[DEBUG] コンテキスト文字数: {len(final_context)} 文字")
     print(f"[DEBUG] 文書数: {len(documents)} 件")
+    print(f"[DEBUG] 総チャンク数: {total_chunks} 個")
 
     return final_context
+
+
+@app.route('/api/extract_schedules', methods=['POST'])
+def extract_schedules():
+    """
+    スケジュール抽出API
+    指定された条件でドキュメントからスケジュール情報を抽出して返す
+    """
+    try:
+        # クライアント取得
+        db_client, _, _ = get_clients()
+
+        data = request.get_json()
+        workspace = data.get('workspace')
+        doc_types = data.get('doc_types', [])
+        start_date = data.get('start_date')  # YYYY-MM-DD形式
+        end_date = data.get('end_date')  # YYYY-MM-DD形式
+        limit = data.get('limit', 100)
+
+        print(f"[DEBUG] スケジュール抽出リクエスト: workspace={workspace}, doc_types={doc_types}, date_range={start_date}~{end_date}")
+
+        # データベースクエリを構築
+        query = db_client.client.table('Rawdata_FILE_AND_MAIL').select('*')
+
+        # フィルタを適用
+        if workspace:
+            query = query.eq('workspace', workspace)
+
+        if doc_types:
+            query = query.in_('doc_type', doc_types)
+
+        # 日付範囲でフィルタ
+        if start_date:
+            query = query.gte('document_date', start_date)
+        if end_date:
+            query = query.lte('document_date', end_date)
+
+        # 実行
+        response = query.limit(limit).execute()
+        documents = response.data if response.data else []
+
+        print(f"[DEBUG] 検索結果: {len(documents)} 件")
+
+        # スケジュール情報を抽出
+        schedules = []
+        for doc in documents:
+            metadata = doc.get('metadata', {})
+
+            # weekly_scheduleを抽出
+            weekly_schedule = metadata.get('weekly_schedule', [])
+            if weekly_schedule:
+                for schedule_item in weekly_schedule:
+                    schedules.append({
+                        'document_id': doc.get('id'),
+                        'file_name': doc.get('file_name'),
+                        'doc_type': doc.get('doc_type'),
+                        'workspace': doc.get('workspace'),
+                        'document_date': doc.get('document_date'),
+                        'schedule_type': 'weekly',
+                        'schedule_data': schedule_item
+                    })
+
+            # text_blocksから日付・時間情報を抽出（オプション）
+            text_blocks = metadata.get('text_blocks', [])
+            for block in text_blocks:
+                title = block.get('title', '')
+                content = block.get('content', '')
+
+                # タイトルや内容に日付・時間のキーワードが含まれる場合
+                import re
+                if re.search(r'(予定|スケジュール|日程|期限|締切|締め切り|\d{1,2}月\d{1,2}日|\d{4}-\d{2}-\d{2})', title + content):
+                    schedules.append({
+                        'document_id': doc.get('id'),
+                        'file_name': doc.get('file_name'),
+                        'doc_type': doc.get('doc_type'),
+                        'workspace': doc.get('workspace'),
+                        'document_date': doc.get('document_date'),
+                        'schedule_type': 'text_block',
+                        'schedule_data': {
+                            'title': title,
+                            'content': content
+                        }
+                    })
+
+        print(f"[DEBUG] 抽出されたスケジュール: {len(schedules)} 件")
+
+        # 日付順にソート
+        schedules_sorted = sorted(
+            schedules,
+            key=lambda x: x.get('document_date') or '9999-12-31'
+        )
+
+        return jsonify({
+            'success': True,
+            'schedules': schedules_sorted,
+            'count': len(schedules_sorted)
+        })
+
+    except Exception as e:
+        print(f"[ERROR] スケジュール抽出エラー: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
 
 
 @app.route('/api/health', methods=['GET'])

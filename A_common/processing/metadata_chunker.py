@@ -33,17 +33,21 @@ class MetadataChunker:
     CHUNK_WEIGHTS = {
         'title': 2.0,                    # タイトルマッチは最優先
         'display_subject': 2.0,          # 表示件名（最重要）
+        'table': 2.0,                    # 構造化表（最重要）★新規追加
         'doc_type': 1.8,                 # 授業名・ドキュメント種別（重要）
         'display_post_text': 1.8,        # 表示投稿本文（重要）
-        'persons': 1.8,                  # 担当者・関係者（重要）★新規追加
-        'organizations': 1.7,            # 組織名（重要）★新規追加
+        'persons': 1.8,                  # 担当者・関係者（重要）
+        'text_block': 1.8,               # テキストブロック（重要）★新規追加
+        'schedule': 1.7,                 # 週間予定（重要）★新規追加
+        'organizations': 1.7,            # 組織名（重要）
         'summary': 1.5,                  # サマリーは高優先
         'display_type': 1.5,             # 表示種別（お知らせ/課題/資料）
         'display_sender': 1.3,           # 表示送信者名
         'display_sent_at': 1.3,          # 表示送信日時
         'date': 1.3,                     # 日付検索
         'tags': 1.2,                     # タグ検索
-        'people': 1.2,                   # AI抽出人物（やや重要）★新規追加
+        'people': 1.2,                   # AI抽出人物（やや重要）
+        'other': 1.0,                    # その他のテキスト（標準）★新規追加
         'classroom_sender_email': 1.0,   # Classroom送信者メール
         'content_small': 1.0,            # 本文検索（標準）
         'content_large': 1.0,            # 回答生成用
@@ -217,6 +221,74 @@ class MetadataChunker:
                 ))
                 logger.debug(f"[MetadataChunker] peopleチャンク作成: {len(people)}名")
 
+        # 10. text_blocks（テキストブロック）チャンク
+        text_blocks = document_data.get('text_blocks', [])
+        if text_blocks:
+            for i, block in enumerate(text_blocks):
+                block_text = self._format_text_block_chunk(block, i)
+                if block_text:
+                    chunks.append(self._create_chunk(
+                        chunk_type=f'text_block_{i}',
+                        text=block_text,
+                        metadata={
+                            'original_structure': block,
+                            'structure_type': 'text_block'
+                        }
+                    ))
+                    logger.debug(f"[MetadataChunker] text_blockチャンク作成: block_{i}")
+
+        # 11. structured_tables（構造化表）チャンク
+        structured_tables = document_data.get('structured_tables', [])
+        if structured_tables:
+            for i, table in enumerate(structured_tables):
+                table_text = self._format_table_chunk(table, i)
+                if table_text:
+                    chunks.append(self._create_chunk(
+                        chunk_type=f'table_{i}',
+                        text=table_text,
+                        metadata={
+                            'original_structure': table,
+                            'structure_type': 'table'
+                        }
+                    ))
+                    logger.debug(f"[MetadataChunker] tableチャンク作成: table_{i}")
+
+        # 12. weekly_schedule（週間予定）チャンク
+        weekly_schedule = document_data.get('weekly_schedule', [])
+        if weekly_schedule:
+            for schedule in weekly_schedule:
+                schedule_text = self._format_schedule_chunk(schedule)
+                if schedule_text:
+                    date_str = schedule.get('date', f'schedule_{len(chunks)}')
+                    chunks.append(self._create_chunk(
+                        chunk_type=f'schedule_{date_str}',
+                        text=schedule_text,
+                        metadata={
+                            'original_structure': schedule,
+                            'structure_type': 'schedule'
+                        }
+                    ))
+                    logger.debug(f"[MetadataChunker] scheduleチャンク作成: {date_str}")
+
+        # 13. other_text（その他のテキスト）チャンク
+        other_text = document_data.get('other_text', [])
+        if other_text:
+            for i, other_item in enumerate(other_text):
+                if isinstance(other_item, dict):
+                    item_type = other_item.get('type', 'misc')
+                    content = other_item.get('content', '')
+                    if content and content.strip():
+                        chunks.append(self._create_chunk(
+                            chunk_type=f'other_{item_type}_{i}',
+                            text=content.strip(),
+                            metadata={
+                                'original_structure': other_item,
+                                'structure_type': 'other_text',
+                                'other_type': item_type
+                            }
+                        ))
+                        logger.debug(f"[MetadataChunker] other_textチャンク作成: {item_type}")
+
         logger.info(f"[MetadataChunker] メタデータチャンク生成完了: {len(chunks)}個")
         return chunks
 
@@ -237,11 +309,22 @@ class MetadataChunker:
         Returns:
             チャンクオブジェクト
         """
+        # プレフィックスベースの重み付け（text_block_0 → text_block, table_1 → table）
+        weight = self.CHUNK_WEIGHTS.get(chunk_type, None)
+        if weight is None:
+            # プレフィックスを抽出して検索
+            for prefix in ['text_block', 'table', 'schedule']:
+                if chunk_type.startswith(prefix):
+                    weight = self.CHUNK_WEIGHTS.get(prefix, 1.0)
+                    break
+            if weight is None:
+                weight = 1.0
+
         chunk = {
             'chunk_type': chunk_type,
             'chunk_text': text,
             'chunk_size': len(text),
-            'search_weight': self.CHUNK_WEIGHTS.get(chunk_type, 1.0),
+            'search_weight': weight,
             'chunk_index': self.chunk_counter
         }
 
@@ -382,3 +465,155 @@ class MetadataChunker:
         people_spaced = ' '.join(unique_people)
 
         return f"関係者: {people_text}\n{people_spaced}"
+
+    def _format_text_block_chunk(self, block: Dict[str, Any], index: int) -> Optional[str]:
+        """
+        テキストブロックをチャンク用テキストに展開
+
+        Args:
+            block: テキストブロック {'title': str, 'content': str}
+            index: ブロックのインデックス
+
+        Returns:
+            展開されたテキスト
+        """
+        if not block or not isinstance(block, dict):
+            return None
+
+        title = block.get('title', '')
+        content = block.get('content', '')
+
+        if not content:
+            return None
+
+        # タイトルと本文を結合
+        parts = []
+        if title:
+            parts.append(f"【{title}】")
+        parts.append(content)
+
+        return '\n'.join(parts)
+
+    def _format_table_chunk(self, table: Dict[str, Any], index: int) -> Optional[str]:
+        """
+        構造化表をテキストに展開
+
+        Args:
+            table: {
+                'table_title': str,
+                'table_type': str,
+                'headers': List[str],
+                'rows': List[Dict[str, str]]
+            }
+            index: テーブルのインデックス
+
+        Returns:
+            テーブル全体をテキスト化したもの
+        """
+        if not table or not isinstance(table, dict):
+            return None
+
+        table_title = table.get('table_title', f'表{index + 1}')
+        headers = table.get('headers', [])
+        rows = table.get('rows', [])
+
+        if not rows:
+            return None
+
+        # テーブルをテキスト化
+        lines = []
+        lines.append(f"【{table_title}】")
+        lines.append("")
+
+        # 各行をテキスト化
+        for row_idx, row in enumerate(rows, 1):
+            if isinstance(row, dict):
+                # 辞書形式の行
+                row_parts = []
+                for header in headers:
+                    value = row.get(header, '')
+                    if value:
+                        row_parts.append(f"{header}: {value}")
+                if row_parts:
+                    lines.append(f"{row_idx}. " + ", ".join(row_parts))
+            elif isinstance(row, list):
+                # リスト形式の行（ヘッダーと組み合わせる）
+                row_parts = []
+                for i, value in enumerate(row):
+                    if i < len(headers):
+                        header = headers[i]
+                        row_parts.append(f"{header}: {value}")
+                    else:
+                        row_parts.append(str(value))
+                if row_parts:
+                    lines.append(f"{row_idx}. " + ", ".join(row_parts))
+
+        return '\n'.join(lines) if len(lines) > 2 else None
+
+    def _format_schedule_chunk(self, schedule: Dict[str, Any]) -> Optional[str]:
+        """
+        週間予定をテキストに展開
+
+        Args:
+            schedule: {
+                'date': str,
+                'day_of_week': str,
+                'events': List[str],
+                'class_schedules': List[Dict],
+                'note': str
+            }
+
+        Returns:
+            予定全体をテキスト化したもの
+        """
+        if not schedule or not isinstance(schedule, dict):
+            return None
+
+        date = schedule.get('date', '')
+        day_of_week = schedule.get('day_of_week', '')
+        events = schedule.get('events', [])
+        class_schedules = schedule.get('class_schedules', [])
+        note = schedule.get('note', '')
+
+        if not date:
+            return None
+
+        lines = []
+
+        # ヘッダー
+        if day_of_week:
+            lines.append(f"{date}（{day_of_week}）")
+        else:
+            lines.append(date)
+        lines.append("")
+
+        # クラス別時間割
+        if class_schedules:
+            for class_schedule in class_schedules:
+                class_name = class_schedule.get('class', '')
+                periods = class_schedule.get('periods', [])
+
+                if class_name:
+                    lines.append(f"【{class_name}】")
+
+                for period in periods:
+                    period_num = period.get('period', '')
+                    subject = period.get('subject', '')
+                    if period_num and subject:
+                        lines.append(f"{period_num}時間目: {subject}")
+
+                lines.append("")
+
+        # イベント
+        if events:
+            lines.append("【行事】")
+            for event in events:
+                lines.append(f"- {event}")
+            lines.append("")
+
+        # 連絡事項
+        if note:
+            lines.append("【連絡事項】")
+            lines.append(note)
+
+        return '\n'.join(lines).strip() if lines else None

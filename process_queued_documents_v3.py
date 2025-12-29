@@ -240,7 +240,11 @@ class DocumentProcessor:
             'attachment_text': attachment_text,
             'persons': stageh_metadata.get('persons', []) if isinstance(stageh_metadata, dict) else [],
             'organizations': stageh_metadata.get('organizations', []) if isinstance(stageh_metadata, dict) else [],
-            'people': stageh_metadata.get('people', []) if isinstance(stageh_metadata, dict) else []
+            'people': stageh_metadata.get('people', []) if isinstance(stageh_metadata, dict) else [],
+            # Stage H の構造化データを追加
+            'text_blocks': stageh_metadata.get('text_blocks', []) if isinstance(stageh_metadata, dict) else [],
+            'structured_tables': stageh_metadata.get('structured_tables', []) if isinstance(stageh_metadata, dict) else [],
+            'weekly_schedule': stageh_metadata.get('weekly_schedule', []) if isinstance(stageh_metadata, dict) else []
         }
 
         chunks = metadata_chunker.create_metadata_chunks(document_data)

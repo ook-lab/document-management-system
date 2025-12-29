@@ -49,13 +49,25 @@ class StageJChunking:
         logger.info("[Stage J] チャンク化開始...")
 
         try:
-            chunks = self.chunker.create_metadata_chunks({
-                'display_subject': display_subject,
+            # metadata から構造化データを展開
+            document_data = {
+                'file_name': display_subject,
                 'summary': summary,
                 'tags': tags,
                 'document_date': document_date,
-                'metadata': metadata
-            })
+                # metadata の中身を直接展開
+                'persons': metadata.get('persons', []) if isinstance(metadata, dict) else [],
+                'organizations': metadata.get('organizations', []) if isinstance(metadata, dict) else [],
+                'people': metadata.get('people', []) if isinstance(metadata, dict) else [],
+                # Stage H の構造化データを追加
+                'text_blocks': metadata.get('text_blocks', []) if isinstance(metadata, dict) else [],
+                'structured_tables': metadata.get('structured_tables', []) if isinstance(metadata, dict) else [],
+                'weekly_schedule': metadata.get('weekly_schedule', []) if isinstance(metadata, dict) else [],
+                # basic_info も展開（あれば）
+                'doc_type': metadata.get('basic_info', {}).get('related_class', '') if isinstance(metadata, dict) else ''
+            }
+
+            chunks = self.chunker.create_metadata_chunks(document_data)
 
             logger.info(f"[Stage J完了] チャンク数: {len(chunks)}")
 

@@ -146,7 +146,8 @@ class DatabaseClient:
         query: str,
         embedding: List[float],
         limit: int = 50,
-        doc_types: Optional[List[str]] = None
+        doc_types: Optional[List[str]] = None,
+        date_filter: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         2階層ハイブリッド検索：小チャンク検索 + 大チャンク回答（重複排除＆Rerank対応）
@@ -193,6 +194,11 @@ class DatabaseClient:
             results = response.data if response.data else []
 
             print(f"[DEBUG] unified_search_v2 結果: {len(results)} 件")
+
+            # 日付フィルタリング
+            if date_filter:
+                results = self._apply_date_filter(results, date_filter)
+                print(f"[DEBUG] 日付フィルタ適用後: {len(results)} 件 (filter={date_filter})")
 
             # 結果を整形（unified_search_v2: 高度な検索結果）
             final_results = []
@@ -252,6 +258,33 @@ class DatabaseClient:
 
                 final_results.append(doc_result)
 
+            # ✅ 各ドキュメントのヒットチャンク全体を取得
+            print(f"[DEBUG] ヒットチャンク詳細を取得中...")
+            for doc_result in final_results:
+                document_id = doc_result.get('id')
+                if not document_id:
+                    continue
+
+                try:
+                    # このドキュメントの全チャンクを取得（重要度順、上限なし）
+                    chunks_response = (
+                        self.client.table('10_ix_search_index')
+                        .select('chunk_index, chunk_content, chunk_type, chunk_metadata, search_weight')
+                        .eq('document_id', document_id)
+                        .order('search_weight', desc=True)  # 重要度順
+                        .execute()
+                    )
+
+                    if chunks_response.data:
+                        doc_result['all_chunks'] = chunks_response.data
+                        print(f"[DEBUG] ドキュメント {document_id[:8]}: {len(chunks_response.data)}個のチャンク取得")
+                    else:
+                        doc_result['all_chunks'] = []
+
+                except Exception as e:
+                    print(f"[WARNING] チャンク取得エラー (document_id={document_id}): {e}")
+                    doc_result['all_chunks'] = []
+
             print(f"[DEBUG] 最終検索結果: {len(final_results)} 件（unified_search_v2）")
             print(f"[DEBUG] 検索戦略: 重み付けスコアリング + chunk_type優先順位 + タイトルマッチ")
 
@@ -271,7 +304,8 @@ class DatabaseClient:
         query: str,
         embedding: List[float],
         limit: int = 50,
-        doc_types: Optional[List[str]] = None
+        doc_types: Optional[List[str]] = None,
+        date_filter: Optional[str] = None
     ) -> List[Dict[str, Any]]:
         """
         同期版のsearch_documents（Flaskエンドポイント用）
@@ -284,6 +318,7 @@ class DatabaseClient:
             embedding: クエリのembeddingベクトル
             limit: 取得する最大件数
             doc_types: ドキュメントタイプフィルタ（配列、複数選択可能）
+            date_filter: 日付フィルタ ('today', 'this_week', 'this_month', 'recent')
 
         Returns:
             検索結果のリスト
@@ -297,7 +332,7 @@ class DatabaseClient:
                     loop = asyncio.new_event_loop()
                     asyncio.set_event_loop(loop)
                     result = loop.run_until_complete(
-                        self.search_documents(query, embedding, limit, doc_types)
+                        self.search_documents(query, embedding, limit, doc_types, date_filter)
                     )
                     return result
             except RuntimeError:
@@ -306,13 +341,77 @@ class DatabaseClient:
 
             # asyncio.run()を使用（推奨される方法）
             return asyncio.run(
-                self.search_documents(query, embedding, limit, doc_types)
+                self.search_documents(query, embedding, limit, doc_types, date_filter)
             )
         except Exception as e:
             print(f"Sync wrapper error: {e}")
             import traceback
             traceback.print_exc()
             return []
+
+    def _apply_date_filter(self, results: List[Dict[str, Any]], date_filter: str) -> List[Dict[str, Any]]:
+        """
+        日付フィルタを適用
+
+        Args:
+            results: 検索結果のリスト
+            date_filter: フィルタタイプ ('today', 'this_week', 'this_month', 'recent')
+
+        Returns:
+            フィルタリングされた結果
+        """
+        from datetime import datetime, timedelta
+
+        now = datetime.now()
+        filtered_results = []
+
+        for result in results:
+            document_date_str = result.get('document_date')
+
+            # document_dateが存在しない場合はスキップ
+            if not document_date_str:
+                # 'recent' の場合は、作成日時 (created_at) でフィルタリング
+                if date_filter == 'recent':
+                    created_at_str = result.get('created_at')
+                    if created_at_str:
+                        try:
+                            created_at = datetime.fromisoformat(created_at_str.replace('Z', '+00:00'))
+                            # 過去30日以内
+                            if (now - created_at).days <= 30:
+                                filtered_results.append(result)
+                        except:
+                            pass
+                continue
+
+            try:
+                # document_dateをパース (YYYY-MM-DD形式を想定)
+                document_date = datetime.strptime(document_date_str, '%Y-%m-%d')
+            except:
+                # パースできない場合はスキップ
+                continue
+
+            # フィルタタイプに応じて判定
+            if date_filter == 'today':
+                if document_date.date() == now.date():
+                    filtered_results.append(result)
+
+            elif date_filter == 'this_week':
+                # 今週の月曜日を計算
+                week_start = now - timedelta(days=now.weekday())
+                week_start = week_start.replace(hour=0, minute=0, second=0, microsecond=0)
+                if document_date >= week_start:
+                    filtered_results.append(result)
+
+            elif date_filter == 'this_month':
+                if document_date.year == now.year and document_date.month == now.month:
+                    filtered_results.append(result)
+
+            elif date_filter == 'recent':
+                # 過去30日以内
+                if (now - document_date).days <= 30:
+                    filtered_results.append(result)
+
+        return filtered_results
 
     async def _fallback_vector_search(
         self,

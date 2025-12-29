@@ -154,7 +154,7 @@ class UnifiedDocumentPipeline:
             model_g = stage_g_config['model']
 
             logger.info(f"[Stage G] Text Formatting + Integration開始... (model={model_g})")
-            combined_text = self.stage_g.process(
+            stage_g_result = self.stage_g.process(
                 vision_raw=vision_raw,
                 extracted_text=extracted_text,
                 prompt_template=prompt_g,
@@ -162,12 +162,18 @@ class UnifiedDocumentPipeline:
                 mode="integrate"  # 統合モード
             )
 
+            # Stage G の結果を分離
+            combined_text = stage_g_result.get('formatted_text', '')
+            stage_f_structure = stage_g_result.get('stage_f_structure')
+
             # Stage G の結果をチェック（空のコンテンツは警告のみ、エラーではない）
             if not combined_text or not combined_text.strip():
                 logger.warning(f"[Stage G警告] 統合テキストが空です（テキストのないドキュメントの可能性）")
                 combined_text = ""  # 空文字列として継続
 
             logger.info(f"[Stage G完了] 統合テキスト: {len(combined_text)}文字")
+            if stage_f_structure:
+                logger.info(f"[Stage G完了] 構造化情報: tables={len(stage_f_structure.get('tables', []))}, sections={len(stage_f_structure.get('sections', []))}")
 
             # ============================================
             # Stage H: Structuring
@@ -233,7 +239,8 @@ class UnifiedDocumentPipeline:
                     workspace=workspace,
                     combined_text=combined_text,
                     prompt=prompt_h,
-                    model=model_h
+                    model=model_h,
+                    stage_f_structure=stage_f_structure  # 構造化情報を渡す
                 )
 
                 # Stage H の結果をチェック

@@ -6,9 +6,10 @@ Stage F で抽出した生テキストをAIが読める形式に整形
 - モデル: gemini-2.0-flash-exp
 - 重要性: 視覚情報を失わずに構造化（Stage H）に渡すための重要工程
 """
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 from string import Template
 from loguru import logger
+import json
 
 from C_ai_common.llm_client.llm_client import LLMClient
 from .prompts import STAGE_G_FORMATTING_PROMPT
@@ -93,32 +94,43 @@ class StageGTextFormatter:
         prompt_template: str = "",
         model: str = "gemini-2.0-flash-exp",
         mode: str = "format"
-    ) -> str:
+    ) -> Dict[str, Any]:
         """
         Stage F の生テキストを整形 + テキスト統合（設定ベース版）
 
         Args:
-            vision_raw: Stage F のOCR結果
+            vision_raw: Stage F のOCR結果（JSON文字列）
             extracted_text: Stage E で抽出したテキスト（mode="integrate" の場合に使用）
             prompt_template: プロンプトテンプレート（{vision_raw} を含む）
             model: モデル名
             mode: "format" (整形のみ) または "integrate" (整形 + 統合)
 
         Returns:
-            formatted_text: 整形されたテキスト（または統合されたテキスト）
+            {
+                'formatted_text': str,  # 整形されたテキスト（または統合されたテキスト）
+                'stage_f_structure': dict or None  # Stage F の構造化情報
+            }
         """
+        # Stage F の構造化情報を抽出
+        stage_f_structure = self._extract_structure_from_vision(vision_raw)
+
         if mode == "format":
             # 従来通り: Vision整形のみ
-            return self._format_vision(vision_raw, prompt_template, model)
+            formatted_text = self._format_vision(vision_raw, prompt_template, model)
 
         elif mode == "integrate":
             # 新機能: Vision整形 + テキスト統合
             vision_formatted = self._format_vision(vision_raw, prompt_template, model)
-            return self._integrate_texts(extracted_text, vision_formatted, model)
+            formatted_text = self._integrate_texts(extracted_text, vision_formatted, model)
 
         else:
             logger.error(f"[Stage G エラー] 無効なモード: {mode}")
-            return ""
+            formatted_text = ""
+
+        return {
+            'formatted_text': formatted_text,
+            'stage_f_structure': stage_f_structure
+        }
 
     def _format_vision(self, vision_raw: str, prompt_template: str, model: str) -> str:
         """
@@ -228,3 +240,55 @@ class StageGTextFormatter:
             logger.error(f"[Stage G 統合エラー] {e}", exc_info=True)
             # 統合失敗時はフォールバック: シンプルな連結
             return f"{vision}\n\n{extracted}".strip()
+
+    def _extract_structure_from_vision(self, vision_raw: str) -> Optional[Dict[str, Any]]:
+        """
+        Stage F の JSON 出力から構造化情報を抽出
+
+        Args:
+            vision_raw: Stage F のOCR結果（JSON文字列）
+
+        Returns:
+            構造化情報 (layout_info, visual_elements) または None
+        """
+        if not vision_raw or not vision_raw.strip():
+            logger.debug("[Stage G] vision_raw が空 → 構造化情報なし")
+            return None
+
+        try:
+            # JSONパース
+            vision_json = json.loads(vision_raw)
+
+            # 構造化情報を抽出
+            structure = {}
+
+            # layout_info を抽出（sections, tables）
+            layout_info = vision_json.get('layout_info', {})
+            if layout_info:
+                structure['sections'] = layout_info.get('sections', [])
+                structure['tables'] = layout_info.get('tables', [])
+
+            # sections がない場合でも空リストを設定
+            if 'sections' not in structure:
+                structure['sections'] = []
+            if 'tables' not in structure:
+                structure['tables'] = []
+
+            # visual_elements を抽出
+            visual_elements = vision_json.get('visual_elements', {})
+            if visual_elements:
+                structure['visual_elements'] = visual_elements
+
+            # full_text も保持（参考用）
+            structure['full_text'] = vision_json.get('full_text', '')
+
+            logger.info(f"[Stage G] 構造化情報を抽出: sections={len(structure.get('sections', []))}, tables={len(structure.get('tables', []))}")
+            return structure if structure else None
+
+        except json.JSONDecodeError as e:
+            logger.warning(f"[Stage G] vision_raw がJSON形式ではありません: {e}")
+            logger.debug(f"[Stage G] vision_raw の最初の500文字: {vision_raw[:500]}")
+            return None
+        except Exception as e:
+            logger.error(f"[Stage G] 構造化情報抽出エラー: {e}", exc_info=True)
+            return None

@@ -629,7 +629,8 @@ class ClassroomReprocessorV2:
                     'chunk_size': len(meta_text),
                     'chunk_type': meta_type,
                     'embedding': meta_embedding,
-                    'search_weight': meta_weight
+                    'search_weight': meta_weight,
+                    'chunk_metadata': meta_chunk.get('metadata')  # 構造化データを保存
                 }
 
                 try:
@@ -1041,7 +1042,8 @@ class ClassroomReprocessorV2:
                     'chunk_size': len(meta_text),
                     'chunk_type': meta_type,
                     'embedding': meta_embedding,
-                    'search_weight': meta_weight
+                    'search_weight': meta_weight,
+                    'chunk_metadata': meta_chunk.get('metadata')  # 構造化データを保存
                 }
 
                 try:

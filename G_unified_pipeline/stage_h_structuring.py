@@ -37,7 +37,8 @@ class StageHStructuring:
         workspace: str,
         combined_text: str,
         prompt: str,
-        model: str
+        model: str,
+        stage_f_structure: Optional[Dict[str, Any]] = None
     ) -> Dict[str, Any]:
         """
         構造化（設定ベース版）
@@ -49,6 +50,7 @@ class StageHStructuring:
             combined_text: 統合テキスト（Stage E + G の結果）
             prompt: プロンプト（config/prompts/stage_h/*.md から読み込み）
             model: モデル名
+            stage_f_structure: Stage F の構造化情報（tables, sections, visual_elements）
 
         Returns:
             {
@@ -58,6 +60,10 @@ class StageHStructuring:
             }
         """
         logger.info(f"[Stage H] 構造化開始... (doc_type={doc_type}, model={model})")
+
+        # Stage F の構造化情報がある場合はログ出力
+        if stage_f_structure:
+            logger.info(f"[Stage H] Stage F の構造化情報を受信: tables={len(stage_f_structure.get('tables', []))}, sections={len(stage_f_structure.get('sections', []))}")
 
         if not combined_text or not combined_text.strip():
             logger.warning("[Stage H] 入力テキストが空です")
@@ -92,6 +98,10 @@ class StageHStructuring:
             content = response.get("content", "")
             logger.info(f"[Stage H] ===== Claudeレスポンス全文 =====\n{content}\n[Stage H] ===== レスポンス終了 =====")
             result = self._extract_json_with_retry(content, model=model, max_retries=2)
+
+            # Stage F の構造化情報をマージ
+            if stage_f_structure:
+                result = self._merge_stage_f_structure(result, stage_f_structure)
 
             # 結果の整形
             return {
@@ -271,6 +281,115 @@ class StageHStructuring:
         except Exception as e:
             logger.error(f"[Stage H] JSON修正エラー: {e}")
             return failed_content
+
+    def _merge_stage_f_structure(self, result: Dict[str, Any], stage_f_structure: Dict[str, Any]) -> Dict[str, Any]:
+        """
+        Stage F の構造化情報を Stage H の結果にマージ
+
+        Args:
+            result: Stage H の抽出結果
+            stage_f_structure: Stage F の構造化情報
+
+        Returns:
+            マージ済みの結果
+        """
+        metadata = result.get('metadata', {})
+
+        # Stage F の tables を優先的に使用（Stage H で tables が抽出されていない場合、または少ない場合）
+        stage_f_tables = stage_f_structure.get('tables', [])
+        stage_h_tables = metadata.get('structured_tables', [])
+
+        if stage_f_tables and len(stage_f_tables) > len(stage_h_tables):
+            logger.info(f"[Stage H] Stage F の tables を優先使用: {len(stage_f_tables)}個（Stage H: {len(stage_h_tables)}個）")
+
+            # Stage F の tables を Stage H の形式に変換
+            converted_tables = []
+            for i, table in enumerate(stage_f_tables):
+                rows = table.get('rows', [])
+                if rows:
+                    # 最初の行をヘッダーとして扱う
+                    headers = rows[0] if rows else []
+                    data_rows = rows[1:] if len(rows) > 1 else []
+
+                    # 辞書形式に変換
+                    converted_rows = []
+                    for row in data_rows:
+                        row_dict = {}
+                        for j, cell in enumerate(row):
+                            header = headers[j] if j < len(headers) else f"列{j+1}"
+                            row_dict[header] = cell
+                        converted_rows.append(row_dict)
+
+                    converted_tables.append({
+                        'table_title': table.get('caption', f'表{i+1}'),
+                        'table_type': 'ocr_extracted',
+                        'headers': headers,
+                        'rows': converted_rows
+                    })
+
+            metadata['structured_tables'] = converted_tables
+
+        # Stage F の sections を text_blocks に統合（text_blocks が少ない場合）
+        stage_f_sections = stage_f_structure.get('sections', [])
+        stage_h_text_blocks = metadata.get('text_blocks', [])
+
+        if stage_f_sections and len(stage_h_text_blocks) < len(stage_f_sections):
+            logger.info(f"[Stage H] Stage F の sections を text_blocks に変換: {len(stage_f_sections)}個")
+
+            converted_blocks = []
+            current_heading = None
+            current_content_parts = []
+
+            for section in stage_f_sections:
+                section_type = section.get('type', '')
+                content = section.get('content', '')
+
+                if section_type == 'heading':
+                    # 前のブロックを保存
+                    if current_heading and current_content_parts:
+                        converted_blocks.append({
+                            'title': current_heading,
+                            'content': '\n'.join(current_content_parts)
+                        })
+                    # 新しいヘッディング開始
+                    current_heading = content
+                    current_content_parts = []
+                else:
+                    # paragraph, list など
+                    if content:
+                        current_content_parts.append(content)
+
+            # 最後のブロックを保存
+            if current_heading and current_content_parts:
+                converted_blocks.append({
+                    'title': current_heading,
+                    'content': '\n'.join(current_content_parts)
+                })
+
+            # Stage H の text_blocks より多ければ置き換え
+            if len(converted_blocks) > len(stage_h_text_blocks):
+                metadata['text_blocks'] = converted_blocks
+
+        # Stage F の visual_elements からデッドライン情報を抽出
+        visual_elements = stage_f_structure.get('visual_elements', {})
+        if visual_elements:
+            deadline_info = visual_elements.get('deadline_info')
+            if deadline_info and not result.get('document_date'):
+                logger.info(f"[Stage H] Stage F の deadline_info を document_date として使用: {deadline_info}")
+                result['document_date'] = deadline_info
+
+            # 強調されたテキストをタグに追加
+            emphasized_text = visual_elements.get('emphasized_text', [])
+            if emphasized_text:
+                existing_tags = result.get('tags', [])
+                for text in emphasized_text:
+                    if text and text not in existing_tags:
+                        existing_tags.append(text)
+                result['tags'] = existing_tags
+                logger.info(f"[Stage H] Stage F の emphasized_text をタグに追加: {emphasized_text}")
+
+        result['metadata'] = metadata
+        return result
 
     def _get_fallback_result(self, doc_type: str) -> Dict[str, Any]:
         """
