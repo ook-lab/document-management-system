@@ -578,35 +578,43 @@ with tabs[1]:
         )
 
         # カテゴリー作成/取得ヘルパー関数
-        def get_or_create_category(category_name, parent_id=None):
-            """カテゴリーを取得、なければ作成"""
-            if not category_name or category_name == "未分類":
+        def get_or_create_category(large_name, medium_name, small_name):
+            """カテゴリーを取得、なければ作成（大中小の組み合わせで1つのID）"""
+            # トリム
+            large_name = str(large_name).strip() if large_name else ""
+            medium_name = str(medium_name).strip() if medium_name else ""
+            small_name = str(small_name).strip() if small_name else ""
+
+            # 未分類チェック
+            if not large_name or not medium_name or not small_name or small_name == "未分類":
                 return None
 
+            # 検索・登録用の一つなぎの名前
+            category_full_name = f"{large_name}>{medium_name}>{small_name}"
+
             try:
-                # 既存カテゴリーを検索（name AND parent_idで検索）
-                query = db.table('MASTER_Categories_product').select('id, name, parent_id')
-                if parent_id:
-                    result = query.eq('name', category_name).eq('parent_id', parent_id).execute()
-                else:
-                    result = query.eq('name', category_name).is_('parent_id', 'null').execute()
+                # 既存カテゴリーを検索（nameで検索）
+                result = db.table('MASTER_Categories_product').select('id').eq('name', category_full_name).execute()
 
                 if result.data:
                     return result.data[0]['id']
 
                 # 新規作成
                 new_cat = {
-                    'name': category_name,
-                    'parent_id': parent_id
+                    'name': category_full_name,
+                    'large_category': large_name,
+                    'medium_category': medium_name,
+                    'small_category': small_name,
+                    'parent_id': None
                 }
                 result = db.table('MASTER_Categories_product').insert(new_cat).execute()
 
                 if not result.data:
-                    raise Exception(f"カテゴリ '{category_name}' の作成に失敗しました（レスポンスが空です）")
+                    raise Exception(f"カテゴリ '{category_full_name}' の作成に失敗しました")
 
                 return result.data[0]['id']
             except Exception as e:
-                raise Exception(f"カテゴリ '{category_name}' の取得/作成中にエラーが発生しました: {str(e)}")
+                raise Exception(f"カテゴリ '{category_full_name}' の取得/作成中にエラーが発生しました: {str(e)}")
 
         # 保存ボタン
         if st.button("💾 変更を保存", type="primary", key="save_category"):
@@ -619,24 +627,18 @@ with tabs[1]:
                 for idx, row in edited_df.iterrows():
                     product_id = row["_id"]
 
-                    # カテゴリー階層を作成/取得
+                    # カテゴリー取得/作成
                     large_name = row["大分類"]
                     medium_name = row["中分類"]
                     small_name = row["小分類"]
 
-                    # 大分類 → 中分類 → 小分類の順に作成/取得
-                    large_id = get_or_create_category(large_name, parent_id=None)
-                    medium_id = get_or_create_category(medium_name, parent_id=large_id) if large_id else None
-                    small_id = get_or_create_category(small_name, parent_id=medium_id) if medium_id else None
-
-                    # 小分類のIDが取得できなかった場合、small_nameだけで検索
-                    if not small_id and small_name and small_name != "未分類":
-                        small_id = get_or_create_category(small_name, parent_id=None)
+                    # 大中小の組み合わせで1つのIDを取得/作成
+                    category_id = get_or_create_category(large_name, medium_name, small_name)
 
                     update_data = {
                         "general_name": row["一般名詞"],
                         "small_category": small_name if small_name != "未分類" else None,
-                        "category_id": small_id
+                        "category_id": category_id
                     }
 
                     # manually_verified カラムが存在する場合のみ追加

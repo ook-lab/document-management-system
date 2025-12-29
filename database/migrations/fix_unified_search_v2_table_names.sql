@@ -76,25 +76,13 @@ BEGIN
     ranked_chunks AS (
         SELECT
             cs.*,
-            (cs.weighted_sim * vector_weight + cs.ft_score * fulltext_weight) AS combined,
+            -- 修正C: タイトルの場合は+0.1のボーナススコアを加算
+            (cs.weighted_sim * vector_weight + cs.ft_score * fulltext_weight +
+             CASE WHEN cs.chunk_type = 'title' THEN 0.1 ELSE 0.0 END) AS combined,
             (cs.chunk_type = 'title') AS is_title_match
         FROM chunk_scores cs
-    ),
-    document_best_chunks AS (
-        SELECT DISTINCT ON (rc.doc_id)
-            rc.chunk_id,
-            rc.doc_id,
-            rc.chunk_index,
-            rc.chunk_content,
-            rc.chunk_type,
-            rc.raw_sim,
-            rc.weighted_sim,
-            rc.ft_score,
-            rc.combined,
-            rc.is_title_match
-        FROM ranked_chunks rc
-        ORDER BY rc.doc_id, rc.is_title_match DESC, rc.combined DESC
     )
+    -- 修正A: DISTINCT ON を削除し、チャンク単位で上位N件を取得
     SELECT
         sd.id AS document_id,
         sd.file_name,
@@ -104,15 +92,15 @@ BEGIN
         sd.metadata,
         sd.summary,
         sd.attachment_text,
-        dbc.chunk_content AS best_chunk_text,
-        dbc.chunk_type::VARCHAR AS best_chunk_type,
-        dbc.chunk_id AS best_chunk_id,
-        dbc.chunk_index AS best_chunk_index,
-        dbc.raw_sim::FLOAT AS raw_similarity,
-        dbc.weighted_sim::FLOAT AS weighted_similarity,
-        dbc.ft_score::FLOAT AS fulltext_score,
-        dbc.combined::FLOAT AS combined_score,
-        dbc.is_title_match AS title_matched,
+        rc.chunk_content AS best_chunk_text,
+        rc.chunk_type::VARCHAR AS best_chunk_type,
+        rc.chunk_id AS best_chunk_id,
+        rc.chunk_index AS best_chunk_index,
+        rc.raw_sim::FLOAT AS raw_similarity,
+        rc.weighted_sim::FLOAT AS weighted_similarity,
+        rc.ft_score::FLOAT AS fulltext_score,
+        rc.combined::FLOAT AS combined_score,
+        rc.is_title_match AS title_matched,
         sd.source_type,
         sd.source_url,
         sd.created_at,
@@ -121,10 +109,11 @@ BEGIN
         sd.display_sent_at,
         sd.display_post_text,
         sd.display_type
-    FROM document_best_chunks dbc
+    FROM ranked_chunks rc
     -- ✅ 修正: source_documents → Rawdata_FILE_AND_MAIL
-    INNER JOIN "Rawdata_FILE_AND_MAIL" sd ON sd.id = dbc.doc_id
-    ORDER BY dbc.is_title_match DESC, dbc.combined DESC
+    INNER JOIN "Rawdata_FILE_AND_MAIL" sd ON sd.id = rc.doc_id
+    -- 修正C: タイトル優先を削除し、純粋に統合スコアの降順でソート
+    ORDER BY rc.combined DESC
     LIMIT match_count;
 END;
 $$ LANGUAGE plpgsql;

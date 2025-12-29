@@ -7,15 +7,22 @@ echo "================================"
 echo "Cloud Runへのデプロイを開始します"
 echo "================================"
 
+# スクリプトのディレクトリを取得
+SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
+PROJECT_ROOT="$( cd "$SCRIPT_DIR/.." && pwd )"
+
 # .envファイルから環境変数を読み込む
-if [ ! -f .env ]; then
-    echo "エラー: .envファイルが見つかりません"
+ENV_FILE="$PROJECT_ROOT/.env"
+if [ ! -f "$ENV_FILE" ]; then
+    echo "エラー: .envファイルが見つかりません ($ENV_FILE)"
     exit 1
 fi
 
 # .envファイルから必要な環境変数を抽出
 echo "環境変数を読み込んでいます..."
-source .env
+set -a  # 自動的にexport
+source "$ENV_FILE" 2>/dev/null || true  # エラーを無視
+set +a
 
 # 必須環境変数のチェック
 if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_KEY" ]; then
@@ -28,10 +35,15 @@ echo "✓ 環境変数の読み込み完了"
 # Cloud Runにデプロイ
 echo ""
 echo "Cloud Runにデプロイしています..."
+# プロジェクトルートに移動（Dockerfileがプロジェクトルートからのパスを使用するため）
+cd "$PROJECT_ROOT"
 gcloud run deploy mail-doc-search-system \
   --source . \
   --region asia-northeast1 \
   --allow-unauthenticated \
+  --timeout 3600 \
+  --memory 4Gi \
+  --cpu 2 \
   --set-env-vars "SUPABASE_URL=$SUPABASE_URL" \
   --set-env-vars "SUPABASE_KEY=$SUPABASE_KEY" \
   --set-env-vars "GOOGLE_AI_API_KEY=$GOOGLE_AI_API_KEY" \

@@ -181,8 +181,8 @@ class DatabaseClient:
                 "query_embedding": embedding,
                 "match_threshold": 0.0,
                 "match_count": limit,  # 指定された件数を取得
-                "vector_weight": 0.3,  # ベクトル検索30% - より柔軟に
-                "fulltext_weight": 0.7,  # キーワード検索70% - 実用的な完全一致を重視
+                "vector_weight": 0.7,  # ベクトル検索70% - 意味的類似度を重視
+                "fulltext_weight": 0.3,  # キーワード検索30% - 完全一致の補助
                 "filter_doc_types": doc_types,  # doc_typeのみで絞り込み
                 "filter_chunk_types": None,  # 全chunk_typeを対象（title, summary, display_subject等）
                 "filter_workspace": None  # 全workspaceを対象

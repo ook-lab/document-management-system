@@ -638,7 +638,49 @@ class ClassroomReprocessorV2:
                 except Exception as e:
                     logger.error(f"  チャンク保存エラー: {e}")
 
-            logger.info(f"[チャンク化] 完了: {current_chunk_index}個のチャンク作成")
+            logger.info(f"[チャンク化] メタデータチャンク完了: {current_chunk_index}個")
+
+            # ============================================
+            # 本文チャンク化（attachment_text）
+            # ============================================
+            attachment_text = document_record.get('attachment_text', '')
+            if attachment_text and len(attachment_text.strip()) > 50:
+                logger.info(f"[チャンク化] 本文チャンク作成開始: {len(attachment_text)}文字")
+
+                # 小チャンク作成（150文字ずつ、オーバーラップ30文字）
+                from A_common.utils.chunking import TextChunker
+                chunker = TextChunker(chunk_size=150, chunk_overlap=30)
+                small_chunks = chunker.split_text(attachment_text)
+
+                logger.info(f"[チャンク化] 小チャンク数: {len(small_chunks)}個")
+
+                # 小チャンクをembedding化して保存
+                for i, chunk_dict in enumerate(small_chunks):
+                    chunk_text = chunk_dict['chunk_text']
+                    if not chunk_text.strip():
+                        continue
+
+                    try:
+                        # Embedding生成
+                        chunk_embedding = self.pipeline.llm_client.generate_embedding(chunk_text)
+
+                        # search_indexに保存
+                        chunk_doc = {
+                            'document_id': document_id,
+                            'chunk_index': current_chunk_index,
+                            'chunk_content': chunk_text,
+                            'chunk_size': len(chunk_text),
+                            'chunk_type': 'content_small',
+                            'embedding': chunk_embedding,
+                            'search_weight': 1.0
+                        }
+
+                        self.db.client.table('10_ix_search_index').insert(chunk_doc).execute()
+                        current_chunk_index += 1
+                    except Exception as e:
+                        logger.error(f"  小チャンク保存エラー: {e}")
+
+            logger.info(f"[チャンク化] 全チャンク完了: {current_chunk_index}個")
 
             # ============================================
             # データベース更新
@@ -1008,7 +1050,49 @@ class ClassroomReprocessorV2:
                 except Exception as e:
                     logger.error(f"  チャンク保存エラー: {e}")
 
-            logger.info(f"[チャンク化] 完了: {current_chunk_index}個のチャンク作成")
+            logger.info(f"[チャンク化] メタデータチャンク完了: {current_chunk_index}個")
+
+            # ============================================
+            # 本文チャンク化（attachment_text）
+            # ============================================
+            attachment_text = document_record.get('attachment_text', '')
+            if attachment_text and len(attachment_text.strip()) > 50:
+                logger.info(f"[チャンク化] 本文チャンク作成開始: {len(attachment_text)}文字")
+
+                # 小チャンク作成（150文字ずつ、オーバーラップ30文字）
+                from A_common.utils.chunking import TextChunker
+                chunker = TextChunker(chunk_size=150, chunk_overlap=30)
+                small_chunks = chunker.split_text(attachment_text)
+
+                logger.info(f"[チャンク化] 小チャンク数: {len(small_chunks)}個")
+
+                # 小チャンクをembedding化して保存
+                for i, chunk_dict in enumerate(small_chunks):
+                    chunk_text = chunk_dict['chunk_text']
+                    if not chunk_text.strip():
+                        continue
+
+                    try:
+                        # Embedding生成
+                        chunk_embedding = self.pipeline.llm_client.generate_embedding(chunk_text)
+
+                        # search_indexに保存
+                        chunk_doc = {
+                            'document_id': document_id,
+                            'chunk_index': current_chunk_index,
+                            'chunk_content': chunk_text,
+                            'chunk_size': len(chunk_text),
+                            'chunk_type': 'content_small',
+                            'embedding': chunk_embedding,
+                            'search_weight': 1.0
+                        }
+
+                        self.db.client.table('10_ix_search_index').insert(chunk_doc).execute()
+                        current_chunk_index += 1
+                    except Exception as e:
+                        logger.error(f"  小チャンク保存エラー: {e}")
+
+            logger.info(f"[チャンク化] 全チャンク完了: {current_chunk_index}個")
 
             # ============================================
             # データベース更新

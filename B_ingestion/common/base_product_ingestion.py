@@ -248,22 +248,35 @@ class BaseProductIngestionPipeline(ABC):
             "updated_at": datetime.now().isoformat()
         }
 
-        # Embeddingを生成（複数フィールドから）
-        # product_name + general_name + category + manufacturer を組み合わせる
-        text_parts = [
-            product_name,
-            general_name or '',
-            category_name or '',
-            product.get("manufacturer") or ''
-        ]
-        text_for_embedding = ' '.join(filter(None, text_parts)).strip()
+        # 複数Embeddingを生成（ハイブリッド検索用）
+        # 1. general_name_embedding
+        if general_name:
+            general_name_emb = self._generate_embedding(general_name)
+            if general_name_emb:
+                data["general_name_embedding"] = '[' + ','.join(map(str, general_name_emb)) + ']'
+                logger.debug(f"general_name_embedding生成成功: {general_name[:30]}...")
 
-        embedding = self._generate_embedding(text_for_embedding)
-        if embedding:
-            # vector型として保存するために文字列形式に変換
-            embedding_str = '[' + ','.join(map(str, embedding)) + ']'
-            data["embedding"] = embedding_str
-            logger.debug(f"Embedding生成成功: {text_for_embedding[:50]}...")
+        # 2. small_category_embedding
+        if category_name:
+            category_emb = self._generate_embedding(category_name)
+            if category_emb:
+                data["small_category_embedding"] = '[' + ','.join(map(str, category_emb)) + ']'
+                logger.debug(f"small_category_embedding生成成功: {category_name[:30]}...")
+
+        # 3. keywords_embedding
+        keywords = product.get("keywords")
+        if keywords:
+            # キーワードを文字列に変換
+            if isinstance(keywords, list):
+                keywords_text = " ".join(str(k) for k in keywords if k)
+            else:
+                keywords_text = str(keywords)
+
+            if keywords_text.strip():
+                keywords_emb = self._generate_embedding(keywords_text)
+                if keywords_emb:
+                    data["keywords_embedding"] = '[' + ','.join(map(str, keywords_emb)) + ']'
+                    logger.debug(f"keywords_embedding生成成功: {keywords_text[:30]}...")
 
         return data
 

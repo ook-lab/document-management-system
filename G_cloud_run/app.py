@@ -314,8 +314,12 @@ def _generate_answer_with_model(
         # ドキュメントコンテキストを構築
         context = _build_context(documents)
 
+        import sys
+        print(f"[DEBUG] 文書数: {len(documents)}件", flush=True, file=sys.stderr)
+        print(f"[DEBUG] コンテキスト文字数: {len(context)}文字", flush=True, file=sys.stderr)
+
         # ✅ コンテキストの文字数制限（2025年モデル対応: Gemini 2.5 Flashは100万トークン対応）
-        MAX_CONTEXT_LENGTH = 100000  # 約10万文字まで（Gemini 2.5の性能に合わせて大幅引き上げ）
+        MAX_CONTEXT_LENGTH = 500000  # 約50万文字まで（Gemini 2.5 Flashの100万トークン性能をフル活用）
         if len(context) > MAX_CONTEXT_LENGTH:
             context = context[:MAX_CONTEXT_LENGTH] + "\n\n[... 以降は省略されました ...]"
             print(f"[WARNING] コンテキストを切り詰めました: {len(context)} → {MAX_CONTEXT_LENGTH} 文字")
@@ -356,6 +360,9 @@ def _generate_answer_with_model(
         # プロンプトを結合
         prompt = "\n".join(prompt_parts)
 
+        print(f"[DEBUG] 最終プロンプト文字数: {len(prompt)}文字", flush=True, file=sys.stderr)
+        print(f"[DEBUG] 推定トークン数: {len(prompt) // 4}トークン（概算）", flush=True, file=sys.stderr)
+
         # AIモデルで回答生成
         response = llm_client.call_model(
             tier="ui_response",
@@ -364,6 +371,10 @@ def _generate_answer_with_model(
         )
 
         if not response.get('success'):
+            error_msg = response.get('error', 'Unknown error')
+            print(f"[ERROR] LLM呼び出し失敗: {error_msg}", flush=True, file=sys.stderr)
+            print(f"[ERROR] finish_reason: {response.get('error_details', {}).get('finish_reason_name', 'N/A')}", flush=True, file=sys.stderr)
+            print(f"[ERROR] Full response: {response}", flush=True, file=sys.stderr)
             return None, None
 
         return response.get('content', ''), model_name
