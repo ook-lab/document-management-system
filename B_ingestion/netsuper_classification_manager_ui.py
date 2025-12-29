@@ -584,7 +584,7 @@ with tabs[1]:
                 return None
 
             try:
-                # 既存カテゴリーを検索
+                # 既存カテゴリーを検索（name AND parent_idで検索）
                 query = db.table('MASTER_Categories_product').select('id, name, parent_id')
                 if parent_id:
                     result = query.eq('name', category_name).eq('parent_id', parent_id).execute()
