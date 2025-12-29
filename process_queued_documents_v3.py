@@ -102,6 +102,88 @@ class DocumentProcessor:
         except Exception as e:
             print("ERROR:", f"失敗マークエラー: {e}")
 
+    def get_queue_stats(self, workspace: str = 'all') -> Dict[str, int]:
+        """
+        統計情報を取得
+
+        Args:
+            workspace: 対象ワークスペース ('all' で全て)
+
+        Returns:
+            統計情報の辞書
+        """
+        try:
+            query = self.db.client.table('Rawdata_FILE_AND_MAIL').select('processing_status, workspace')
+
+            if workspace != 'all':
+                query = query.eq('workspace', workspace)
+
+            response = query.execute()
+
+            stats = {
+                'pending': 0,
+                'processing': 0,
+                'completed': 0,
+                'failed': 0,
+                'null': 0  # 未処理（processing_statusがnull）
+            }
+
+            for doc in response.data:
+                status = doc.get('processing_status')
+                if status is None:
+                    stats['null'] += 1
+                else:
+                    stats[status] = stats.get(status, 0) + 1
+
+            stats['total'] = len(response.data)
+
+            # 成功率を計算
+            processed = stats['completed'] + stats['failed']
+            if processed > 0:
+                stats['success_rate'] = round(stats['completed'] / processed * 100, 1)
+            else:
+                stats['success_rate'] = 0.0
+
+            return stats
+
+        except Exception as e:
+            print(f"ERROR: 統計取得エラー: {e}")
+            return {}
+
+    def print_queue_stats(self, workspace: str = 'all'):
+        """
+        統計情報を表示
+
+        Args:
+            workspace: 対象ワークスペース ('all' で全て)
+        """
+        stats = self.get_queue_stats(workspace)
+
+        if not stats:
+            print("統計情報の取得に失敗しました")
+            return
+
+        print("\n" + "="*80)
+        if workspace == 'all':
+            print("📊 全体統計")
+        else:
+            print(f"📊 統計 (workspace: {workspace})")
+        print("="*80)
+        print(f"待機中 (pending):      {stats.get('pending', 0):>5}件")
+        print(f"処理中 (processing):   {stats.get('processing', 0):>5}件")
+        print(f"完了   (completed):    {stats.get('completed', 0):>5}件")
+        print(f"失敗   (failed):       {stats.get('failed', 0):>5}件")
+        print(f"未処理 (null):         {stats.get('null', 0):>5}件")
+        print("-" * 80)
+        print(f"合計:                  {stats.get('total', 0):>5}件")
+
+        # 成功率を表示
+        processed = stats.get('completed', 0) + stats.get('failed', 0)
+        if processed > 0:
+            print(f"成功率:                {stats.get('success_rate', 0):>5.1f}% ({stats.get('completed', 0)}/{processed})")
+
+        print("="*80 + "\n")
+
     async def process_document(
         self,
         doc: Dict[str, Any],
@@ -420,10 +502,18 @@ async def main():
     parser.add_argument('--workspace', default='all', help='対象ワークスペース (デフォルト: all)')
     parser.add_argument('--limit', type=int, default=100, help='処理する最大件数 (デフォルト: 100)')
     parser.add_argument('--no-preserve-workspace', action='store_true', help='workspaceを保持しない')
+    parser.add_argument('--stats', action='store_true', help='統計情報のみを表示')
 
     args = parser.parse_args()
 
     processor = DocumentProcessor()
+
+    # 統計情報のみ表示
+    if args.stats:
+        processor.print_queue_stats(workspace=args.workspace)
+        return
+
+    # 通常の処理
     await processor.run(
         workspace=args.workspace,
         limit=args.limit,
