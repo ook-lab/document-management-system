@@ -435,6 +435,8 @@ class DailyAutoClassifier:
             classification = await self.classify_product(product)
 
             # Rawdata_NETSUPER_itemsを更新
+            # 注：Rawdata_NETSUPER_itemsにはsmall_categoryカラムのみ存在
+            # large_category, medium_categoryはcategory_idから参照可能
             update_data = {
                 "general_name": classification.get("general_name"),
                 "small_category": classification.get("small_category"),
