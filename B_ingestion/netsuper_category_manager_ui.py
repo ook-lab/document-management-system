@@ -14,7 +14,7 @@ import sys
 root_dir = Path(__file__).parent.parent
 sys.path.insert(0, str(root_dir))
 
-from B_ingestion.common.category_manager import CategoryManager
+from B_ingestion.common.category_manager_db import CategoryManagerDB
 
 # ページ設定
 st.set_page_config(
@@ -25,8 +25,8 @@ st.set_page_config(
 
 st.title("🛒 ネットスーパーカテゴリー管理")
 
-# CategoryManagerの初期化（毎回最新データを読み込む）
-manager = CategoryManager()
+# CategoryManagerの初期化（Supabaseベース）
+manager = CategoryManagerDB()
 
 # タブで店舗を切り替え
 tabs = st.tabs(["楽天西友", "東急ストア", "ダイエー", "設定"])

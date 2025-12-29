@@ -202,9 +202,9 @@
       "name": "日用品・雑貨",
       "url": "https://netsuper.rakuten.co.jp/seiyu/search/110019/?l-id=_leftnavi_110019&sort=1",
       "enabled": true,
-      "start_date": "2025-12-23",
+      "start_date": "2026-01-07",
       "interval_days": 7,
-      "last_run": null,
+      "last_run": "2025-12-30",
       "notes": ""
     },
     {
@@ -239,6 +239,24 @@
       "url": "https://netsuper.rakuten.co.jp/seiyu/choice?l-id=_leftnavi_choice_top",
       "enabled": true,
       "start_date": "2025-12-23",
+      "interval_days": 7,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "【パワーアップ迎春】年末年始の超特価！！",
+      "url": "https://netsuper.rakuten.co.jp/seiyu/search/700300/?l-id=_leftnavi_700300&sort=1",
+      "enabled": true,
+      "start_date": "2025-12-30",
+      "interval_days": 7,
+      "last_run": null,
+      "notes": ""
+    },
+    {
+      "name": "その他",
+      "url": "https://netsuper.rakuten.co.jp/seiyu/search/880001/?l-id=_leftnavi_880001&sort=1",
+      "enabled": true,
+      "start_date": "2025-12-30",
       "interval_days": 7,
       "last_run": null,
       "notes": ""
