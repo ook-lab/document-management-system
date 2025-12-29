@@ -341,6 +341,22 @@ def _generate_answer_with_model(
 {context}
 
 【回答の条件】
+- **最重要：質問「{query}」に直接関連する情報は、具体的かつ詳細に回答してください**
+  * 課題名、ファイル名、期限、提出方法、解答の場所など、実行に必要な全ての詳細情報を含めてください
+  * ただし、質問に無関係な背景情報（生活態度、安全な生活などの一般的注意事項）は省略してください
+  * 例：「宿題をリストにして」→宿題の詳細情報は全て記載、生活態度の一般的注意事項は省略
+
+- **読みやすさを最優先してください**
+  * **見出し**を使って科目やカテゴリーごとに明確に区切る（例：### 理科、### 英語）
+  * **箇条書きとインデント**を活用して階層構造を明確にする
+  * **重要な情報**（期限、提出方法など）は太字で強調する
+  * 適切に空白行を入れて視覚的に見やすくする
+  * **長くなっても構いません**。詳細かつ読みやすい回答を心がけてください
+
+- **具体的な記載例：**
+  * ✅ 良い例：「**理科：** 「植物が生きるしくみ 演習問題(自習課題)」を解く。解答は「【解答】植物がいきるしくみ（自習課題）.pdf」で確認し、丸付けと直しを丁寧に行うこと」
+  * ❌ 悪い例：「理科：演習問題を解く」
+
 - 参考文書の情報を基に、正確に回答してください
 - **ユーザーの前提情報を考慮してください**（上記に記載された子供の情報、学校や塾のスケジュールなど）
 - **重要：ファイル名も重視してください**
@@ -351,8 +367,10 @@ def _generate_answer_with_model(
   * 議事録の質問には、議題グループや担当者・期限情報を参照してください
   * 複数のクラスやグループがある場合、質問に該当するものを絞り込んで回答してください
 - 情報が不足している場合は、その旨を伝えてください
-- 簡潔で分かりやすい回答を心がけてください
-- 回答の最後に、参考にした文書のタイトルを列挙してください
+- **参考文書の記載方法：**
+  * 回答の最後に「参考文書：」として、実際に使用した全ての文書のファイル名を列挙してください
+  * 根拠確認のため、参照した文書は全て記載してください
+  * ファイル名のみを記載し、文書番号は不要です
 
 【回答】
 """)
@@ -521,6 +539,52 @@ def _format_metadata(metadata: Dict[str, Any], indent: int = 0) -> str:
     return "\n".join(lines)
 
 
+def _group_documents_by_file(documents: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    同じドキュメントIDのチャンクをグルーピングし、最高スコアのチャンクを代表として返す
+
+    Args:
+        documents: 検索結果のリスト
+
+    Returns:
+        ドキュメントIDでグルーピングされた結果（最高スコア順）
+    """
+    from collections import defaultdict
+
+    # ドキュメントIDでグルーピング
+    grouped = defaultdict(list)
+    for doc in documents:
+        doc_id = doc.get('id')
+        if doc_id:
+            grouped[doc_id].append(doc)
+
+    # 各ドキュメントグループから最高スコアのチャンクを選択
+    result = []
+    for doc_id, chunks in grouped.items():
+        # 類似度が最も高いチャンクを選択
+        best_chunk = max(chunks, key=lambda x: x.get('similarity', 0))
+
+        # 同じドキュメントの全チャンクの内容を結合（重複排除）
+        all_contents = []
+        seen_contents = set()
+        for chunk in sorted(chunks, key=lambda x: x.get('similarity', 0), reverse=True):
+            content = chunk.get('content') or chunk.get('summary') or chunk.get('attachment_text', '')
+            if content and content not in seen_contents:
+                all_contents.append(content)
+                seen_contents.add(content)
+
+        # 最高スコアのチャンクに統合された内容を設定
+        if all_contents:
+            best_chunk['content'] = '\n\n'.join(all_contents[:3])  # 最大3チャンクまで
+
+        result.append(best_chunk)
+
+    # 類似度順にソート
+    result.sort(key=lambda x: x.get('similarity', 0), reverse=True)
+
+    return result
+
+
 def _build_context(documents: List[Dict[str, Any]]) -> str:
     """
     検索結果からコンテキストを構築
@@ -534,8 +598,11 @@ def _build_context(documents: List[Dict[str, Any]]) -> str:
     if not documents:
         return "関連する文書が見つかりませんでした。"
 
+    # 同じドキュメントのチャンクをグルーピング
+    grouped_documents = _group_documents_by_file(documents)
+
     context_parts = []
-    for idx, doc in enumerate(documents, 1):
+    for idx, doc in enumerate(grouped_documents, 1):
         file_name = doc.get('file_name', '無題')
         doc_type = doc.get('doc_type', '不明')
         # ✅ contentを優先的に使用、フォールバックとしてsummary, attachment_textをチェック
