@@ -375,31 +375,15 @@ with tabs[1]:
     products = None
     display_path = ""
 
-    # 再帰的な子孫ID取得関数（共通）
-    def get_all_descendant_ids(cat_name):
-        tree = get_category_tree()
-        if cat_name not in tree:
-            return []
-        ids = [tree[cat_name]['id']]
-        for child in tree[cat_name]['children']:
-            ids.extend(get_all_descendant_ids(child))
-        return ids
-
-    # 再帰的な子孫名取得関数（共通）
-    def get_all_descendant_names(cat_name):
-        tree = get_category_tree()
-        if cat_name not in tree:
-            return []
-        names = [cat_name]
-        for child in tree[cat_name]['children']:
-            names.extend(get_all_descendant_names(child))
-        return names
-
     # 小分類まで選択されている場合
     if selected_small and selected_small != "選択してください":
-        tree = get_category_tree()
-        if selected_small in tree:
-            small_id = tree[selected_small]['id']
+        # フラット構造：大中小の組み合わせでカテゴリIDを取得
+        cat_result = db.table('MASTER_Categories_product').select('id').eq(
+            'large_category', selected_large
+        ).eq('medium_category', selected_medium).eq('small_category', selected_small).execute()
+
+        if cat_result.data:
+            small_id = cat_result.data[0]['id']
             products = db.table('Rawdata_NETSUPER_items').select(
                 'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
             ).eq('category_id', small_id).limit(100).execute()
@@ -415,7 +399,12 @@ with tabs[1]:
 
     # 大+中分類選択、小分類は未選択
     elif selected_medium and selected_medium not in ["選択してください", "未分類", None]:
-        all_cat_ids = get_all_descendant_ids(selected_medium)
+        # フラット構造：大分類+中分類でマッチするすべてのカテゴリIDを取得
+        cat_result = db.table('MASTER_Categories_product').select('id').eq(
+            'large_category', selected_large
+        ).eq('medium_category', selected_medium).execute()
+
+        all_cat_ids = [cat['id'] for cat in cat_result.data]
 
         # category_id（UUID）で検索
         if all_cat_ids:
@@ -431,7 +420,12 @@ with tabs[1]:
 
     # 大分類のみ選択、中分類は未選択
     elif selected_large and selected_large not in ["選択してください", "未分類"]:
-        all_cat_ids = get_all_descendant_ids(selected_large)
+        # フラット構造：大分類でマッチするすべてのカテゴリIDを取得
+        cat_result = db.table('MASTER_Categories_product').select('id').eq(
+            'large_category', selected_large
+        ).execute()
+
+        all_cat_ids = [cat['id'] for cat in cat_result.data]
 
         # category_id（UUID）で検索
         if all_cat_ids:
