@@ -113,15 +113,27 @@ def get_large_categories():
     return cat_with_counts
 
 # 中分類を取得（商品数付き）
+@st.cache_data(ttl=60)
 def get_medium_categories(large_category_name):
     """指定した大分類の中分類を取得（商品1件以上のみ、件数表示）"""
+    cat_with_counts = {}
+
+    # 未分類の場合
+    if large_category_name == "未分類":
+        # 未分類の商品数をカウント
+        unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
+        unclassified_count = unclassified_result.count if unclassified_result.count else 0
+
+        if unclassified_count > 0:
+            cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
+
+        return cat_with_counts
+
     # この大分類に属するDISTINCT medium_categoryを取得
     categories = db.table('MASTER_Categories_product').select('medium_category').eq('large_category', large_category_name).execute()
 
     # 重複除去
     medium_cats = list(set([cat['medium_category'] for cat in categories.data if cat.get('medium_category')]))
-
-    cat_with_counts = {}
 
     for medium_name in medium_cats:
         # この大分類・中分類に属する全カテゴリIDを取得
@@ -141,12 +153,24 @@ def get_medium_categories(large_category_name):
     return cat_with_counts
 
 # 小分類を取得（商品数付き）
+@st.cache_data(ttl=60)
 def get_small_categories_by_medium(large_category_name, medium_category_name):
     """指定した大分類・中分類の小分類を取得（商品1件以上のみ、件数表示）"""
+    cat_with_counts = {}
+
+    # 未分類の場合
+    if large_category_name == "未分類" or medium_category_name == "未分類":
+        # 未分類の商品数をカウント
+        unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
+        unclassified_count = unclassified_result.count if unclassified_result.count else 0
+
+        if unclassified_count > 0:
+            cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
+
+        return cat_with_counts
+
     # この大分類・中分類に属するDISTINCT small_categoryを取得
     categories = db.table('MASTER_Categories_product').select('small_category, id').eq('large_category', large_category_name).eq('medium_category', medium_category_name).execute()
-
-    cat_with_counts = {}
 
     for cat in categories.data:
         small_name = cat.get('small_category')
