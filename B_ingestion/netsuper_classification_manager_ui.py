@@ -484,6 +484,30 @@ with tabs[1]:
 
         df = pd.DataFrame(df_data)
 
+        # セッションステートで選択状態を管理
+        selection_key = f"selection_{selected_large}_{selected_medium}_{selected_small}"
+        if selection_key not in st.session_state:
+            st.session_state[selection_key] = {}
+
+        # 全選択・全解除ボタン
+        col_select1, col_select2, col_select3 = st.columns([1, 1, 8])
+
+        with col_select1:
+            if st.button("☑️ 全選択", key="select_all"):
+                for idx in range(len(df)):
+                    st.session_state[selection_key][idx] = True
+                st.rerun()
+
+        with col_select2:
+            if st.button("☐ 全解除", key="deselect_all"):
+                st.session_state[selection_key] = {}
+                st.rerun()
+
+        # セッションステートの選択状態をデータフレームに反映
+        for idx in st.session_state[selection_key]:
+            if idx < len(df):
+                df.at[idx, "選択"] = st.session_state[selection_key][idx]
+
         # 一括設定UI
         st.markdown("---")
         st.subheader("📦 選択した商品に一括適用")
@@ -516,6 +540,13 @@ with tabs[1]:
             hide_index=True,
             key=f"editor_category_{selected_large}_{selected_medium}_{selected_small}"
         )
+
+        # 編集後の選択状態をセッションステートに保存
+        for idx, row in edited_df.iterrows():
+            if row["選択"]:
+                st.session_state[selection_key][idx] = True
+            elif idx in st.session_state[selection_key]:
+                del st.session_state[selection_key][idx]
 
         # カテゴリー作成/取得ヘルパー関数
         def get_or_create_category(large_name, medium_name, small_name):
