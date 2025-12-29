@@ -75,143 +75,85 @@ def build_category_hierarchy():
 
     return paths
 
-# カテゴリ階層取得（キャッシュ）
-@st.cache_data(ttl=60)
-def get_category_tree():
-    """MASTER_Categories_productから階層構造を取得"""
-    result = db.table('MASTER_Categories_product').select('id, name, parent_id').execute()
-    categories = {cat['id']: cat for cat in result.data}
-
-    # {category_name: {id, parent_id, children}} の辞書を構築
-    tree = {}
-    for cat in result.data:
-        tree[cat['name']] = {
-            'id': cat['id'],
-            'parent_id': cat['parent_id'],
-            'children': []
-        }
-
-    # 親子関係を構築
-    for cat_name, cat_data in tree.items():
-        if cat_data['parent_id']:
-            # 親カテゴリの名前を見つける
-            parent_name = next((name for name, data in tree.items() if data['id'] == cat_data['parent_id']), None)
-            if parent_name:
-                tree[parent_name]['children'].append(cat_name)
-
-    return tree
-
-# 大分類（親なし）を取得（商品数付き）
+# 大分類を取得（商品数付き）
 @st.cache_data(ttl=60)
 def get_large_categories():
-    """大分類（parent_id が null）を取得（商品1件以上のみ、件数表示）"""
-    # 全大分類を取得
-    categories = db.table('MASTER_Categories_product').select('id, name').is_('parent_id', 'null').execute()
+    """大分類を取得（商品1件以上のみ、件数表示）"""
+    # DISTINCT large_categoryを取得
+    categories = db.table('MASTER_Categories_product').select('large_category').execute()
 
-    # 各大分類配下の商品数をカウント
+    # 重複除去
+    large_cats = list(set([cat['large_category'] for cat in categories.data if cat.get('large_category')]))
+
     cat_with_counts = {}
-    tree = get_category_tree()
 
-    for cat in categories.data:
-        cat_name = cat['name']
-        cat_id = cat['id']
+    for large_name in large_cats:
+        # この大分類に属する全カテゴリIDを取得
+        cat_ids_result = db.table('MASTER_Categories_product').select('id').eq('large_category', large_name).execute()
+        cat_ids = [cat['id'] for cat in cat_ids_result.data]
 
-        # 配下の全カテゴリー名を取得（small_categoryとのマッチング用）
-        def get_all_descendant_names(name):
-            if name not in tree:
-                return []
-            names = [name]
-            for child in tree[name]['children']:
-                names.extend(get_all_descendant_names(child))
-            return names
-
-        # 配下の全カテゴリーIDを取得
-        def get_all_descendant_ids(name):
-            if name not in tree:
-                return []
-            ids = [tree[name]['id']]
-            for child in tree[name]['children']:
-                ids.extend(get_all_descendant_ids(child))
-            return ids
-
-        all_ids = get_all_descendant_ids(cat_name)
-
-        # category_id（UUID）でカウント
+        # 商品数をカウント
         count = 0
-        if all_ids:
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
+        if cat_ids:
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', cat_ids).execute()
             count = count_result.count if count_result.count else 0
 
         # 商品が1件以上ある場合のみ追加
         if count > 0:
-            cat_with_counts[f"{cat_name} ({count}件)"] = cat_name
+            cat_with_counts[f"{large_name} ({count}件)"] = large_name
 
     return cat_with_counts
 
 # 中分類を取得（商品数付き）
 def get_medium_categories(large_category_name):
-    """指定した大分類の子カテゴリを取得（商品1件以上のみ、件数表示）"""
-    tree = get_category_tree()
-    if large_category_name not in tree:
-        return {}
+    """指定した大分類の中分類を取得（商品1件以上のみ、件数表示）"""
+    # この大分類に属するDISTINCT medium_categoryを取得
+    categories = db.table('MASTER_Categories_product').select('medium_category').eq('large_category', large_category_name).execute()
 
-    children = tree[large_category_name]['children']
+    # 重複除去
+    medium_cats = list(set([cat['medium_category'] for cat in categories.data if cat.get('medium_category')]))
+
     cat_with_counts = {}
 
-    for child_name in children:
-        # 配下の全カテゴリー名を取得
-        def get_all_descendant_names(name):
-            if name not in tree:
-                return []
-            names = [name]
-            for c in tree[name]['children']:
-                names.extend(get_all_descendant_names(c))
-            return names
+    for medium_name in medium_cats:
+        # この大分類・中分類に属する全カテゴリIDを取得
+        cat_ids_result = db.table('MASTER_Categories_product').select('id').eq('large_category', large_category_name).eq('medium_category', medium_name).execute()
+        cat_ids = [cat['id'] for cat in cat_ids_result.data]
 
-        # 配下の全カテゴリーIDを取得
-        def get_all_descendant_ids(name):
-            if name not in tree:
-                return []
-            ids = [tree[name]['id']]
-            for c in tree[name]['children']:
-                ids.extend(get_all_descendant_ids(c))
-            return ids
-
-        all_ids = get_all_descendant_ids(child_name)
-
-        # category_id（UUID）でカウント
+        # 商品数をカウント
         count = 0
-        if all_ids:
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', all_ids).execute()
+        if cat_ids:
+            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', cat_ids).execute()
             count = count_result.count if count_result.count else 0
 
         # 商品が1件以上ある場合のみ追加
         if count > 0:
-            cat_with_counts[f"{child_name} ({count}件)"] = child_name
+            cat_with_counts[f"{medium_name} ({count}件)"] = medium_name
 
     return cat_with_counts
 
 # 小分類を取得（商品数付き）
-def get_small_categories_by_medium(medium_category_name):
-    """指定した中分類の子カテゴリを取得（件数表示）"""
-    tree = get_category_tree()
-    if medium_category_name not in tree:
-        return {}
+def get_small_categories_by_medium(large_category_name, medium_category_name):
+    """指定した大分類・中分類の小分類を取得（商品1件以上のみ、件数表示）"""
+    # この大分類・中分類に属するDISTINCT small_categoryを取得
+    categories = db.table('MASTER_Categories_product').select('small_category, id').eq('large_category', large_category_name).eq('medium_category', medium_category_name).execute()
 
-    children = tree[medium_category_name]['children']
     cat_with_counts = {}
 
-    for child_name in children:
-        # category_id（UUID）でカウント
-        count = 0
-        if child_name in tree:
-            cat_id = tree[child_name]['id']
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
-            count = count_result.count if count_result.count else 0
+    for cat in categories.data:
+        small_name = cat.get('small_category')
+        cat_id = cat.get('id')
+
+        if not small_name:
+            continue
+
+        # 商品数をカウント
+        count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
+        count = count_result.count if count_result.count else 0
 
         # 商品が1件以上ある場合のみ追加
         if count > 0:
-            cat_with_counts[f"{child_name} ({count}件)"] = child_name
+            cat_with_counts[f"{small_name} ({count}件)"] = small_name
 
     return cat_with_counts
 
@@ -401,14 +343,9 @@ with tabs[1]:
             # 未分類の場合、階層なし小カテゴリーを全て取得
             result = db.table('Rawdata_NETSUPER_items').select('small_category').not_.is_('small_category', 'null').execute()
             all_small = list(set([r['small_category'] for r in result.data if r.get('small_category')]))
-
-            # MASTER_Categories_productに存在するカテゴリーを除外
-            tree = get_category_tree()
-            small_list = sorted([cat for cat in all_small if cat not in tree])
-            # リストを辞書に変換（未分類の場合は件数表示なし）
-            small_categories_dict = {cat: cat for cat in small_list}
+            small_categories_dict = {cat: cat for cat in all_small}
         else:
-            small_categories_dict = get_small_categories_by_medium(selected_medium)
+            small_categories_dict = get_small_categories_by_medium(selected_large, selected_medium)
 
     small_display_names = list(small_categories_dict.keys())
 
