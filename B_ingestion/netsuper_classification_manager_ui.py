@@ -371,76 +371,73 @@ with tabs[1]:
             selected_small_display = None
             selected_small = None
 
-    # 商品を表示（部分選択対応）
-    products = None
+    # 商品取得関数（キャッシュ付き）
+    @st.cache_data(ttl=300)
+    def fetch_products_by_category(large, medium, small):
+        """カテゴリに応じた商品を取得（5分間キャッシュ）"""
+        # 小分類まで選択されている場合
+        if small and small != "選択してください":
+            cat_result = db.table('MASTER_Categories_product').select('id').eq(
+                'large_category', large
+            ).eq('medium_category', medium).eq('small_category', small).execute()
+
+            if cat_result.data:
+                small_id = cat_result.data[0]['id']
+                result = db.table('Rawdata_NETSUPER_items').select(
+                    'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+                ).eq('category_id', small_id).limit(100).execute()
+                return result.data
+            return []
+
+        # 大+中分類選択、小分類は未選択
+        elif medium and medium not in ["選択してください", "未分類", None]:
+            cat_result = db.table('MASTER_Categories_product').select('id').eq(
+                'large_category', large
+            ).eq('medium_category', medium).execute()
+
+            all_cat_ids = [cat['id'] for cat in cat_result.data]
+
+            if all_cat_ids:
+                result = db.table('Rawdata_NETSUPER_items').select(
+                    'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+                ).in_('category_id', all_cat_ids).limit(1000).execute()
+                return result.data
+            return []
+
+        # 大分類のみ選択、中分類は未選択
+        elif large and large not in ["選択してください", "未分類"]:
+            cat_result = db.table('MASTER_Categories_product').select('id').eq(
+                'large_category', large
+            ).execute()
+
+            all_cat_ids = [cat['id'] for cat in cat_result.data]
+
+            if all_cat_ids:
+                result = db.table('Rawdata_NETSUPER_items').select(
+                    'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+                ).in_('category_id', all_cat_ids).limit(1000).execute()
+                return result.data
+            return []
+
+        return []
+
+    # 商品を取得
+    products_data = fetch_products_by_category(selected_large, selected_medium, selected_small)
+
+    # 表示パスを設定
     display_path = ""
-
-    # 小分類まで選択されている場合
     if selected_small and selected_small != "選択してください":
-        # フラット構造：大中小の組み合わせでカテゴリIDを取得
-        cat_result = db.table('MASTER_Categories_product').select('id').eq(
-            'large_category', selected_large
-        ).eq('medium_category', selected_medium).eq('small_category', selected_small).execute()
-
-        if cat_result.data:
-            small_id = cat_result.data[0]['id']
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-            ).eq('category_id', small_id).limit(100).execute()
-        else:
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-            ).limit(0).execute()  # 該当なし
-
         if selected_large == "未分類":
             display_path = f"📂 未分類 > 未分類 > {selected_small}"
         else:
             display_path = f"📂 {selected_large} > {selected_medium} > {selected_small}"
-
-    # 大+中分類選択、小分類は未選択
     elif selected_medium and selected_medium not in ["選択してください", "未分類", None]:
-        # フラット構造：大分類+中分類でマッチするすべてのカテゴリIDを取得
-        cat_result = db.table('MASTER_Categories_product').select('id').eq(
-            'large_category', selected_large
-        ).eq('medium_category', selected_medium).execute()
-
-        all_cat_ids = [cat['id'] for cat in cat_result.data]
-
-        # category_id（UUID）で検索
-        if all_cat_ids:
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-            ).in_('category_id', all_cat_ids).limit(1000).execute()
-        else:
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-            ).limit(0).execute()  # 該当なし
-
         display_path = f"📂 {selected_large} > {selected_medium} （配下全て）"
-
-    # 大分類のみ選択、中分類は未選択
     elif selected_large and selected_large not in ["選択してください", "未分類"]:
-        # フラット構造：大分類でマッチするすべてのカテゴリIDを取得
-        cat_result = db.table('MASTER_Categories_product').select('id').eq(
-            'large_category', selected_large
-        ).execute()
-
-        all_cat_ids = [cat['id'] for cat in cat_result.data]
-
-        # category_id（UUID）で検索
-        if all_cat_ids:
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-            ).in_('category_id', all_cat_ids).limit(1000).execute()
-        else:
-            products = db.table('Rawdata_NETSUPER_items').select(
-                'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-            ).limit(0).execute()  # 該当なし
-
         display_path = f"📂 {selected_large} （配下全て）"
 
-    if products and products.data:
-        st.subheader(f"{display_path} ({len(products.data)}件)")
+    if products_data:
+        st.subheader(f"{display_path} ({len(products_data)}件)")
 
         # category_idからカテゴリ情報を取得するためのキャッシュ
         category_cache = {}
@@ -470,7 +467,7 @@ with tabs[1]:
 
         # データフレームに変換（ID列を削除、大中分類を追加）
         df_data = []
-        for p in products.data:
+        for p in products_data:
             large, medium, small = get_category_info(p.get('category_id'))
 
             df_data.append({
