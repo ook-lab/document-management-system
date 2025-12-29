@@ -448,41 +448,36 @@ with tabs[1]:
     if products and products.data:
         st.subheader(f"{display_path} ({len(products.data)}件)")
 
-        # カテゴリー名からID逆引き用の辞書を作成
-        tree = get_category_tree()
+        # category_idからカテゴリ情報を取得するためのキャッシュ
+        category_cache = {}
 
-        # 各商品のcategory_idから大・中・小カテゴリーを取得する関数
-        def get_category_hierarchy_from_id(category_id):
+        def get_category_info(category_id):
+            """category_idから大中小分類を取得"""
             if not category_id:
-                return "未分類", "未分類", ""
+                return "未分類", "未分類", "未分類"
 
-            # category_idから該当するカテゴリー名を見つける
-            cat_name = next((name for name, data in tree.items() if data['id'] == category_id), None)
-            if not cat_name:
-                return "未分類", "未分類", ""
+            if category_id in category_cache:
+                return category_cache[category_id]
 
-            # 小カテゴリー名
-            small = cat_name
+            # MASTER_Categories_productから取得
+            result = db.table('MASTER_Categories_product').select(
+                'large_category, medium_category, small_category'
+            ).eq('id', category_id).execute()
 
-            # 中カテゴリー名（親）
-            parent_id = tree[cat_name]['parent_id']
-            medium = next((name for name, data in tree.items() if data['id'] == parent_id), "未分類") if parent_id else "未分類"
+            if result.data:
+                cat = result.data[0]
+                large = cat.get('large_category') or "未分類"
+                medium = cat.get('medium_category') or "未分類"
+                small = cat.get('small_category') or "未分類"
+                category_cache[category_id] = (large, medium, small)
+                return large, medium, small
 
-            # 大カテゴリー名（親の親）
-            if medium != "未分類" and tree[medium]['parent_id']:
-                large = next((name for name, data in tree.items() if data['id'] == tree[medium]['parent_id']), "未分類")
-            else:
-                large = "未分類"
-
-            return large, medium, small
+            return "未分類", "未分類", "未分類"
 
         # データフレームに変換（ID列を削除、大中分類を追加）
         df_data = []
         for p in products.data:
-            large, medium, small = get_category_hierarchy_from_id(p.get('category_id'))
-            # small_categoryフィールドがあればそれを優先
-            if p.get('small_category'):
-                small = p.get('small_category')
+            large, medium, small = get_category_info(p.get('category_id'))
 
             df_data.append({
                 "_id": p['id'],  # 内部用（非表示）
