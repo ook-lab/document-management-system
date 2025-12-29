@@ -102,6 +102,14 @@ def get_large_categories():
         if count > 0:
             cat_with_counts[f"{large_name} ({count}件)"] = large_name
 
+    # 未分類の商品数をカウント
+    unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
+    unclassified_count = unclassified_result.count if unclassified_result.count else 0
+
+    # 未分類が1件以上ある場合のみ追加
+    if unclassified_count > 0:
+        cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
+
     return cat_with_counts
 
 # 中分類を取得（商品数付き）
@@ -293,10 +301,10 @@ with tabs[1]:
     col1, col2, col3 = st.columns(3)
 
     with col1:
-        # 大分類プルダウン（「未分類」を追加）
+        # 大分類プルダウン（未分類は get_large_categories() に含まれる）
         selected_large_display = st.selectbox(
             "🏢 大分類",
-            ["選択してください", "未分類"] + large_display_names,
+            ["選択してください"] + large_display_names,
             key="large_cat_select"
         )
 
