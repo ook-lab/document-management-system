@@ -7,6 +7,7 @@ import asyncio
 import json
 from typing import Dict, List, Optional
 from uuid import UUID
+from collections import defaultdict
 
 from A_common.database.client import DatabaseClient
 from C_ai_common.llm_client.llm_client import LLMClient
@@ -26,6 +27,95 @@ class DailyAutoClassifier:
     def __init__(self):
         self.db = DatabaseClient(use_service_role=True)
         self.llm_client = LLMClient()
+        self._existing_categories_cache = None
+
+    async def get_existing_categories(self) -> Dict:
+        """
+        既存のカテゴリ体系を取得（キャッシュ付き）
+
+        Returns:
+            {
+                'large': set(['食料品', ...]),
+                'medium_by_large': {'食料品': set(['調味料', '茶類', ...])},
+                'small_by_medium': {'食料品>調味料': set(['味噌', 'ソース', ...])}
+            }
+        """
+        # キャッシュがあれば再利用
+        if self._existing_categories_cache:
+            return self._existing_categories_cache
+
+        result = self.db.client.table('MASTER_Categories_product').select(
+            'large_category, medium_category, small_category'
+        ).execute()
+
+        categories = {
+            'large': set(),
+            'medium_by_large': defaultdict(set),
+            'small_by_medium': defaultdict(set)
+        }
+
+        for cat in result.data:
+            large = cat.get('large_category')
+            medium = cat.get('medium_category')
+            small = cat.get('small_category')
+
+            if large:
+                categories['large'].add(large)
+            if medium and large:
+                categories['medium_by_large'][large].add(medium)
+            if small and medium and large:
+                key = f"{large}>{medium}"
+                categories['small_by_medium'][key].add(small)
+
+        # キャッシュ
+        self._existing_categories_cache = categories
+        return categories
+
+    async def get_or_create_category(self, large: str, medium: str, small: str) -> Optional[UUID]:
+        """
+        カテゴリを取得、なければ作成
+
+        Args:
+            large: 大分類名
+            medium: 中分類名
+            small: 小分類名
+
+        Returns:
+            category_id (UUID)
+        """
+        if not large or not medium or not small:
+            return None
+
+        full_name = f"{large}>{medium}>{small}"
+
+        # 既存検索
+        result = self.db.client.table('MASTER_Categories_product').select('id').eq('name', full_name).execute()
+        if result.data:
+            return result.data[0]['id']
+
+        # 新規作成
+        try:
+            new_cat = {
+                'name': full_name,
+                'large_category': large,
+                'medium_category': medium,
+                'small_category': small,
+                'parent_id': None
+            }
+            result = self.db.client.table('MASTER_Categories_product').insert(new_cat).execute()
+            logger.info(f"  ✓ 新規カテゴリ作成: {full_name}")
+
+            # キャッシュをクリア
+            self._existing_categories_cache = None
+
+            return result.data[0]['id']
+        except Exception as e:
+            logger.error(f"カテゴリ作成エラー: {full_name} - {e}")
+            # 既に存在する可能性があるので再検索
+            result = self.db.client.table('MASTER_Categories_product').select('id').eq('name', full_name).execute()
+            if result.data:
+                return result.data[0]['id']
+            return None
 
     async def tier1_lookup(self, product_name: str) -> Optional[str]:
         """
@@ -126,8 +216,11 @@ class DailyAutoClassifier:
             few_shot_examples: Few-shot例
 
         Returns:
-            {"general_name": str, "category_id": UUID, "confidence": float}
+            {"general_name": str, "large_category": str, "medium_category": str, "small_category": str, "category_id": UUID, "confidence": float}
         """
+        # 既存カテゴリを取得
+        existing_cats = await self.get_existing_categories()
+
         # Few-shot例をテキスト化
         examples_text = []
         for i, ex in enumerate(few_shot_examples[:10], 1):  # 最大10例
@@ -135,14 +228,48 @@ class DailyAutoClassifier:
                 f"{i}. 商品名: {ex['product_name']} → 一般名詞: {ex['general_name']}"
             )
 
-        examples_str = "\n".join(examples_text)
+        examples_str = "\n".join(examples_text) if examples_text else "（参考例なし）"
 
-        prompt = f"""あなたは商品分類の専門家です。以下の過去の分類実績を参考に、新しい商品の「一般名詞（general_name）」「小カテゴリ（small_category）」「キーワード（keywords）」を推定してください。
+        # 既存カテゴリをテキスト化
+        large_list = sorted(list(existing_cats['large']))
+        medium_samples = []
+        small_samples = []
+
+        for large in large_list[:3]:  # 代表的な大分類のみ表示
+            mediums = sorted(list(existing_cats['medium_by_large'].get(large, [])))[:5]
+            medium_samples.append(f"  {large}: {', '.join(mediums)}...")
+
+            for medium in mediums[:2]:  # 代表的な中分類のみ
+                key = f"{large}>{medium}"
+                smalls = sorted(list(existing_cats['small_by_medium'].get(key, [])))[:5]
+                if smalls:
+                    small_samples.append(f"    {large}>{medium}: {', '.join(smalls)}...")
+
+        existing_cats_text = f"""
+大分類: {', '.join(large_list)}
+
+中分類の例:
+{chr(10).join(medium_samples)}
+
+小分類の例:
+{chr(10).join(small_samples[:10])}
+"""
+
+        prompt = f"""あなたは商品分類の専門家です。以下の商品を大分類・中分類・小分類に分類してください。
+
+## 既存のカテゴリ体系
+{existing_cats_text}
+
+## 重要な指示
+1. **既存カテゴリを優先**: 上記の既存カテゴリに適合する場合は、既存カテゴリ名をそのまま使用してください
+2. **新規カテゴリは慎重に**: 既存カテゴリに適合しない場合のみ、新しいカテゴリ名を提案してください
+3. **無理な押し込み禁止**: 明らかに異なるジャンルの商品を、既存カテゴリに無理やり押し込めないでください
+   - 例：トイレットペーパーを「食料品」に分類しない → 新しく「日用品」を作る
 
 ## 過去の分類実績（参考例）
 {examples_str}
 
-## 新規商品
+## 分類対象商品
 商品名: {product['product_name']}
 店舗: {product.get('organization', '不明')}
 
@@ -150,11 +277,13 @@ class DailyAutoClassifier:
 以下のJSON形式で回答してください。
 
 {{
-  "general_name": "推定された一般名詞（例: 牛乳、食パン、トマト）",
-  "small_category": "小カテゴリ（例: 乳製品、パン類、野菜）",
+  "large_category": "大分類名（例: 食料品）",
+  "medium_category": "中分類名（例: 調味料）",
+  "small_category": "小分類名（例: 味噌）",
+  "general_name": "一般名詞（例: 味噌）",
   "keywords": ["キーワード1", "キーワード2", "キーワード3"],
   "confidence": 0.85,
-  "reasoning": "判断理由"
+  "reasoning": "既存の「食料品>調味料」に該当するため"
 }}
 
 **confidence**: 0.0〜1.0の信頼度
@@ -171,19 +300,25 @@ class DailyAutoClassifier:
 
             if response.get("success"):
                 content = json.loads(response.get("content", "{}"))
-                general_name = content.get("general_name")
+                large_category = content.get("large_category")
+                medium_category = content.get("medium_category")
                 small_category = content.get("small_category")
+                general_name = content.get("general_name")
                 keywords = content.get("keywords", [])
                 confidence = content.get("confidence", 0.5)
+                reasoning = content.get("reasoning", "")
 
-                # Tier 2でcategory_idを取得
-                category_id = await self.tier2_lookup(
-                    general_name,
-                    source_type="online_shop",
-                    workspace="shopping",
-                    doc_type="online shop",
-                    organization=product.get("organization")
+                # 大中小分類からcategory_idを取得/作成
+                category_id = await self.get_or_create_category(
+                    large_category,
+                    medium_category,
+                    small_category
                 )
+
+                logger.info(f"  → 分類: {large_category}>{medium_category}>{small_category}")
+                logger.info(f"  → 一般名詞: {general_name}")
+                if reasoning:
+                    logger.info(f"  → 理由: {reasoning}")
 
                 # ログ記録
                 self.db.client.table('99_lg_gemini_classification_log').insert({
@@ -197,8 +332,10 @@ class DailyAutoClassifier:
                 }).execute()
 
                 return {
-                    "general_name": general_name,
+                    "large_category": large_category,
+                    "medium_category": medium_category,
                     "small_category": small_category,
+                    "general_name": general_name,
                     "keywords": keywords,
                     "category_id": category_id,
                     "confidence": confidence
@@ -206,7 +343,15 @@ class DailyAutoClassifier:
 
         except Exception as e:
             logger.error(f"Gemini classification error: {e}")
-            return {"general_name": None, "small_category": None, "keywords": [], "category_id": None, "confidence": 0.0}
+            return {
+                "large_category": None,
+                "medium_category": None,
+                "small_category": None,
+                "general_name": None,
+                "keywords": [],
+                "category_id": None,
+                "confidence": 0.0
+            }
 
     async def classify_product(self, product: Dict) -> Dict:
         """
@@ -235,12 +380,30 @@ class DailyAutoClassifier:
 
             if category_id:
                 logger.info(f"✓ Tier 2 hit: {general_name} → {category_id}")
-                # 辞書ヒット時もsmall_categoryとkeywordsを生成（Gemini使用）
-                # コストを抑えるため、general_nameは辞書から、small_categoryとkeywordsのみGemini生成
+
+                # category_idから大中小分類を取得
+                cat_result = self.db.client.table('MASTER_Categories_product').select(
+                    'large_category, medium_category, small_category'
+                ).eq('id', category_id).execute()
+
+                if cat_result.data:
+                    cat_data = cat_result.data[0]
+                    large_category = cat_data.get('large_category')
+                    medium_category = cat_data.get('medium_category')
+                    small_category = cat_data.get('small_category')
+                else:
+                    large_category = None
+                    medium_category = None
+                    small_category = None
+
+                # キーワードのみGemini生成（コスト削減）
                 gemini_result = await self.gemini_classify_with_fewshot(product, [])
+
                 return {
+                    "large_category": large_category,
+                    "medium_category": medium_category,
+                    "small_category": small_category,
                     "general_name": general_name,
-                    "small_category": gemini_result.get("small_category"),
                     "keywords": gemini_result.get("keywords", []),
                     "category_id": category_id,
                     "confidence": 1.0,
