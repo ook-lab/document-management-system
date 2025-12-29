@@ -63,6 +63,7 @@ class StageJChunking:
                 'text_blocks': metadata.get('text_blocks', []) if isinstance(metadata, dict) else [],
                 'structured_tables': metadata.get('structured_tables', []) if isinstance(metadata, dict) else [],
                 'weekly_schedule': metadata.get('weekly_schedule', []) if isinstance(metadata, dict) else [],
+                'other_text': metadata.get('other_text', []) if isinstance(metadata, dict) else [],
                 # basic_info も展開（あれば）
                 'doc_type': metadata.get('basic_info', {}).get('related_class', '') if isinstance(metadata, dict) else ''
             }

@@ -74,7 +74,8 @@ class StageKEmbedding:
                     'chunk_type': chunk['chunk_type'],
                     'embedding': embedding,
                     'search_weight': chunk.get('search_weight', 1.0),
-                    'chunk_index': chunk.get('chunk_index', 0)
+                    'chunk_index': chunk.get('chunk_index', 0),
+                    'chunk_metadata': chunk.get('metadata')  # 構造化データを保存
                 }
 
                 self.db.client.table('10_ix_search_index').insert(chunk_data).execute()

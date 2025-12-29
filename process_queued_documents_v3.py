@@ -244,7 +244,8 @@ class DocumentProcessor:
             # Stage H の構造化データを追加
             'text_blocks': stageh_metadata.get('text_blocks', []) if isinstance(stageh_metadata, dict) else [],
             'structured_tables': stageh_metadata.get('structured_tables', []) if isinstance(stageh_metadata, dict) else [],
-            'weekly_schedule': stageh_metadata.get('weekly_schedule', []) if isinstance(stageh_metadata, dict) else []
+            'weekly_schedule': stageh_metadata.get('weekly_schedule', []) if isinstance(stageh_metadata, dict) else [],
+            'other_text': stageh_metadata.get('other_text', []) if isinstance(stageh_metadata, dict) else []
         }
 
         chunks = metadata_chunker.create_metadata_chunks(document_data)
