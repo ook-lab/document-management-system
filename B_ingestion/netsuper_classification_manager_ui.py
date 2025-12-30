@@ -29,6 +29,10 @@ if not SUPABASE_URL or not SUPABASE_SERVICE_ROLE_KEY:
 
 db = create_client(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY)
 
+# デバッグ: UIが見ているデータベースの商品数を表示
+_debug_count = db.table('Rawdata_NETSUPER_items').select('id', count='exact').execute()
+st.warning(f"🔍 デバッグ: このUIが見ている全商品数 = {_debug_count.count}件 | URL: {SUPABASE_URL[:30]}...")
+
 # セッション状態の初期化
 if 'general_name_index' not in st.session_state:
     st.session_state.general_name_index = 0
@@ -76,7 +80,7 @@ def build_category_hierarchy():
     return paths
 
 # 大分類を取得（商品数付き）
-@st.cache_data(ttl=60)
+@st.cache_data(ttl=0)
 def get_large_categories():
     """大分類を取得（商品1件以上のみ、件数表示）"""
     import pandas as pd
@@ -84,13 +88,27 @@ def get_large_categories():
     try:
         # PostgreSQL で直接集計（超高速）
         # RPC関数を使うか、生SQLでGROUP BYする
-        # まずカテゴリーマッピングを取得
-        categories = db.table('MASTER_Categories_product').select('id, large_category').execute()
-        cat_df = pd.DataFrame(categories.data)
+        # まずカテゴリーマッピングを取得（全件）
+        all_categories = []
+        offset = 0
+        while True:
+            result = db.table('MASTER_Categories_product').select('id, large_category').range(offset, offset + 999).execute()
+            if not result.data:
+                break
+            all_categories.extend(result.data)
+            offset += 1000
+        cat_df = pd.DataFrame(all_categories)
 
-        # 商品のcategory_idごとの件数を取得（DISTINCTカウント）
-        products = db.table('Rawdata_NETSUPER_items').select('category_id').not_.is_('category_id', 'null').execute()
-        prod_df = pd.DataFrame(products.data)
+        # 商品のcategory_idごとの件数を取得（全件）
+        all_products = []
+        offset = 0
+        while True:
+            result = db.table('Rawdata_NETSUPER_items').select('category_id').not_.is_('category_id', 'null').range(offset, offset + 999).execute()
+            if not result.data:
+                break
+            all_products.extend(result.data)
+            offset += 1000
+        prod_df = pd.DataFrame(all_products)
 
         # Pandasで超高速集計
         if len(prod_df) > 0 and len(cat_df) > 0:
