@@ -57,7 +57,7 @@ def show_store_categories(store_name: str, store_display_name: str):
         now = datetime.now()
         runnable_count = sum(
             1 for cat in categories
-            if cat.get("enabled", True) and manager.should_run_category(store_name, cat["name"], now)
+            if cat.get("enabled", True) and manager.should_run_category(store_name, cat["category_name"], now)
         )
         st.metric("実行可能", runnable_count)
 
@@ -70,7 +70,7 @@ def show_store_categories(store_name: str, store_display_name: str):
     df_data = []
     for cat in categories:
         df_data.append({
-            "名前": cat["name"],
+            "名前": cat["category_name"],
             "有効": cat.get("enabled", True),
             "開始日": cat.get("start_date", ""),
             "インターバル（日）": cat.get("interval_days", 7),
@@ -130,14 +130,14 @@ def show_store_categories(store_name: str, store_display_name: str):
     with col2:
         if st.button("🔄 最終実行日をリセット", key=f"reset_{store_name}"):
             for cat in categories:
-                manager.update_category(store_name, cat["name"], {"last_run": None})
+                manager.update_category(store_name, cat["category_name"], {"last_run": None})
             st.success("✅ すべてのカテゴリーの最終実行日をリセットしました")
             st.rerun()
 
     with col3:
         if st.button("✅ すべて有効化", key=f"enable_all_{store_name}"):
             for cat in categories:
-                manager.update_category(store_name, cat["name"], {"enabled": True})
+                manager.update_category(store_name, cat["category_name"], {"enabled": True})
             st.success("✅ すべてのカテゴリーを有効化しました")
             st.rerun()
 
@@ -257,7 +257,7 @@ with tabs[3]:
         for cat in categories:
             manager.update_category(
                 target_store,
-                cat["name"],
+                cat["category_name"],
                 {
                     "start_date": start_date_str,
                     "interval_days": default_interval
