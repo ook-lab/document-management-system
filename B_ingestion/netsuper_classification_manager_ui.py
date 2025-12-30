@@ -79,36 +79,30 @@ def build_category_hierarchy():
 @st.cache_data(ttl=60)
 def get_large_categories():
     """大分類を取得（商品1件以上のみ、件数表示）"""
-    # DISTINCT large_categoryを取得
-    categories = db.table('MASTER_Categories_product').select('large_category').execute()
+    from collections import Counter
 
-    # 重複除去
-    large_cats = list(set([cat['large_category'] for cat in categories.data if cat.get('large_category')]))
+    # 1. カテゴリーテーブルから category_id → large_category のマッピングを取得
+    categories = db.table('MASTER_Categories_product').select('id, large_category').execute()
+    category_map = {cat['id']: cat.get('large_category') for cat in categories.data if cat.get('large_category')}
 
+    # 2. 商品テーブルから全 category_id を取得（NULLでないもの）
+    products = db.table('Rawdata_NETSUPER_items').select('category_id').not_.is_('category_id', 'null').execute()
+
+    # 3. メモリ内で large_category ごとにカウント
+    large_category_counts = Counter()
+    for product in products.data:
+        cat_id = product.get('category_id')
+        if cat_id and cat_id in category_map:
+            large_cat = category_map[cat_id]
+            large_category_counts[large_cat] += 1
+
+    # 4. 商品が1件以上ある大分類のみ辞書に追加
     cat_with_counts = {}
-
-    for large_name in large_cats:
-        # この大分類に属する全カテゴリIDを取得
-        cat_ids_result = db.table('MASTER_Categories_product').select('id').eq('large_category', large_name).execute()
-        cat_ids = [cat['id'] for cat in cat_ids_result.data]
-
-        # 商品数をカウント（個別にカウントして合計）
-        count = 0
-        if cat_ids:
-            # PostgRESTの.in()制限を回避するため、個別にカウント
-            for cat_id in cat_ids:
-                try:
-                    count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
-                    count += count_result.count if count_result.count else 0
-                except Exception as e:
-                    # エラーが発生してもスキップして続行
-                    pass
-
-        # 商品が1件以上ある場合のみ追加
+    for large_name, count in large_category_counts.items():
         if count > 0:
             cat_with_counts[f"{large_name} ({count}件)"] = large_name
 
-    # category_id IS NULL の商品（未分類）を追加
+    # 5. category_id IS NULL の商品（未分類）を追加
     unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
     unclassified_count = unclassified_result.count if unclassified_result.count else 0
 
@@ -125,6 +119,8 @@ def get_large_categories():
 @st.cache_data(ttl=60)
 def get_medium_categories(large_category_name):
     """指定した大分類の中分類を取得（商品1件以上のみ、件数表示）"""
+    from collections import Counter
+
     cat_with_counts = {}
 
     # category_id IS NULL（未分類）の場合
@@ -135,30 +131,35 @@ def get_medium_categories(large_category_name):
             cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
         return cat_with_counts
 
-    # この大分類に属するDISTINCT medium_categoryを取得
-    categories = db.table('MASTER_Categories_product').select('medium_category').eq('large_category', large_category_name).execute()
+    # 1. この大分類のカテゴリーから category_id → medium_category のマッピングを取得
+    categories = db.table('MASTER_Categories_product').select('id, medium_category').eq('large_category', large_category_name).execute()
+    category_map = {cat['id']: cat.get('medium_category') for cat in categories.data if cat.get('medium_category')}
 
-    # 重複除去
-    medium_cats = list(set([cat['medium_category'] for cat in categories.data if cat.get('medium_category')]))
+    # カテゴリーIDリスト
+    cat_ids = list(category_map.keys())
 
-    for medium_name in medium_cats:
-        # この大分類・中分類に属する全カテゴリIDを取得
-        cat_ids_result = db.table('MASTER_Categories_product').select('id').eq('large_category', large_category_name).eq('medium_category', medium_name).execute()
-        cat_ids = [cat['id'] for cat in cat_ids_result.data]
+    if not cat_ids:
+        return cat_with_counts
 
-        # 商品数をカウント（個別にカウントして合計）
-        count = 0
-        if cat_ids:
-            # PostgRESTの.in()制限を回避するため、個別にカウント
-            for cat_id in cat_ids:
-                try:
-                    count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
-                    count += count_result.count if count_result.count else 0
-                except Exception as e:
-                    # エラーが発生してもスキップして続行
-                    pass
+    # 2. これらのカテゴリーIDに属する商品を取得
+    # バッチ処理で取得（50件ずつ）
+    medium_category_counts = Counter()
+    batch_size = 50
+    for i in range(0, len(cat_ids), batch_size):
+        batch_ids = cat_ids[i:i+batch_size]
+        try:
+            products = db.table('Rawdata_NETSUPER_items').select('category_id').in_('category_id', batch_ids).execute()
+            for product in products.data:
+                cat_id = product.get('category_id')
+                if cat_id and cat_id in category_map:
+                    medium_cat = category_map[cat_id]
+                    medium_category_counts[medium_cat] += 1
+        except Exception as e:
+            # エラーが発生してもスキップして続行
+            pass
 
-        # 商品が1件以上ある場合のみ追加
+    # 3. 商品が1件以上ある中分類のみ辞書に追加
+    for medium_name, count in medium_category_counts.items():
         if count > 0:
             cat_with_counts[f"{medium_name} ({count}件)"] = medium_name
 
