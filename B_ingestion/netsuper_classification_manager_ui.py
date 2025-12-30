@@ -79,35 +79,48 @@ def build_category_hierarchy():
 @st.cache_data(ttl=60)
 def get_large_categories():
     """大分類を取得（商品1件以上のみ、件数表示）"""
-    from collections import Counter
+    import pandas as pd
 
-    # 1. カテゴリーテーブルから category_id → large_category のマッピングを取得
-    categories = db.table('MASTER_Categories_product').select('id, large_category').execute()
-    category_map = {cat['id']: cat.get('large_category') for cat in categories.data if cat.get('large_category')}
+    try:
+        # PostgreSQL で直接集計（超高速）
+        # RPC関数を使うか、生SQLでGROUP BYする
+        # まずカテゴリーマッピングを取得
+        categories = db.table('MASTER_Categories_product').select('id, large_category').execute()
+        cat_df = pd.DataFrame(categories.data)
 
-    # 2. 商品テーブルから全 category_id を取得（NULLでないもの）
-    products = db.table('Rawdata_NETSUPER_items').select('category_id').not_.is_('category_id', 'null').execute()
+        # 商品のcategory_idごとの件数を取得（DISTINCTカウント）
+        products = db.table('Rawdata_NETSUPER_items').select('category_id').not_.is_('category_id', 'null').execute()
+        prod_df = pd.DataFrame(products.data)
 
-    # 3. メモリ内で large_category ごとにカウント
-    large_category_counts = Counter()
-    for product in products.data:
-        cat_id = product.get('category_id')
-        if cat_id and cat_id in category_map:
-            large_cat = category_map[cat_id]
-            large_category_counts[large_cat] += 1
+        # Pandasで超高速集計
+        if len(prod_df) > 0 and len(cat_df) > 0:
+            # category_idごとの件数
+            count_by_cat = prod_df['category_id'].value_counts().to_dict()
 
-    # 4. 商品が1件以上ある大分類のみ辞書に追加
-    cat_with_counts = {}
-    for large_name, count in large_category_counts.items():
-        if count > 0:
-            cat_with_counts[f"{large_name} ({count}件)"] = large_name
+            # large_categoryにマッピング
+            cat_map = cat_df.set_index('id')['large_category'].to_dict()
 
-    # 5. category_id IS NULL の商品（未分類）を追加
+            # large_categoryごとに集計
+            large_counts = {}
+            for cat_id, count in count_by_cat.items():
+                large_cat = cat_map.get(cat_id)
+                if large_cat:
+                    large_counts[large_cat] = large_counts.get(large_cat, 0) + count
+
+            # 辞書に追加
+            cat_with_counts = {f"{large} ({count}件)": large for large, count in large_counts.items() if count > 0}
+        else:
+            cat_with_counts = {}
+
+    except Exception as e:
+        st.error(f"大分類取得エラー: {e}")
+        cat_with_counts = {}
+
+    # 未分類を追加
     unclassified_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').is_('category_id', 'null').execute()
     unclassified_count = unclassified_result.count if unclassified_result.count else 0
 
     if unclassified_count > 0:
-        # MASTER_Categories_productに「未分類」が既に存在する場合は表示名を変える
         if any("未分類" in key for key in cat_with_counts.keys()):
             cat_with_counts[f"未分類(カテゴリ未設定) ({unclassified_count}件)"] = "未分類(カテゴリ未設定)"
         else:
@@ -119,7 +132,7 @@ def get_large_categories():
 @st.cache_data(ttl=60)
 def get_medium_categories(large_category_name):
     """指定した大分類の中分類を取得（商品1件以上のみ、件数表示）"""
-    from collections import Counter
+    import pandas as pd
 
     cat_with_counts = {}
 
@@ -131,37 +144,49 @@ def get_medium_categories(large_category_name):
             cat_with_counts[f"未分類 ({unclassified_count}件)"] = "未分類"
         return cat_with_counts
 
-    # 1. この大分類のカテゴリーから category_id → medium_category のマッピングを取得
-    categories = db.table('MASTER_Categories_product').select('id, medium_category').eq('large_category', large_category_name).execute()
-    category_map = {cat['id']: cat.get('medium_category') for cat in categories.data if cat.get('medium_category')}
+    try:
+        # 1. この大分類のカテゴリーから category_id → medium_category のマッピングを取得
+        categories = db.table('MASTER_Categories_product').select('id, medium_category').eq('large_category', large_category_name).execute()
+        cat_df = pd.DataFrame(categories.data)
 
-    # カテゴリーIDリスト
-    cat_ids = list(category_map.keys())
+        if len(cat_df) == 0:
+            return cat_with_counts
 
-    if not cat_ids:
-        return cat_with_counts
+        cat_ids = cat_df['id'].tolist()
 
-    # 2. これらのカテゴリーIDに属する商品を取得
-    # バッチ処理で取得（50件ずつ）
-    medium_category_counts = Counter()
-    batch_size = 50
-    for i in range(0, len(cat_ids), batch_size):
-        batch_ids = cat_ids[i:i+batch_size]
-        try:
-            products = db.table('Rawdata_NETSUPER_items').select('category_id').in_('category_id', batch_ids).execute()
-            for product in products.data:
-                cat_id = product.get('category_id')
-                if cat_id and cat_id in category_map:
-                    medium_cat = category_map[cat_id]
-                    medium_category_counts[medium_cat] += 1
-        except Exception as e:
-            # エラーが発生してもスキップして続行
-            pass
+        # 2. これらのカテゴリーIDに属する商品を取得（バッチ処理）
+        all_products = []
+        batch_size = 50
+        for i in range(0, len(cat_ids), batch_size):
+            batch_ids = cat_ids[i:i+batch_size]
+            try:
+                products = db.table('Rawdata_NETSUPER_items').select('category_id').in_('category_id', batch_ids).execute()
+                all_products.extend(products.data)
+            except Exception:
+                pass
 
-    # 3. 商品が1件以上ある中分類のみ辞書に追加
-    for medium_name, count in medium_category_counts.items():
-        if count > 0:
-            cat_with_counts[f"{medium_name} ({count}件)"] = medium_name
+        if not all_products:
+            return cat_with_counts
+
+        # 3. Pandasで超高速集計
+        prod_df = pd.DataFrame(all_products)
+        count_by_cat = prod_df['category_id'].value_counts().to_dict()
+
+        # medium_categoryにマッピング
+        cat_map = cat_df.set_index('id')['medium_category'].to_dict()
+
+        # medium_categoryごとに集計
+        medium_counts = {}
+        for cat_id, count in count_by_cat.items():
+            medium_cat = cat_map.get(cat_id)
+            if medium_cat:
+                medium_counts[medium_cat] = medium_counts.get(medium_cat, 0) + count
+
+        # 辞書に追加
+        cat_with_counts = {f"{medium} ({count}件)": medium for medium, count in medium_counts.items() if count > 0}
+
+    except Exception as e:
+        st.error(f"中分類取得エラー: {e}")
 
     return cat_with_counts
 
