@@ -198,22 +198,21 @@ with tabs[2]:
 with tabs[3]:
     st.header("⚙️ 全般設定")
 
-    st.subheader("設定ファイル")
-    st.text(f"パス: {manager.config_path}")
+    st.subheader("データベース情報")
+    st.text(f"テーブル名: {manager.table_name}")
+    st.caption("Supabaseテーブルでスケジュール管理（Streamlit Cloud対応）")
 
-    col1, col2 = st.columns(2)
+    # 各店舗のカテゴリー数を表示
+    col1, col2, col3 = st.columns(3)
     with col1:
-        if st.button("📥 設定を再読み込み"):
-            manager.load_config()
-            st.success("✅ 設定を再読み込みしました")
-            st.rerun()
-
+        rakuten_cats = manager.get_all_categories("rakuten_seiyu")
+        st.metric("楽天西友", f"{len(rakuten_cats)}カテゴリー")
     with col2:
-        if st.button("🗑️ 設定ファイルを削除（初期化）"):
-            if manager.config_path.exists():
-                manager.config_path.unlink()
-                st.success("✅ 設定ファイルを削除しました。スクリプトを再実行して初期化してください。")
-                st.rerun()
+        tokyu_cats = manager.get_all_categories("tokyu_store")
+        st.metric("東急ストア", f"{len(tokyu_cats)}カテゴリー")
+    with col3:
+        daiei_cats = manager.get_all_categories("daiei")
+        st.metric("ダイエー", f"{len(daiei_cats)}カテゴリー")
 
     st.divider()
 
@@ -269,8 +268,27 @@ with tabs[3]:
 
     st.divider()
 
-    st.subheader("設定ファイルの内容")
-    if manager.config:
-        st.json(manager.config)
+    st.subheader("データベースの内容")
+
+    # 全店舗のスケジュールデータを取得して表示
+    all_stores = ["rakuten_seiyu", "tokyu_store", "daiei"]
+    all_schedules = []
+
+    for store in all_stores:
+        categories = manager.get_all_categories(store)
+        for cat in categories:
+            all_schedules.append({
+                "店舗": store,
+                "カテゴリー": cat.get("category_name"),
+                "有効": cat.get("enabled", True),
+                "開始日": cat.get("start_date"),
+                "インターバル": cat.get("interval_days", 7),
+                "前回実行": cat.get("last_run", "未実行")
+            })
+
+    if all_schedules:
+        import pandas as pd
+        df = pd.DataFrame(all_schedules)
+        st.dataframe(df, hide_index=True, use_container_width=True)
     else:
-        st.info("設定ファイルが空です")
+        st.info("スケジュールデータがありません。スクレイピングスクリプトを実行してカテゴリーを初期化してください。")
