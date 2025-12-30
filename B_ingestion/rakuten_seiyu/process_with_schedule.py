@@ -21,7 +21,7 @@ sys.path.insert(0, str(root_dir))
 from dotenv import load_dotenv
 load_dotenv(root_dir / ".env")
 
-from B_ingestion.common.category_manager import CategoryManager
+from B_ingestion.common.category_manager_db import CategoryManagerDB
 from B_ingestion.rakuten_seiyu.product_ingestion import RakutenSeiyuProductIngestionPipeline
 
 # ロガー設定
@@ -54,7 +54,7 @@ class PoliteRakutenSeiyuPipeline:
             password=password,
             headless=headless
         )
-        self.manager = CategoryManager()
+        self.manager = CategoryManagerDB()
         self.dry_run = dry_run
         self.store_name = "rakuten_seiyu"
 

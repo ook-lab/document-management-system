@@ -21,7 +21,7 @@ sys.path.insert(0, str(root_dir))
 from dotenv import load_dotenv
 load_dotenv(root_dir / ".env")
 
-from B_ingestion.common.category_manager import CategoryManager
+from B_ingestion.common.category_manager_db import CategoryManagerDB
 from B_ingestion.tokyu_store.product_ingestion import TokyuStoreProductIngestionPipeline
 
 # ロガー設定
@@ -57,7 +57,7 @@ class PoliteTokyuStorePipeline:
             zip_code=zip_code,
             headless=headless
         )
-        self.manager = CategoryManager()
+        self.manager = CategoryManagerDB()
         self.dry_run = dry_run
         self.store_name = "tokyu_store"
 
