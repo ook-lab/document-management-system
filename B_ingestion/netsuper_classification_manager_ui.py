@@ -92,11 +92,17 @@ def get_large_categories():
         cat_ids_result = db.table('MASTER_Categories_product').select('id').eq('large_category', large_name).execute()
         cat_ids = [cat['id'] for cat in cat_ids_result.data]
 
-        # 商品数をカウント
+        # 商品数をカウント（個別にカウントして合計）
         count = 0
         if cat_ids:
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', cat_ids).execute()
-            count = count_result.count if count_result.count else 0
+            # PostgRESTの.in()制限を回避するため、個別にカウント
+            for cat_id in cat_ids:
+                try:
+                    count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
+                    count += count_result.count if count_result.count else 0
+                except Exception as e:
+                    # エラーが発生してもスキップして続行
+                    pass
 
         # 商品が1件以上ある場合のみ追加
         if count > 0:
@@ -140,11 +146,17 @@ def get_medium_categories(large_category_name):
         cat_ids_result = db.table('MASTER_Categories_product').select('id').eq('large_category', large_category_name).eq('medium_category', medium_name).execute()
         cat_ids = [cat['id'] for cat in cat_ids_result.data]
 
-        # 商品数をカウント
+        # 商品数をカウント（個別にカウントして合計）
         count = 0
         if cat_ids:
-            count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').in_('category_id', cat_ids).execute()
-            count = count_result.count if count_result.count else 0
+            # PostgRESTの.in()制限を回避するため、個別にカウント
+            for cat_id in cat_ids:
+                try:
+                    count_result = db.table('Rawdata_NETSUPER_items').select('id', count='exact').eq('category_id', cat_id).execute()
+                    count += count_result.count if count_result.count else 0
+                except Exception as e:
+                    # エラーが発生してもスキップして続行
+                    pass
 
         # 商品が1件以上ある場合のみ追加
         if count > 0:
@@ -426,10 +438,22 @@ with tabs[1]:
             all_cat_ids = [cat['id'] for cat in cat_result.data]
 
             if all_cat_ids:
-                result = db.table('Rawdata_NETSUPER_items').select(
-                    'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-                ).in_('category_id', all_cat_ids).limit(1000).execute()
-                return result.data
+                # PostgRESTの.in()制限を回避: 50件ずつバッチ処理
+                all_products = []
+                batch_size = 50
+                for i in range(0, len(all_cat_ids), batch_size):
+                    batch_ids = all_cat_ids[i:i+batch_size]
+                    try:
+                        result = db.table('Rawdata_NETSUPER_items').select(
+                            'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+                        ).in_('category_id', batch_ids).limit(1000).execute()
+                        all_products.extend(result.data)
+                        if len(all_products) >= 1000:
+                            break
+                    except Exception as e:
+                        # エラーが発生してもスキップして続行
+                        pass
+                return all_products[:1000]
             return []
 
         # 大分類のみ選択、中分類は未選択
@@ -441,10 +465,22 @@ with tabs[1]:
             all_cat_ids = [cat['id'] for cat in cat_result.data]
 
             if all_cat_ids:
-                result = db.table('Rawdata_NETSUPER_items').select(
-                    'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
-                ).in_('category_id', all_cat_ids).limit(1000).execute()
-                return result.data
+                # PostgRESTの.in()制限を回避: 50件ずつバッチ処理
+                all_products = []
+                batch_size = 50
+                for i in range(0, len(all_cat_ids), batch_size):
+                    batch_ids = all_cat_ids[i:i+batch_size]
+                    try:
+                        result = db.table('Rawdata_NETSUPER_items').select(
+                            'id, product_name, general_name, small_category, category_id, organization, current_price_tax_included'
+                        ).in_('category_id', batch_ids).limit(1000).execute()
+                        all_products.extend(result.data)
+                        if len(all_products) >= 1000:
+                            break
+                    except Exception as e:
+                        # エラーが発生してもスキップして続行
+                        pass
+                return all_products[:1000]
             return []
 
         return []
