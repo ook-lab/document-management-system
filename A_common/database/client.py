@@ -1034,7 +1034,7 @@ class DatabaseClient:
 
             # year, month のトップレベルカラムへの同期は削除（metadata 内で管理）
 
-            logger.info(f"[record_correction] source_documents 更新開始: doc_id={doc_id}")
+            logger.info(f"[record_correction] Rawdata_FILE_AND_MAIL 更新開始: doc_id={doc_id}")
 
             document_response = (
                 self.client.table('Rawdata_FILE_AND_MAIL')

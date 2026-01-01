@@ -3,7 +3,7 @@ Stage H: Structuring (構造化)
 
 非構造化テキストから、意味のあるデータ(JSON)を抽出
 - 役割: 指定スキーマに基づくJSON抽出、表データの正規化
-- モデル: 設定ファイルで指定（デフォルト: Claude Haiku 4.5）
+- モデル: 設定ファイルで指定（Gemini, OpenAI等のLLM）
 - 重要: doc_typeを判定するのではなく、渡されたdoc_typeのスキーマを使ってデータを抽出
 
 F_stage_c_extractor から完全移行
@@ -82,13 +82,13 @@ class StageHStructuring:
             logger.info(f"[Stage H] プロンプト構築完了 ({len(full_prompt)}文字)")
 
             # LLM呼び出し
-            logger.info("[Stage H] Claude呼び出し中...")
+            logger.info(f"[Stage H] LLM呼び出し中... (model={model})")
             response = self.llm.call_model(
                 tier="default",
                 prompt=full_prompt,
                 model_name=model
             )
-            logger.info(f"[Stage H] Claude応答受信: success={response.get('success')}")
+            logger.info(f"[Stage H] LLM応答受信: success={response.get('success')}")
 
             if not response.get("success"):
                 logger.error(f"[Stage H エラー] LLM呼び出し失敗: {response.get('error')}")
@@ -96,7 +96,7 @@ class StageHStructuring:
 
             # JSON抽出（リトライ機能付き）
             content = response.get("content", "")
-            logger.info(f"[Stage H] ===== Claudeレスポンス全文 =====\n{content}\n[Stage H] ===== レスポンス終了 =====")
+            logger.info(f"[Stage H] ===== LLMレスポンス全文 =====\n{content}\n[Stage H] ===== レスポンス終了 =====")
             result = self._extract_json_with_retry(content, model=model, max_retries=2)
 
             # Stage F の構造化情報をマージ
@@ -357,7 +357,11 @@ class StageHStructuring:
                 else:
                     # paragraph, list など
                     if content:
-                        current_content_parts.append(content)
+                        # contentがlistの場合は改行で結合して文字列化
+                        if isinstance(content, list):
+                            current_content_parts.append('\n'.join(str(item) for item in content))
+                        else:
+                            current_content_parts.append(str(content))
 
             # 最後のブロックを保存
             if current_heading and current_content_parts:

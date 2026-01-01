@@ -2,7 +2,7 @@
 手動テキスト補正コンポーネント (Human-in-the-loop)
 
 Gemini Visionが取りこぼしたテキストを人間が補完し、
-Stage H（Claude 4.5 Haiku）で再構造化する機能を提供します。
+Stage H（Gemini 2.5 Flash）で再構造化する機能を提供します。
 
 使用例:
 - スキャンPDFで500文字のテキストがある
@@ -102,7 +102,7 @@ def render_manual_text_correction(
 
         **ポイント:**
         - Gemini Visionのレイアウト情報（見出し、箇条書きなどの構造）は保持されます
-        - Claude 4.5 Haikuが、完全なテキストとレイアウト情報を統合して構造化します
+        - Gemini 2.5 Flashが、完全なテキストとレイアウト情報を統合して構造化します
         """)
 
     # 現在の抽出状況
@@ -233,7 +233,7 @@ def render_manual_text_correction(
             type="primary",
             use_container_width=True,
             key=f"reprocess_{doc_id}",
-            help="補正されたテキストでClaude 4.5 Haikuによる構造化 + 全チャンク再生成を実行します"
+            help="補正されたテキストでGemini 2.5 Flashによる構造化 + 全チャンク再生成を実行します"
         ):
             current_display_text = st.session_state[f'corrected_display_text_{doc_id}']
             current_attachment_text = st.session_state[f'corrected_attachment_text_{doc_id}']

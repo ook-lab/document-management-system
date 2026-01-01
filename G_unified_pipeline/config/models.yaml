@@ -6,10 +6,12 @@
 
 models:
   # Stage F: Visual Analysis (視覚解析)
+  # flyer: 商品写真の視覚理解が重要なため Pro を使用
+  # classroom: 日常的なお知らせの正確なOCRが目的のため Flash で十分
   stage_f:
     default: "gemini-2.5-flash"
     flyer: "gemini-2.5-pro"
-    classroom: "gemini-2.5-pro"
+    classroom: "gemini-2.5-flash"
     flash_lite: "gemini-2.5-flash-lite"  # 家計簿用（最軽量）
 
   # Stage G: Text Formatting (書式整形)
@@ -21,9 +23,9 @@ models:
 
   # Stage H: Structuring (構造化)
   stage_h:
-    default: "claude-haiku-4-5-20251001"
-    flyer: "claude-haiku-4-5-20251001"
-    classroom: "claude-haiku-4-5-20251001"
+    default: "gemini-2.5-flash"
+    flyer: "gemini-2.5-flash"
+    classroom: "gemini-2.5-flash"
     flash_lite: "gemini-2.5-flash-lite"  # 家計簿用（Pythonロジック中心）
 
   # Stage I: Synthesis (統合・要約)
@@ -42,5 +44,5 @@ models:
 # モデルのコスト情報（参考）
 # ============================================
 # gemini-2.5-flash: 高速、安価
-# claude-haiku-4-5: 構造化に最適
+# gemini-2.5-flash: 構造化に最適
 # text-embedding-3-small: 1536次元ベクトル

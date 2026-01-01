@@ -84,9 +84,12 @@ class StageISynthesis:
             merged_tags = list(set(stageH_tags + stageI_tags))  # 重複削除
 
             return {
+                'title': result.get('title', ''),
                 'summary': result.get('summary', ''),
                 'relevant_date': result.get('relevant_date') or stageH_result.get('document_date'),
-                'tags': merged_tags
+                'tags': merged_tags,
+                'calendar_events': result.get('calendar_events', []),
+                'tasks': result.get('tasks', [])
             }
 
         except Exception as e:
@@ -189,5 +192,7 @@ class StageISynthesis:
         return {
             'summary': '処理に失敗しました',
             'relevant_date': stageH_result.get('document_date'),
-            'tags': stageH_result.get('tags', [])
+            'tags': stageH_result.get('tags', []),
+            'calendar_events': [],
+            'tasks': []
         }

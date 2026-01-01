@@ -8,7 +8,7 @@ Rawdata_FLYER_shopsテーブルの processing_status='pending' のチラシを�
 2. Stage B (Gemini Vision):
    - Step 1: OCR + レイアウト解析
    - Step 2: 商品情報の構造化抽出
-3. Stage C (Haiku): 構造化データの最終整理
+3. Stage C (Gemini Flash): 構造化データの最終整理
 4. Stage A (Gemini): 要約生成
 5. チャンク化・ベクトル化: search_indexに保存
 

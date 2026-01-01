@@ -25,6 +25,7 @@ from typing import List, Dict, Any, Optional
 import sys
 from datetime import datetime
 from pathlib import Path
+import mimetypes
 
 from A_common.database.client import DatabaseClient
 from A_common.connectors.google_drive import GoogleDriveConnector
@@ -201,6 +202,8 @@ class DocumentProcessor:
         """
         document_id = doc['id']
         file_name = doc.get('file_name', 'unknown')
+        title = doc.get('title', '')
+        display_name = title if title else file_name
         source_type = doc.get('source_type', '')
 
         try:
@@ -229,10 +232,10 @@ class DocumentProcessor:
             # ステータス更新
             if success:
                 self.mark_as_completed(document_id)
-                print(f"✅ 処理成功: {file_name}")
+                print(f"✅ 処理成功: {display_name}")
             else:
                 self.mark_as_failed(document_id, error_msg)
-                print("ERROR:", f"❌ 処理失敗: {file_name} - {error_msg}")
+                print("ERROR:", f"❌ 処理失敗: {display_name} - {error_msg}")
 
             return success
 
@@ -387,7 +390,8 @@ class DocumentProcessor:
         file_extension = Path(file_name).suffix.lower()
         if file_extension in self.VIDEO_EXTENSIONS:
             print(f"⏭️  動画ファイルをスキップ: {file_name}")
-            return False
+            # 動画ファイルはスキップ扱いで成功とする
+            return True
 
         # Driveからダウンロード
         try:
@@ -404,7 +408,13 @@ class DocumentProcessor:
                 return False
 
         # MIMEタイプを推測
-        mime_type = doc.get('mimeType', 'application/octet-stream')
+        mime_type = doc.get('mimeType')
+        if not mime_type:
+            # データベースにない場合は、ファイル名から推測
+            mime_type, _ = mimetypes.guess_type(file_name)
+        if not mime_type:
+            # それでも不明な場合は汎用バイナリとして扱う
+            mime_type = 'application/octet-stream'
 
         # 統合パイプラインで処理
         try:
@@ -421,6 +431,7 @@ class DocumentProcessor:
                 extra_metadata={
                     'display_subject': doc.get('display_subject'),
                     'display_post_text': doc.get('display_post_text'),
+                    'attachment_text': doc.get('attachment_text'),
                     'display_sender': doc.get('display_sender'),
                     'display_type': doc.get('display_type'),
                     'display_sent_at': doc.get('display_sent_at'),
@@ -471,8 +482,11 @@ class DocumentProcessor:
         # 順次処理
         for i, doc in enumerate(docs, 1):
             file_name = doc.get('file_name', 'unknown')
+            title = doc.get('title', '')
+            # タイトルがあればタイトルを表示、なければファイル名
+            display_name = title if title else file_name
             print(f"\n{'='*80}")
-            print(f"[{i}/{len(docs)}] 処理開始: {file_name}")
+            print(f"[{i}/{len(docs)}] 処理開始: {display_name}")
             print(f"Document ID: {doc['id']}")
 
             success = await self.process_document(doc, preserve_workspace)

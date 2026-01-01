@@ -111,7 +111,7 @@ class WasedaNoticeIngestionPipeline:
             既に存在するお知らせIDのセット
         """
         try:
-            # source_documents テーブルで source_type='waseda_academy_online' のドキュメントを取得
+            # Rawdata_FILE_AND_MAIL テーブルで source_type='waseda_academy_online' のドキュメントを取得
             result = self.db.client.table('Rawdata_FILE_AND_MAIL').select('metadata').eq(
                 'source_type', 'waseda_academy_online'
             ).execute()

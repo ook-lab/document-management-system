@@ -1,6 +1,6 @@
 """
 LLMクライアント（v3.0: マルチプロバイダ対応）
-Gemini / Claude / OpenAI を統一インターフェースで利用
+Gemini / Anthropic / OpenAI を統一インターフェースで利用
 """
 
 import os
@@ -35,7 +35,7 @@ class LLMClient:
         else:
             pass
 
-        # Claude設定
+        # Anthropic設定
         if self.anthropic_api_key:
             self.anthropic_client = Anthropic(api_key=self.anthropic_api_key)
         else:
@@ -185,7 +185,7 @@ class LLMClient:
 
         elif provider == AIProvider.CLAUDE:
             if not self.anthropic_client:
-                return {"success": False, "error": "Claude API key is missing", "model": model_name}
+                return {"success": False, "error": "Anthropic API key is missing", "model": model_name}
             try:
                 return self._call_claude(model_name, prompt, config, **kwargs)
             except RetryError as e:
@@ -329,15 +329,15 @@ class LLMClient:
         config: Dict,
         **kwargs
     ) -> Dict[str, Any]:
-        """Claude API呼び出し"""
+        """Anthropic API呼び出し"""
         try:
             # ✅ DEBUG: 送信するプロンプトの先頭部分をログに出力
             from loguru import logger
-            logger.debug(f"[Claude CALL] Model: {model_name}, Prompt start: {prompt[:300]}...")
+            logger.debug(f"[Anthropic CALL] Model: {model_name}, Prompt start: {prompt[:300]}...")
 
-            # Claudeの最大トークン数制限を適用
+            # Anthropicの最大トークン数制限を適用
             max_tokens = config.get("max_tokens", 8192)
-            # Claude Haiku 4.5: 64000, Claude 3.x系: 4096-8192
+            # Anthropic models: max 64000 tokens
             if max_tokens > 64000:
                 max_tokens = 64000
 
@@ -350,11 +350,11 @@ class LLMClient:
                 ]
             )
 
-            # ✅ DEBUG: Claude からの生の応答コンテンツ全体をログに出力
+            # ✅ DEBUG: Anthropic からの生の応答コンテンツ全体をログに出力
             raw_content = response.content[0].text
-            logger.debug(f"[Claude RAW RESP] Content length: {len(raw_content)} chars")
+            logger.debug(f"[Anthropic RAW RESP] Content length: {len(raw_content)} chars")
             # 応答が長すぎる場合があるため、先頭2000文字のみをログに記録
-            logger.debug(f"[Claude RAW RESP] Content preview: {raw_content[:2000]}")
+            logger.debug(f"[Anthropic RAW RESP] Content preview: {raw_content[:2000]}")
 
             return {
                 "success": True,
@@ -517,8 +517,10 @@ class LLMClient:
             candidate = response.candidates[0]
 
             # finish_reason をチェック
+            finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
+            logger.info(f"[Gemini Vision] finish_reason: {finish_reason_name} ({candidate.finish_reason})")
+
             if candidate.finish_reason != 1:  # 1 = STOP (正常終了)
-                finish_reason_name = candidate.finish_reason.name if hasattr(candidate.finish_reason, 'name') else str(candidate.finish_reason)
                 error_details = {
                     "finish_reason": candidate.finish_reason,
                     "finish_reason_name": finish_reason_name
@@ -536,6 +538,12 @@ class LLMClient:
 
             # テキストを取得
             text_content = candidate.content.parts[0].text if candidate.content.parts else ""
+
+            # テキスト長とトークン使用量をログ出力
+            logger.info(f"[Gemini Vision] 応答テキスト長: {len(text_content)}文字")
+            if hasattr(response, 'usage_metadata'):
+                logger.info(f"[Gemini Vision] トークン使用量: {response.usage_metadata}")
+
             return text_content
 
         except Exception as e:
@@ -545,7 +553,8 @@ class LLMClient:
     def transcribe_image(
         self,
         image_path: Path,
-        prompt: str = "この画像内の表組みやリストを、Markdown形式で正確に書き起こしてください。"
+        prompt: str = "この画像内の表組みやリストを、Markdown形式で正確に書き起こしてください。",
+        model: str = "gemini-2.5-pro"
     ) -> Dict[str, Any]:
         """
         画像ファイルをGemini Visionで文字起こし
@@ -553,6 +562,7 @@ class LLMClient:
         Args:
             image_path: 画像ファイルのパス（PNG, JPEG等）
             prompt: Geminiに送るプロンプト
+            model: 使用するGeminiモデル（デフォルト: gemini-2.5-pro）
 
         Returns:
             {"success": bool, "content": str, "model": str, "provider": str}
@@ -560,9 +570,9 @@ class LLMClient:
         if not self.gemini_api_key:
             return {"success": False, "error": "Gemini API key is missing", "model": "gemini-2.5-flash"}
 
-        # Gemini 2.5 Pro を使用（Vision処理の精度向上）
+        # 指定されたGeminiモデルを使用
         return self._call_gemini(
-            model_name="gemini-2.5-pro",
+            model_name=model,
             prompt=prompt,
             file_path=image_path,
             config={

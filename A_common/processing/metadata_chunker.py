@@ -29,6 +29,9 @@ class MetadataChunker:
     - synthetic: 合成チャンク（重み1.0）- 構造化データ
     """
 
+    # チャンク長の上限（300文字 - Stage Hガイドラインに準拠）
+    MAX_CHUNK_LENGTH = 300
+
     # チャンク種別と検索重み
     CHUNK_WEIGHTS = {
         'title': 2.0,                    # タイトルマッチは最優先
@@ -42,9 +45,11 @@ class MetadataChunker:
         'organizations': 1.7,            # 組織名（重要）
         'summary': 1.5,                  # サマリーは高優先
         'display_type': 1.5,             # 表示種別（お知らせ/課題/資料）
+        'task': 1.5,                     # タスク（重要）
         'display_sender': 1.3,           # 表示送信者名
         'display_sent_at': 1.3,          # 表示送信日時
         'date': 1.3,                     # 日付検索
+        'calendar_event': 1.3,           # カレンダーイベント
         'tags': 1.2,                     # タグ検索
         'people': 1.2,                   # AI抽出人物（やや重要）
         'other': 1.0,                    # その他のテキスト（標準）★新規追加
@@ -94,7 +99,7 @@ class MetadataChunker:
             # 拡張子を除去してクリーンなタイトルを作成
             clean_title = self._clean_title(title)
             if clean_title:
-                chunks.append(self._create_chunk(
+                chunks.extend(self._create_chunk(
                     chunk_type='title',
                     text=clean_title,
                     metadata={'original_filename': title}
@@ -104,7 +109,7 @@ class MetadataChunker:
         # 2. サマリーチャンク
         summary = document_data.get('summary')
         if summary and len(summary.strip()) > 10:
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='summary',
                 text=summary.strip()
             ))
@@ -113,7 +118,7 @@ class MetadataChunker:
         # 3. 日付チャンク
         date_text = self._format_date_chunk(document_data)
         if date_text:
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='date',
                 text=date_text
             ))
@@ -124,7 +129,7 @@ class MetadataChunker:
         if tags:
             tag_text = self._format_tags_chunk(tags)
             if tag_text:
-                chunks.append(self._create_chunk(
+                chunks.extend(self._create_chunk(
                     chunk_type='tags',
                     text=tag_text
                 ))
@@ -133,7 +138,7 @@ class MetadataChunker:
         # 5. doc_type（授業名・ドキュメント種別）チャンク（高優先度）
         doc_type = document_data.get('doc_type')
         if doc_type and doc_type.strip():
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='doc_type',
                 text=f"授業名: {doc_type.strip()}"
             ))
@@ -142,7 +147,7 @@ class MetadataChunker:
         # 6. 表示用専用チャンク（Google Classroom等の投稿情報）
         display_subject = document_data.get('display_subject')
         if display_subject and display_subject.strip():
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='display_subject',
                 text=f"件名: {display_subject.strip()}"
             ))
@@ -150,7 +155,7 @@ class MetadataChunker:
 
         display_post_text = document_data.get('display_post_text')
         if display_post_text and display_post_text.strip():
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='display_post_text',
                 text=f"投稿本文: {display_post_text.strip()}"
             ))
@@ -158,7 +163,7 @@ class MetadataChunker:
 
         display_type = document_data.get('display_type')
         if display_type:
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='display_type',
                 text=f"種別: {display_type}"
             ))
@@ -166,7 +171,7 @@ class MetadataChunker:
 
         display_sender = document_data.get('display_sender')
         if display_sender:
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='display_sender',
                 text=f"送信者: {display_sender}"
             ))
@@ -174,7 +179,7 @@ class MetadataChunker:
 
         display_sent_at = document_data.get('display_sent_at')
         if display_sent_at:
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='display_sent_at',
                 text=f"送信日時: {display_sent_at}"
             ))
@@ -182,7 +187,7 @@ class MetadataChunker:
 
         classroom_sender_email = document_data.get('classroom_sender_email')
         if classroom_sender_email:
-            chunks.append(self._create_chunk(
+            chunks.extend(self._create_chunk(
                 chunk_type='classroom_sender_email',
                 text=f"送信者メール: {classroom_sender_email}"
             ))
@@ -193,7 +198,7 @@ class MetadataChunker:
         if persons:
             persons_text = self._format_persons_chunk(persons)
             if persons_text:
-                chunks.append(self._create_chunk(
+                chunks.extend(self._create_chunk(
                     chunk_type='persons',
                     text=persons_text
                 ))
@@ -204,7 +209,7 @@ class MetadataChunker:
         if organizations:
             orgs_text = self._format_organizations_chunk(organizations)
             if orgs_text:
-                chunks.append(self._create_chunk(
+                chunks.extend(self._create_chunk(
                     chunk_type='organizations',
                     text=orgs_text
                 ))
@@ -215,7 +220,7 @@ class MetadataChunker:
         if people:
             people_text = self._format_people_chunk(people)
             if people_text:
-                chunks.append(self._create_chunk(
+                chunks.extend(self._create_chunk(
                     chunk_type='people',
                     text=people_text
                 ))
@@ -227,7 +232,7 @@ class MetadataChunker:
             for i, block in enumerate(text_blocks):
                 block_text = self._format_text_block_chunk(block, i)
                 if block_text:
-                    chunks.append(self._create_chunk(
+                    chunks.extend(self._create_chunk(
                         chunk_type=f'text_block_{i}',
                         text=block_text,
                         metadata={
@@ -243,7 +248,7 @@ class MetadataChunker:
             for i, table in enumerate(structured_tables):
                 table_text = self._format_table_chunk(table, i)
                 if table_text:
-                    chunks.append(self._create_chunk(
+                    chunks.extend(self._create_chunk(
                         chunk_type=f'table_{i}',
                         text=table_text,
                         metadata={
@@ -260,7 +265,7 @@ class MetadataChunker:
                 schedule_text = self._format_schedule_chunk(schedule)
                 if schedule_text:
                     date_str = schedule.get('date', f'schedule_{len(chunks)}')
-                    chunks.append(self._create_chunk(
+                    chunks.extend(self._create_chunk(
                         chunk_type=f'schedule_{date_str}',
                         text=schedule_text,
                         metadata={
@@ -278,7 +283,7 @@ class MetadataChunker:
                     item_type = other_item.get('type', 'misc')
                     content = other_item.get('content', '')
                     if content and content.strip():
-                        chunks.append(self._create_chunk(
+                        chunks.extend(self._create_chunk(
                             chunk_type=f'other_{item_type}_{i}',
                             text=content.strip(),
                             metadata={
@@ -289,17 +294,164 @@ class MetadataChunker:
                         ))
                         logger.debug(f"[MetadataChunker] other_textチャンク作成: {item_type}")
 
+        # 14. calendar_events（カレンダーイベント）チャンク
+        calendar_events = document_data.get('calendar_events', [])
+        if calendar_events:
+            for i, event in enumerate(calendar_events):
+                if isinstance(event, dict):
+                    event_date = event.get('event_date', '')
+                    event_time = event.get('event_time', '')
+                    event_name = event.get('event_name', '')
+                    location = event.get('location', '')
+                    description = event.get('description', '')
+                    participants = event.get('participants', [])
+
+                    # イベントの説明文を生成
+                    event_text_parts = []
+                    if event_date:
+                        event_text_parts.append(f"日付: {event_date}")
+                    if event_time:
+                        event_text_parts.append(f"時刻: {event_time}")
+                    if event_name:
+                        event_text_parts.append(f"イベント名: {event_name}")
+                    if location:
+                        event_text_parts.append(f"場所: {location}")
+                    if description:
+                        event_text_parts.append(f"詳細: {description}")
+                    if participants:
+                        event_text_parts.append(f"参加者: {', '.join(participants)}")
+
+                    event_text = '\n'.join(event_text_parts)
+
+                    if event_text.strip():
+                        chunks.extend(self._create_chunk(
+                            chunk_type=f'calendar_event_{i}',
+                            text=event_text.strip(),
+                            metadata={
+                                'original_structure': event,
+                                'structure_type': 'calendar_event',
+                                'event_date': event_date,
+                                'event_name': event_name
+                            }
+                        ))
+                        logger.debug(f"[MetadataChunker] calendar_eventチャンク作成: {event_name}")
+
+        # 15. tasks（タスク）チャンク
+        tasks = document_data.get('tasks', [])
+        if tasks:
+            for i, task in enumerate(tasks):
+                if isinstance(task, dict):
+                    task_name = task.get('task_name', '')
+                    deadline = task.get('deadline', '')
+                    priority = task.get('priority', '')
+                    category = task.get('category', '')
+                    description = task.get('description', '')
+                    checklist = task.get('checklist', [])
+                    assignee = task.get('assignee', '')
+
+                    # タスクの説明文を生成
+                    task_text_parts = []
+                    if task_name:
+                        task_text_parts.append(f"タスク名: {task_name}")
+                    if deadline:
+                        task_text_parts.append(f"期限: {deadline}")
+                    if priority:
+                        task_text_parts.append(f"優先度: {priority}")
+                    if category:
+                        task_text_parts.append(f"カテゴリ: {category}")
+                    if description:
+                        task_text_parts.append(f"詳細: {description}")
+                    if checklist:
+                        task_text_parts.append(f"チェックリスト:\n" + '\n'.join([f"  - {item}" for item in checklist]))
+                    if assignee:
+                        task_text_parts.append(f"担当者: {assignee}")
+
+                    task_text = '\n'.join(task_text_parts)
+
+                    if task_text.strip():
+                        chunks.extend(self._create_chunk(
+                            chunk_type=f'task_{i}',
+                            text=task_text.strip(),
+                            metadata={
+                                'original_structure': task,
+                                'structure_type': 'task',
+                                'task_name': task_name,
+                                'deadline': deadline,
+                                'priority': priority
+                            }
+                        ))
+                        logger.debug(f"[MetadataChunker] taskチャンク作成: {task_name}")
+
         logger.info(f"[MetadataChunker] メタデータチャンク生成完了: {len(chunks)}個")
         return chunks
+
+    def _split_text_by_sentences(self, text: str) -> List[str]:
+        """
+        長すぎるテキストを文の境界で分割（300文字制限）
+
+        全体との関係を保つため、分割は文の境界で行い、
+        メタデータに元の構造情報を記録する。
+
+        Args:
+            text: 分割するテキスト
+
+        Returns:
+            分割されたテキストのリスト（300文字以下の場合は1要素のリスト）
+        """
+        if len(text) <= self.MAX_CHUNK_LENGTH:
+            return [text]
+
+        # 文の境界で分割（。！？改行）
+        sentences = re.split(r'([。！？\n])', text)
+
+        parts = []
+        current = ""
+
+        i = 0
+        while i < len(sentences):
+            sentence = sentences[i]
+            delimiter = sentences[i + 1] if i + 1 < len(sentences) else ""
+
+            # 次の文を追加しても制限内に収まるか確認
+            if len(current) + len(sentence) + len(delimiter) <= self.MAX_CHUNK_LENGTH:
+                current += sentence + delimiter
+                i += 2 if delimiter else 1
+            else:
+                # 現在のバッファを保存
+                if current:
+                    parts.append(current.strip())
+                    current = ""
+
+                # 単一の文が長すぎる場合は強制分割
+                if len(sentence + delimiter) > self.MAX_CHUNK_LENGTH:
+                    # 文を強制的に分割
+                    for j in range(0, len(sentence), self.MAX_CHUNK_LENGTH):
+                        chunk_part = sentence[j:j + self.MAX_CHUNK_LENGTH]
+                        parts.append(chunk_part.strip())
+                    if delimiter:
+                        parts[-1] += delimiter
+                    i += 2 if delimiter else 1
+                else:
+                    current = sentence + delimiter
+                    i += 2 if delimiter else 1
+
+        # 残りを追加
+        if current.strip():
+            parts.append(current.strip())
+
+        return parts if parts else [text]
 
     def _create_chunk(
         self,
         chunk_type: str,
         text: str,
         metadata: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+    ) -> List[Dict[str, Any]]:
         """
-        チャンクオブジェクトを作成
+        チャンクオブジェクトを作成（長すぎる場合は自動分割）
+
+        300文字を超える場合、文の境界で自動分割し、
+        全体との関係を保つためメタデータに分割情報を記録。
 
         Args:
             chunk_type: チャンク種別
@@ -307,32 +459,59 @@ class MetadataChunker:
             metadata: 追加メタデータ
 
         Returns:
-            チャンクオブジェクト
+            チャンクオブジェクトのリスト（通常は1要素、分割時は複数要素）
         """
+        # テキストを分割（300文字以下なら1要素のリスト）
+        text_parts = self._split_text_by_sentences(text)
+
+        if len(text_parts) > 1:
+            logger.warning(
+                f"[MetadataChunker] チャンク長超過により分割: {chunk_type} "
+                f"({len(text)}文字 → {len(text_parts)}個に分割)"
+            )
+
         # プレフィックスベースの重み付け（text_block_0 → text_block, table_1 → table）
         weight = self.CHUNK_WEIGHTS.get(chunk_type, None)
         if weight is None:
             # プレフィックスを抽出して検索
-            for prefix in ['text_block', 'table', 'schedule']:
+            for prefix in ['text_block', 'table', 'schedule', 'calendar_event', 'task', 'other']:
                 if chunk_type.startswith(prefix):
                     weight = self.CHUNK_WEIGHTS.get(prefix, 1.0)
                     break
             if weight is None:
                 weight = 1.0
 
-        chunk = {
-            'chunk_type': chunk_type,
-            'chunk_text': text,
-            'chunk_size': len(text),
-            'search_weight': weight,
-            'chunk_index': self.chunk_counter
-        }
+        chunks = []
+        for i, part in enumerate(text_parts):
+            # 分割された場合はサフィックスを付与（全体との関係を明示）
+            if len(text_parts) > 1:
+                type_with_suffix = f"{chunk_type}_part{i}"
+            else:
+                type_with_suffix = chunk_type
 
-        if metadata:
-            chunk['metadata'] = metadata
+            chunk = {
+                'chunk_type': type_with_suffix,
+                'chunk_text': part,
+                'chunk_size': len(part),
+                'search_weight': weight,
+                'chunk_index': self.chunk_counter
+            }
 
-        self.chunk_counter += 1
-        return chunk
+            if metadata:
+                chunk['metadata'] = metadata.copy()
+                # 分割情報を追加（全体との関係を保持）
+                if len(text_parts) > 1:
+                    chunk['metadata']['split_info'] = {
+                        'original_chunk_type': chunk_type,
+                        'original_length': len(text),
+                        'part_index': i,
+                        'total_parts': len(text_parts)
+                    }
+
+            chunks.append(chunk)
+            self.chunk_counter += 1
+
+        return chunks
 
     def _clean_title(self, title: str) -> str:
         """
@@ -532,6 +711,14 @@ class MetadataChunker:
                 row_parts = []
                 for header in headers:
                     value = row.get(header, '')
+                    # valueがリストの場合は、改行区切りで結合
+                    if isinstance(value, list):
+                        value = '\n'.join(str(v) for v in value)
+                    elif value is not None:
+                        value = str(value)
+                    else:
+                        value = ''
+
                     if value:
                         row_parts.append(f"{header}: {value}")
                 if row_parts:
@@ -540,11 +727,19 @@ class MetadataChunker:
                 # リスト形式の行（ヘッダーと組み合わせる）
                 row_parts = []
                 for i, value in enumerate(row):
+                    # valueがリストの場合は、改行区切りで結合
+                    if isinstance(value, list):
+                        value_str = '\n'.join(str(v) for v in value)
+                    else:
+                        value_str = str(value) if value is not None else ''
+
                     if i < len(headers):
                         header = headers[i]
-                        row_parts.append(f"{header}: {value}")
+                        if isinstance(header, list):
+                            header = ', '.join(str(h) for h in header)
+                        row_parts.append(f"{header}: {value_str}")
                     else:
-                        row_parts.append(str(value))
+                        row_parts.append(value_str)
                 if row_parts:
                     lines.append(f"{row_idx}. " + ", ".join(row_parts))
 

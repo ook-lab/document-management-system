@@ -87,6 +87,17 @@ class StageKEmbedding:
 
         logger.info(f"[Stage K完了] {saved_count}/{len(chunks)}チャンクを保存 (失敗: {failed_count})")
 
+        # chunk_countを更新
+        if saved_count > 0:
+            try:
+                self.db.client.table('Rawdata_FILE_AND_MAIL')\
+                    .update({'chunk_count': saved_count})\
+                    .eq('id', document_id)\
+                    .execute()
+                logger.debug(f"[Stage K] chunk_count更新: {saved_count}個")
+            except Exception as e:
+                logger.warning(f"[Stage K 警告] chunk_count更新エラー（継続）: {e}")
+
         return {
             'success': saved_count > 0,
             'saved_count': saved_count,

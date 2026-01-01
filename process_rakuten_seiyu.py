@@ -78,7 +78,7 @@ async def authenticate(headless: bool = True) -> bool:
                 return False
 
             # Cookie保存
-            await auth.save_cookies("rakuten_seiyu_cookies.json")
+            await auth.save_cookies("B_ingestion/rakuten_seiyu/rakuten_seiyu_cookies.json")
 
         logger.info("=" * 60)
         logger.info("✅ 認証完了！Cookie保存しました")

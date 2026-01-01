@@ -237,7 +237,7 @@ async def main():
         )
 
         # サマリーをJSONファイルに保存
-        output_file = f"tokyu_store_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        output_file = f"_runtime/data/tokyu_store/tokyu_store_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         with open(output_file, "w", encoding="utf-8") as f:
             json.dump(summary, f, ensure_ascii=False, indent=2)
 

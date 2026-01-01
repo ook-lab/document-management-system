@@ -1,383 +1,399 @@
-# 文書検索・質問回答システム
+# ドキュメント管理システム
 
-SupabaseとマルチAIモデル（Gemini, Claude, OpenAI）を使用した、ベクトル検索ベースの質問回答システムです。
+Supabase + マルチAIモデル（Gemini, OpenAI）を使用した、統合ドキュメント処理・検索システムです。
 
 ## 概要
 
-このシステムは、Supabaseに保存された文書に対してベクトル検索を行い、AIで自然な回答を生成するWebアプリケーションです。
+Google Drive/Gmail/Classroomから取得したドキュメント（PDF、画像、テキスト）を7つのステージ（E→K）で処理し、ベクトル検索可能な形式でSupabaseに保存します。
 
-### 主な機能
+**主な機能:**
+- **マルチソース対応**: Google Drive, Gmail, Classroom からの自動取り込み
+- **統合処理パイプライン**: Stage E（前処理）→ K（ベクトル化）の7段階処理
+- **ベクトル検索**: OpenAI Embeddings + Supabase pgvector による高精度検索
+- **AI回答生成**: Gemini 2.5 Flash による自然な回答
+- **柔軟な設定**: ドキュメントタイプ・ワークスペースごとにモデル・プロンプトを切り替え
 
-- **ベクトル検索**: OpenAI Embeddingsを使用した高精度な文書検索
-- **AI回答生成**: Gemini 2.5 Flash（デフォルト）による高速で自然な回答
-- **シンプルなUI**: ブラウザで簡単に操作できる直感的なインターフェース
-- **リアルタイム検索**: 質問入力から回答表示まで数秒で完了
+---
+
+## システム構成
+
+```
+┌─────────────────┐
+│  データソース    │
+│ Drive/Gmail/    │
+│  Classroom      │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  B_ingestion    │  ← データ取り込み
+│  (監視・取得)    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│ G_unified_      │  ← 統合処理パイプライン
+│  pipeline       │     Stage E-K（7段階）
+│  (処理・保存)    │
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│   Supabase      │  ← データベース
+│  (pgvector)     │     - Rawdata_FILE_AND_MAIL
+│                 │     - search_index
+└────────┬────────┘
+         │
+         ▼
+┌─────────────────┐
+│  G_cloud_run    │  ← 検索・回答API
+│  (Flask)        │
+└─────────────────┘
+```
+
+---
 
 ## 前提条件
 
-### 必要な環境変数
+### 必要な環境
 
-`.env`ファイルに以下を設定してください：
+- Python 3.12+
+- Supabase アカウント
+- Google Cloud プロジェクト（Drive/Gmail/Classroom API有効化）
+- OpenAI API キー
+- Google AI Studio API キー
+
+### 環境変数
+
+`.env` ファイルに以下を設定：
 
 ```bash
 # Supabase
 SUPABASE_URL=your_supabase_url
-SUPABASE_KEY=your_supabase_key
+SUPABASE_KEY=your_supabase_service_role_key
 
 # OpenAI
 OPENAI_API_KEY=your_openai_api_key
+
+# Google AI (Gemini)
+GOOGLE_API_KEY=your_gemini_api_key
+
+# Google Drive/Gmail/Classroom
+GOOGLE_CREDENTIALS_PATH=_runtime/credentials/google_credentials.json
 ```
 
-### データベース準備
+---
 
-1. **Supabaseプロジェクトの作成**
-   - [Supabase](https://supabase.com)でプロジェクトを作成
+## セットアップ手順
 
-2. **データベーススキーマの実行**
-   ```bash
-   # Supabase SQL Editorで以下のファイルを順に実行
-   J_resources/sql/schema_v4_unified.sql
-   J_resources/sql/add_match_documents_function.sql
-   ```
-
-3. **文書データの投入**
-   - documentsテーブルにembedding（1536次元）を含む文書データを登録
-   - 既存のデータ投入パイプラインを使用するか、手動で投入
-
-## インストール手順
-
-### 1. リポジトリのクローンまたは移動
+### 1. リポジトリの準備
 
 ```bash
 cd /path/to/document_management_system
 ```
 
-### 2. 仮想環境のアクティベート
+### 2. 仮想環境の作成とアクティベート
 
 ```bash
+python3 -m venv venv
 source venv/bin/activate  # macOS/Linux
-# または
-venv\Scripts\activate  # Windows
+# venv\Scripts\activate  # Windows
 ```
 
 ### 3. 依存パッケージのインストール
 
 ```bash
-pip install -r G_cloud_run/requirements.txt
+pip install -r requirements.txt
 ```
 
-## 実行方法
+### 4. Supabase データベースのセットアップ
 
-### 開発モード（デバッグ有効）
+**重要:** データベーススキーマは Supabase で直接作成されています。新規環境の場合、[SQL_REFERENCE.md](SQL_REFERENCE.md) を参照してください。
+
+既存環境からのマイグレーション、または追加設定が必要な場合、Supabase SQL Editor で以下を実行：
+
+```bash
+# 1. pgvector 拡張機能（必須）
+database/migrations/enable_pgvector.sql
+
+# 2. Stage 出力カラムの追加（必要に応じて）
+migrations/add_stage_output_columns.sql
+
+# 3. 検索関数
+J_resources/sql/add_match_documents_function.sql
+
+# 4. オプション: チラシ/家計簿機能
+database/migrations/create_flyer_schema.sql  # チラシ機能
+K_kakeibo/schema.sql                         # 家計簿機能
+```
+
+詳細な手順と全SQLファイルの説明は [SQL_REFERENCE.md](SQL_REFERENCE.md) を参照。
+
+**主要テーブル:**
+- `Rawdata_FILE_AND_MAIL`: ドキュメントのメタデータとStage E-K処理結果
+- `search_index`: 検索用チャンクとベクトル埋め込み（1536次元）
+- `Rawdata_RECEIPT_*`, `Rawdata_FLYER_*`, `Rawdata_NETSUPER_*`: サブシステム用テーブル
+
+### 5. Google認証情報の設定
+
+1. Google Cloud Console でプロジェクトを作成
+2. Drive API, Gmail API, Classroom API を有効化
+3. サービスアカウントを作成し、JSONキーをダウンロード
+4. `_runtime/credentials/google_credentials.json` に配置
+
+```bash
+mkdir -p _runtime/credentials
+mv ~/Downloads/your-credentials.json _runtime/credentials/google_credentials.json
+```
+
+---
+
+## 使い方
+
+### ドキュメントの処理
+
+#### 方法1: 自動監視（推奨）
+
+Google Driveの特定フォルダを監視し、新規ファイルを自動処理：
+
+```bash
+python B_ingestion/monitoring/inbox_monitor.py
+```
+
+設定: `B_ingestion/monitoring/config.yaml`
+
+#### 方法2: 手動処理
+
+特定のドキュメントIDを指定して処理：
+
+```bash
+python process_specific_docs.py
+```
+
+`process_specific_docs.py` の `doc_ids` リストを編集：
+
+```python
+doc_ids = [
+    'your-document-id-1',
+    'your-document-id-2'
+]
+```
+
+#### 方法3: キュー処理
+
+`processing_status='pending'` のドキュメントを一括処理：
+
+```bash
+python process_queued_documents.py --limit 10
+```
+
+### 統合パイプライン（Stage E-K）
+
+7つのステージで順次処理：
+
+```
+E: 前処理 → F: Vision解析 → G: テキスト整形 →
+H: 構造化 → I: 統合・要約 → J: チャンク化 → K: ベクトル化
+```
+
+**各ステージの出力はDBに保存:**
+- `stage_e1_text` ~ `stage_e5_text`: 前処理（5エンジン）
+- `stage_f_text_ocr`, `stage_f_layout_ocr`, `stage_f_visual_elements`: Vision解析
+- `stage_h_normalized`: 構造化入力テキスト
+- `stage_i_structured`: 構造化データ（JSON）
+- `stage_j_chunks_json`: チャンク（JSON）
+
+詳細は [ARCHITECTURE.md](ARCHITECTURE.md) 参照。
+
+### 検索・回答API
+
+Flask APIサーバーを起動：
 
 ```bash
 cd G_cloud_run
 python app.py
 ```
 
-サーバーが起動したら、ブラウザで以下のURLにアクセス：
+ブラウザで http://localhost:5001 にアクセス。
 
-```
-http://localhost:5001
-```
+**APIエンドポイント:**
+- `POST /api/search` - ベクトル検索
+- `POST /api/answer` - AI回答生成
+- `GET /api/health` - ヘルスチェック
 
-### 本番モード（推奨）
+---
 
-Gunicornを使用する場合：
+## 設定ファイル
 
-```bash
-# Gunicornをインストール（初回のみ）
-pip install gunicorn
+### config/models.yaml
 
-# サーバー起動
-cd G_cloud_run
-gunicorn -w 4 -b localhost:5001 app:app
-```
+各ステージで使用するAIモデルを定義：
 
-## 使い方
-
-1. **ブラウザでアクセス**
-   - http://localhost:5001 を開く
-
-2. **質問を入力**
-   - テキストボックスに質問を入力（例: 「プロジェクトの納期はいつですか？」）
-
-3. **検索・回答ボタンをクリック**
-   - 自動的にベクトル検索と回答生成が実行されます
-
-4. **結果を確認**
-   - AIによる回答が表示されます
-   - 関連する文書のリストが類似度とともに表示されます
-
-## アーキテクチャ
-
-```
-┌─────────────┐
-│   Browser   │
-│  (UI)       │
-└──────┬──────┘
-       │
-       │ HTTP Request
-       ▼
-┌─────────────┐
-│   Flask     │
-│   app.py    │
-└──────┬──────┘
-       │
-       ├──────────────────┐
-       │                  │
-       ▼                  ▼
-┌─────────────┐    ┌─────────────┐
-│  Supabase   │    │   AI APIs   │
-│  (pgvector) │    │  Gemini/GPT │
-└─────────────┘    └─────────────┘
+```yaml
+models:
+  stage_f:
+    default: "gemini-2.5-flash"
+    flyer: "gemini-2.5-pro"       # チラシは視覚理解重視
+    classroom: "gemini-2.5-flash" # Classroomはコスト重視
 ```
 
-### 処理フロー
+### config/pipeline_routing.yaml
 
-1. **ユーザーが質問を入力**
-2. **OpenAI Embeddingsで質問をベクトル化** (1536次元)
-3. **Supabaseでベクトル検索** (cosine類似度、上位5件)
-4. **検索結果をコンテキストとしてAIモデルに渡す**
-5. **AIモデル（Gemini 2.5 Flash）が自然な回答を生成**
-6. **ブラウザに回答と関連文書を表示**
+workspace と doc_type に基づいてルーティング：
 
-## APIエンドポイント
-
-### POST /api/search
-
-ベクトル検索を実行
-
-**リクエスト:**
-```json
-{
-  "query": "プロジェクトの納期はいつですか？",
-  "limit": 5,
-  "workspace": "personal"  // オプション
-}
+```yaml
+routing:
+  by_workspace:
+    ikuya_classroom:
+      schema: "classroom"
+      stages:
+        stage_f:
+          prompt_key: "classroom"
+          model_key: "classroom"
 ```
 
-**レスポンス:**
-```json
-{
-  "success": true,
-  "results": [
-    {
-      "id": "uuid",
-      "title": "プロジェクト計画書",
-      "content": "...",
-      "source_type": "drive",
-      "file_name": "project_plan.pdf",
-      "similarity": 0.85,
-      "doc_type": "project_document",
-      "workspace": "business"
-    }
-  ],
-  "count": 5
-}
+### config/prompts.yaml
+
+全ステージのプロンプトを一元管理（15個のMDファイルを統合）：
+
+```yaml
+prompts:
+  stage_f:
+    classroom: |
+      あなたはGoogle Classroom課題ドキュメントの...
+    default: |
+      あなたはドキュメントから視覚情報を...
 ```
 
-### POST /api/answer
-
-AIモデルで回答を生成
-
-**リクエスト:**
-```json
-{
-  "query": "プロジェクトの納期はいつですか？",
-  "documents": [...]  // /api/searchの結果
-}
-```
-
-**レスポンス:**
-```json
-{
-  "success": true,
-  "answer": "プロジェクトの納期は2024年3月31日です。...",
-  "model": "gemini-2.5-flash",
-  "provider": "gemini"
-}
-```
-
-### GET /api/health
-
-ヘルスチェック
-
-**レスポンス:**
-```json
-{
-  "status": "ok",
-  "message": "Document Q&A System is running"
-}
-```
-
-## トラブルシューティング
-
-### ポート5001が既に使用されている
-
-`app.py`の最終行を編集してポート番号を変更：
-
-```python
-app.run(host='localhost', port=8080, debug=True)
-```
-
-### 環境変数が読み込まれない
-
-`.env`ファイルがプロジェクトルートに存在することを確認：
-
-```bash
-ls -la .env
-cat .env
-```
-
-### Supabaseの接続エラー
-
-1. SUPABASE_URLとSUPABASE_KEYが正しいか確認
-2. `match_documents`関数がSupabaseに作成されているか確認：
-   ```sql
-   SELECT * FROM pg_proc WHERE proname = 'match_documents';
-   ```
-3. documentsテーブルにデータが存在するか確認：
-   ```sql
-   SELECT COUNT(*) FROM documents WHERE embedding IS NOT NULL;
-   ```
-
-### Embedding生成エラー
-
-OPENAI_API_KEYが正しく設定されているか確認：
-
-```bash
-echo $OPENAI_API_KEY
-```
-
-### 検索結果が0件
-
-1. documentsテーブルにembeddingが登録されているか確認
-2. `processing_status`が`'completed'`になっているか確認：
-   ```sql
-   SELECT processing_status, COUNT(*)
-   FROM documents
-   GROUP BY processing_status;
-   ```
-
-### `match_documents`関数が見つからない
-
-`J_resources/sql/add_match_documents_function.sql`をSupabaseで実行してください：
-
-```bash
-# ファイル内容をコピーして、Supabase SQL Editorに貼り付けて実行
-cat J_resources/sql/add_match_documents_function.sql
-```
+---
 
 ## プロジェクト構成
 
-プロジェクトは役割別に整理されています：
+```
+document_management_system/
+├── A_common/                     # 共通モジュール
+│   ├── database/                # Supabaseクライアント
+│   ├── processors/              # PDF/Office処理
+│   ├── connectors/              # Drive/Gmail/Classroom
+│   └── processing/              # チャンク処理
+│
+├── B_ingestion/                  # データ取り込み
+│   ├── gmail/                   # Gmail取り込み
+│   ├── google_drive/            # Drive取り込み
+│   ├── google_classroom/        # Classroom取り込み
+│   └── monitoring/              # 監視スクリプト
+│
+├── C_ai_common/                  # AI共通機能
+│   ├── llm_client/              # LLMクライアント
+│   └── embeddings/              # ベクトル埋め込み
+│
+├── G_unified_pipeline/          # 統合処理パイプライン
+│   ├── stage_e_preprocessing.py   # Stage E: 前処理
+│   ├── stage_f_visual.py          # Stage F: Vision解析
+│   ├── stage_g_formatting.py      # Stage G: テキスト整形
+│   ├── stage_h_structuring.py     # Stage H: 構造化
+│   ├── stage_i_synthesis.py       # Stage I: 統合・要約
+│   ├── stage_j_chunking.py        # Stage J: チャンク化
+│   ├── stage_k_embedding.py       # Stage K: ベクトル化
+│   ├── pipeline.py                # パイプライン本体
+│   ├── config_loader.py           # 設定ローダー
+│   └── config/                    # 設定ファイル
+│       ├── models.yaml           # モデル定義
+│       ├── pipeline_routing.yaml # ルーティング設定
+│       └── prompts.yaml          # プロンプト（統合版）
+│
+├── G_cloud_run/                  # Flask API
+│   ├── app.py                   # メインアプリ
+│   ├── templates/               # HTMLテンプレート
+│   └── requirements.txt
+│
+├── migrations/                   # DBマイグレーション
+│   └── add_stage_output_columns.sql
+│
+├── .env                         # 環境変数
+├── README.md                    # このファイル
+└── ARCHITECTURE.md              # 技術詳細
+```
 
+---
+
+## トラブルシューティング
+
+### プロンプトが見つからない
+
+**症状:** `プロンプトが見つかりません: stage_f/classroom`
+
+**原因:** prompts.yaml が読み込まれていない
+
+**対処:**
+```bash
+# prompts.yaml の存在確認
+ls G_unified_pipeline/config/prompts.yaml
+
+# ConfigLoader のログを確認
+# "✅ prompts.yaml を読み込みました" が表示されるはず
 ```
-document-management-system/
-├── A_common/                          # 共通モジュール
-│   ├── config/                       # 設定ファイル
-│   ├── database/                     # Supabaseクライアント
-│   ├── utils/                        # ユーティリティ
-│   ├── processors/                   # ファイル処理（PDF、Office等）
-│   ├── connectors/                   # 外部連携（Google Drive、Gmail等）
-│   └── processing/                   # チャンク処理
-│
-├── B_ingestion/                       # データ取り込み
-│   ├── gmail/                        # Gmail取り込み
-│   ├── google_drive/                 # Google Drive取り込み
-│   ├── google_classroom/             # Google Classroom取り込み
-│   ├── monitoring/                   # 監視スクリプト
-│   └── two_stage_ingestion.py       # 2段階取り込みパイプライン
-│
-├── C_ai_common/                       # AI共通機能
-│   ├── llm_client/                   # LLMクライアント（OpenAI、Gemini、Claude）
-│   ├── embeddings/                   # ベクトル埋め込み生成
-│   └── prompts/                      # 共通プロンプト
-│
-├── G_unified_pipeline/               # 統合処理パイプライン（Stage E-K）
-│   ├── stage_e_preprocessing.py    # Stage E: 前処理
-│   ├── stage_f_visual.py           # Stage F: Vision解析
-│   ├── stage_g_formatting.py       # Stage G: フォーマット整形
-│   ├── stage_h_structuring.py      # Stage H: 構造化
-│   ├── stage_i_synthesis.py        # Stage I: 統合・要約
-│   ├── stage_j_chunking.py         # Stage J: チャンキング
-│   ├── stage_k_embedding.py        # Stage K: ベクトル埋め込み
-│   └── config/                     # パイプライン設定
-│
-├── G_cloud_run/                       # Cloud Run（Flask API）
-│   ├── app.py                       # メインFlaskアプリケーション
-│   ├── templates/                   # HTMLテンプレート
-│   ├── Dockerfile                   # Docker設定
-│   └── requirements.txt             # 依存パッケージ
-│
-├── H_streamlit/                       # Streamlit UI
-│   ├── components/                  # UIコンポーネント
-│   ├── schemas/                     # UIスキーマ
-│   ├── utils/                       # UI用ユーティリティ
-│   ├── review_ui.py                 # レビュー画面
-│   └── email_inbox.py               # メール受信箱
-│
-├── I_frontend/                        # React フロントエンド
-│   └── src/                         # Reactソースコード
-│
-├── J_resources/                       # 資料集
-│   ├── sql/                         # SQLスクリプト
-│   │   ├── schemas/                # スキーマ定義
-│   │   └── migrations/             # マイグレーション
-│   ├── gas/                         # Google Apps Script
-│   ├── docs/                        # ドキュメント
-│   ├── scripts/                     # ユーティリティスクリプト
-│   │   └── py/                     # Pythonスクリプト
-│   └── examples/                    # サンプルコード
-│
-├── tests/                             # テスト
-├── credentials/                       # 認証情報
-├── data/                             # データ
-├── logs/                             # ログ
-├── .env                              # 環境変数
-└── README.md                         # このファイル
+
+### ドキュメントが消失する
+
+**症状:** 処理後にドキュメントが消える
+
+**原因:** 古いバージョンの DELETE→INSERT 処理（修正済み）
+
+**対処:** 最新版では UPDATE を使用しているため、この問題は発生しません
+
+### Stage出力が空
+
+**症状:** `stage_e1_text` などが NULL
+
+**原因:** 古いバージョンのpipeline.py
+
+**対処:** 最新版では全ステージ出力をDBに保存します（pipeline.py 378-388行目）
+
+### Gemini API エラー
+
+**症状:** `GOOGLE_API_KEY not found`
+
+**対処:**
+```bash
+# .env ファイルを確認
+cat .env | grep GOOGLE_API_KEY
+
+# 環境変数が読み込まれているか確認
+python -c "import os; print(os.getenv('GOOGLE_API_KEY'))"
 ```
+
+---
 
 ## 技術スタック
 
-- **バックエンド**: Flask 3.0, Python 3.12
-- **フロントエンド**: HTML, CSS, JavaScript（Vanilla JS）
-- **AI/ML**:
-  - Gemini 2.5 Flash/Pro (分類・Vision・回答生成)
-  - Claude Haiku 4.5 (情報抽出)
-  - OpenAI GPT-5.1 (高精度回答オプション)
-  - OpenAI text-embedding-3-small (1536次元)
+- **Python**: 3.12+
 - **データベース**: Supabase (PostgreSQL + pgvector)
+- **AI/ML**:
+  - Gemini 2.5 Flash/Pro (Vision解析・構造化・回答生成)
+  - OpenAI text-embedding-3-small (1536次元ベクトル)
 - **ベクトル検索**: pgvector (cosine類似度)
+- **Web API**: Flask 3.0
+- **ファイル処理**: PyPDF2, pdfplumber, python-docx, openpyxl
+- **外部連携**: Google Drive API, Gmail API, Classroom API
 
-## セキュリティに関する注意
+---
 
-- 本番環境では`debug=False`に設定してください
-- APIキーは必ず環境変数で管理し、コードに直接記述しないでください
-- HTTPSを使用することを推奨します
-- 適切なCORS設定を行ってください
+## セキュリティ注意事項
 
-## 今後の拡張案
+- `.env` ファイルを `.gitignore` に追加
+- `google_credentials.json` を公開リポジトリにコミットしない
+- 本番環境では `debug=False` に設定
+- Supabase の Service Role Key は慎重に管理
 
-- [ ] ユーザー認証機能
-- [ ] 検索履歴の保存
-- [ ] ワークスペースフィルタのUI追加
-- [ ] ドキュメントタイプ別フィルタ
-- [ ] 回答の評価機能（フィードバック）
-- [ ] マルチモーダル検索（画像対応）
-
-## ライセンス
-
-このプロジェクトは内部使用を目的としています。
+---
 
 ## サポート
 
-問題が発生した場合は、以下を確認してください：
+詳細な技術情報は [ARCHITECTURE.md](ARCHITECTURE.md) を参照してください。
 
-1. `.env`ファイルの設定
-2. Supabaseのデータベース接続
-3. OpenAI APIキーの有効性
-4. documentsテーブルのデータ
-
-それでも解決しない場合は、エラーメッセージを確認して対処してください。
+問題が発生した場合：
+1. ログを確認（`logs/` ディレクトリ）
+2. 環境変数の設定を確認
+3. Supabase のテーブル構造を確認
+4. 最新版にアップデート

@@ -147,7 +147,9 @@ class StageGTextFormatter:
         if not vision_raw:
             return ""
 
-        logger.info(f"[Stage G] Text Formatting開始... (model={model})")
+        logger.info(f"[Stage G] Text Formatting開始...")
+        logger.info(f"  入力: {len(vision_raw)} 文字 (Stage F のJSON)")
+        logger.info(f"  モデル: {model}")
 
         try:
             # string.Templateを使用してテンプレート変数を置換（JSONの{}と競合しない）
@@ -162,7 +164,11 @@ class StageGTextFormatter:
 
             if response.get('success'):
                 formatted_text = response.get('content', response.get('response', ''))
-                logger.info(f"[Stage G完了] 整形テキスト: {len(formatted_text)}文字")
+                logger.info(f"[Stage G完了] Text Formatting完了:")
+                logger.info(f"  入力: {len(vision_raw)} 文字")
+                logger.info(f"  出力: {len(formatted_text)} 文字")
+                reduction_rate = (1 - len(formatted_text) / len(vision_raw)) * 100 if vision_raw else 0
+                logger.info(f"  削減率: {reduction_rate:.1f}%")
                 return formatted_text
             else:
                 logger.error(f"[Stage G エラー] LLM呼び出し失敗: {response.get('error')}")
@@ -209,13 +215,15 @@ class StageGTextFormatter:
 {vision}
 
 統合ルール:
-1. 重複する内容は1つにまとめる
-2. 補完的な情報はすべて含める（特にヘッダー、年号、日付などの重要情報）
+1. **重複する内容のみ1つにまとめる**（重複以外の削除は厳禁）
+2. **全ての情報を保持する**（1文字も失ってはいけない）
 3. Vision OCRで得られたヘッダー情報や年号は優先的に冒頭に配置
 4. 表組みはVision OCRの結果を優先（より正確な構造を保持）
 5. 自然な順序で配置（ヘッダー → 本文 → 表 → フッター）
-6. OCRエラーやノイズは除去
-7. セクション見出しや余計な注釈は不要
+6. OCRエラーは修正するが、内容は削除しない
+7. セクション見出しや注釈も全て保持する
+
+重要: 情報の削除・省略・要約は一切行わないでください。統合されたテキストは、元の2つのテキストの合計文字数以下になってはいけません（重複排除分を除く）。
 
 統合されたテキストのみを出力してください。
 """

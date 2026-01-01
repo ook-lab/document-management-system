@@ -26,15 +26,25 @@ class ConfigLoader:
         self.config_dir = Path(config_dir)
         self.models_config = self._load_yaml(self.config_dir / "models.yaml")
 
-        # source_documents 用のルーティング設定を優先使用
-        source_docs_routing = self.config_dir / "source_documents_routing.yaml"
-        if source_docs_routing.exists():
-            self.routes_config = self._load_yaml(source_docs_routing)
-            logger.info(f"✅ source_documents_routing.yaml を読み込みました")
+        # パイプラインルーティング設定を読み込み
+        pipeline_routing = self.config_dir / "pipeline_routing.yaml"
+        if pipeline_routing.exists():
+            self.routes_config = self._load_yaml(pipeline_routing)
+            logger.info(f"✅ pipeline_routing.yaml を読み込みました")
         else:
             # フォールバック: 旧 pipeline_routes.yaml
             self.routes_config = self._load_yaml(self.config_dir / "pipeline_routes.yaml")
-            logger.warning(f"⚠️ source_documents_routing.yaml が見つかりません。pipeline_routes.yaml を使用します")
+            logger.warning(f"⚠️ pipeline_routing.yaml が見つかりません。pipeline_routes.yaml を使用します")
+
+        # プロンプト設定を読み込み
+        prompts_file = self.config_dir / "prompts.yaml"
+        if prompts_file.exists():
+            prompts_data = self._load_yaml(prompts_file)
+            self.prompts_config = prompts_data.get('prompts', {})
+            logger.info(f"✅ prompts.yaml を読み込みました")
+        else:
+            self.prompts_config = {}
+            logger.warning(f"⚠️ prompts.yaml が見つかりません。MDファイルから読み込みます")
 
         logger.info(f"✅ 設定ローダー初期化完了: {self.config_dir}")
 
@@ -79,7 +89,7 @@ class ConfigLoader:
 
     def get_prompt(self, stage: str, prompt_key: str) -> str:
         """
-        プロンプトファイルを読み込む
+        プロンプトを取得（prompts.yaml または MDファイルから）
 
         Args:
             stage: ステージ名 (stage_f, stage_g, stage_h, stage_i)
@@ -88,17 +98,29 @@ class ConfigLoader:
         Returns:
             プロンプトテキスト
         """
-        # 新しい命名規則: stage_X_promptkey.md
-        prompt_file = self.config_dir / "prompts" / stage / f"{stage}_{prompt_key}.md"
+        # prompts.yaml から読み込み
+        if self.prompts_config and stage in self.prompts_config:
+            if prompt_key in self.prompts_config[stage]:
+                prompt = self.prompts_config[stage][prompt_key]
+                logger.debug(f"プロンプト読み込み: {stage}/{prompt_key} ({len(prompt)}文字)")
+                return prompt
+            elif prompt_key != 'default' and 'default' in self.prompts_config[stage]:
+                # フォールバック: default プロンプトを試す
+                logger.warning(f"プロンプトキー '{prompt_key}' が見つかりません。default を使用します: {stage}")
+                prompt = self.prompts_config[stage]['default']
+                logger.debug(f"プロンプト読み込み: {stage}/default ({len(prompt)}文字)")
+                return prompt
 
+        # フォールバック: MDファイルから読み込み（後方互換性）
+        prompt_file = self.config_dir / "prompts" / stage / f"{stage}_{prompt_key}.md"
         try:
             with open(prompt_file, 'r', encoding='utf-8') as f:
                 prompt = f.read()
-                logger.debug(f"プロンプト読み込み: {stage}/{stage}_{prompt_key}.md ({len(prompt)}文字)")
+                logger.debug(f"プロンプト読み込み（MDファイル）: {stage}/{stage}_{prompt_key}.md ({len(prompt)}文字)")
                 return prompt
         except FileNotFoundError:
-            logger.warning(f"プロンプトファイルが見つかりません: {prompt_file}")
-            # フォールバック: default プロンプトを試す
+            logger.warning(f"プロンプトが見つかりません: {stage}/{prompt_key}")
+            # 最後のフォールバック: default プロンプトを試す
             if prompt_key != 'default':
                 return self.get_prompt(stage, 'default')
             return ""

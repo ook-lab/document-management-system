@@ -973,7 +973,7 @@ def debug_database():
         # クライアント取得
         db_client, _, _ = get_clients()
 
-        # source_documentsテーブルの件数を確認
+        # Rawdata_FILE_AND_MAILテーブルの件数を確認
         count_response = db_client.client.table('Rawdata_FILE_AND_MAIL').select('id', count='exact').limit(1).execute()
         total_count = count_response.count if hasattr(count_response, 'count') else 'unknown'
 
