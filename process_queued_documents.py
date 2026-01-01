@@ -203,7 +203,7 @@ class DocumentProcessor:
         document_id = doc['id']
         file_name = doc.get('file_name', 'unknown')
         title = doc.get('title', '')
-        display_name = title if title else file_name
+        display_name = title if title else '(タイトル未生成)'
         source_type = doc.get('source_type', '')
 
         try:
@@ -483,8 +483,8 @@ class DocumentProcessor:
         for i, doc in enumerate(docs, 1):
             file_name = doc.get('file_name', 'unknown')
             title = doc.get('title', '')
-            # タイトルがあればタイトルを表示、なければファイル名
-            display_name = title if title else file_name
+            # タイトルがあればタイトルを表示、なければ「タイトル未生成」
+            display_name = title if title else '(タイトル未生成)'
             print(f"\n{'='*80}")
             print(f"[{i}/{len(docs)}] 処理開始: {display_name}")
             print(f"Document ID: {doc['id']}")

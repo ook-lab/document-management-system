@@ -265,12 +265,12 @@ def pdf_review_ui():
     # ドキュメントリストをDataFrameで表示（チェックボックス付き）
     df_data = []
     for idx, doc in enumerate(documents):
-        # タイトルがあればタイトル、なければファイル名を表示
-        display_name = doc.get('title', '') or doc.get('file_name', '')
+        # タイトルを表示（NULLの場合は空）
+        display_name = doc.get('title', '')
         df_data.append({
             '選択': False,  # チェックボックス用
             'ID': doc.get('id', '')[:8],
-            'ファイル名': display_name,
+            'タイトル': display_name,
             '文書タイプ': doc.get('doc_type', ''),
             '作成日時': doc.get('created_at', '')[:10]
         })
@@ -377,7 +377,7 @@ def pdf_review_ui():
     selected_index = st.selectbox(
         "編集するドキュメントを選択",
         range(len(documents)),
-        format_func=lambda i: documents[i].get('title', '') or documents[i].get('file_name', 'Unknown'),
+        format_func=lambda i: documents[i].get('title', '') or '(タイトルなし)',
         key=selector_key
     )
 
@@ -457,15 +457,14 @@ def pdf_review_ui():
 
     # 基本情報表示
     title = selected_doc.get('title', '')
-    display_name = title if title else file_name
 
     col1, col2 = st.columns([2, 1])
     with col1:
         if title:
             st.markdown(f"**タイトル**: {title}")
-            st.caption(f"ファイル名: {file_name}")
         else:
-            st.markdown(f"**ファイル名**: {file_name}")
+            st.markdown(f"**タイトル**: (未生成)")
+        st.caption(f"ファイル名: {file_name}")
     with col2:
         st.markdown(f"**文書タイプ**: {doc_type}")
 
