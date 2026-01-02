@@ -194,3 +194,28 @@ class ConfigLoader:
             result['skip'] = stage_config['skip']
 
         return result
+
+    def get_hybrid_ocr_enabled(self, doc_type: str, workspace: Optional[str] = None) -> bool:
+        """
+        ハイブリッドOCR（Surya + PaddleOCR）が有効かどうかを取得
+
+        Args:
+            doc_type: ドキュメントタイプ
+            workspace: ワークスペース（オプション）
+
+        Returns:
+            True: ハイブリッドOCR有効
+            False: ハイブリッドOCR無効（Gemini Visionのみ）
+        """
+        hybrid_ocr_config = self.models_config.get('hybrid_ocr', {})
+
+        # workspace ベースの設定を確認
+        if workspace and workspace in hybrid_ocr_config:
+            return hybrid_ocr_config[workspace]
+
+        # doc_type ベースの設定を確認
+        if doc_type in hybrid_ocr_config:
+            return hybrid_ocr_config[doc_type]
+
+        # デフォルト設定
+        return hybrid_ocr_config.get('default', False)

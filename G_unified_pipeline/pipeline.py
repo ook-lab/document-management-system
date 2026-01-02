@@ -55,13 +55,15 @@ class UnifiedDocumentPipeline:
         self,
         llm_client: Optional[LLMClient] = None,
         db_client: Optional[DatabaseClient] = None,
-        config_dir: Optional[Path] = None
+        config_dir: Optional[Path] = None,
+        enable_hybrid_ocr: Optional[bool] = None
     ):
         """
         Args:
             llm_client: LLMクライアント（Noneの場合は新規作成）
             db_client: データベースクライアント（Noneの場合は新規作成）
             config_dir: 設定ディレクトリ（デフォルト: G_unified_pipeline/config/）
+            enable_hybrid_ocr: ハイブリッドOCR（Surya + PaddleOCR）を有効化（Noneの場合は設定ファイルから取得）
         """
         self.llm_client = llm_client or LLMClient()
         self.db = db_client or DatabaseClient(use_service_role=True)  # RLSバイパスのためService Role使用
@@ -69,9 +71,14 @@ class UnifiedDocumentPipeline:
         # 設定ローダーを初期化
         self.config = ConfigLoader(config_dir)
 
+        # ハイブリッドOCRの有効/無効を決定
+        if enable_hybrid_ocr is None:
+            # 設定ファイルから取得（デフォルトの設定）
+            enable_hybrid_ocr = self.config.get_hybrid_ocr_enabled('default')
+
         # 各ステージを初期化
         self.stage_e = StageEPreprocessor(self.llm_client)
-        self.stage_f = StageFVisualAnalyzer(self.llm_client)
+        self.stage_f = StageFVisualAnalyzer(self.llm_client, enable_hybrid_ocr=enable_hybrid_ocr)
         self.stage_g = StageGTextFormatter(self.llm_client)
         self.stage_h = StageHStructuring(self.llm_client)
         self.stage_h_kakeibo = StageHKakeibo(self.db)  # 家計簿専用Stage H
@@ -82,7 +89,7 @@ class UnifiedDocumentPipeline:
         # 家計簿専用のDB保存ハンドラー
         self.kakeibo_db_handler = KakeiboDBHandler(self.db)
 
-        logger.info("✅ UnifiedDocumentPipeline 初期化完了（設定ベース）")
+        logger.info(f"✅ UnifiedDocumentPipeline 初期化完了（設定ベース, ハイブリッドOCR={'有効' if enable_hybrid_ocr else '無効'}）")
 
     async def process_document(
         self,

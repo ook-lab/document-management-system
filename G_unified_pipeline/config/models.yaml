@@ -41,6 +41,19 @@ models:
     classroom: "text-embedding-3-small"
 
 # ============================================
+# ハイブリッドOCR設定 (Surya + PaddleOCR + Gemini)
+# ============================================
+# Stage F で使用するハイブリッドOCRの有効/無効を制御
+hybrid_ocr:
+  # デフォルト: 無効（Gemini Visionのみ）
+  default: false
+
+  # 高精度が必要な場合: 有効（Surya + PaddleOCR + Gemini）
+  # flyer: true  # チラシは複雑なレイアウトが多いため有効化推奨
+  # classroom: false  # お知らせは単純なレイアウトのためGeminiのみで十分
+  # kakeibo: false  # レシートはGemini Flashで十分
+
+# ============================================
 # モデルのコスト情報（参考）
 # ============================================
 # gemini-2.5-flash: 高速、安価

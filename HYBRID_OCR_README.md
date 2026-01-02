@@ -161,11 +161,58 @@ pip install surya-ocr paddlepaddle paddleocr "paddlex[ocr]"
 
 → 初回実行時のみ、Suryaモデル（約2GB）とPaddleOCRモデル（約500MB）がダウンロードされます
 
+## パイプライン統合
+
+ハイブリッドOCRは **Unified Document Pipeline** に統合されています。
+
+### 設定方法
+
+`G_unified_pipeline/config/models.yaml` で制御：
+
+```yaml
+hybrid_ocr:
+  default: false  # デフォルト: 無効（Gemini Visionのみ）
+  flyer: true     # チラシ: 有効（複雑なレイアウト）
+  classroom: false  # お知らせ: 無効（シンプルなレイアウト）
+```
+
+### プログラムでの有効化
+
+```python
+from G_unified_pipeline.pipeline import UnifiedDocumentPipeline
+
+# 方法1: 設定ファイルから自動取得
+pipeline = UnifiedDocumentPipeline()  # models.yamlの設定を使用
+
+# 方法2: 明示的に有効化
+pipeline = UnifiedDocumentPipeline(enable_hybrid_ocr=True)
+
+# 方法3: 明示的に無効化
+pipeline = UnifiedDocumentPipeline(enable_hybrid_ocr=False)
+```
+
+### 処理フロー（F-1～F-10）
+
+ハイブリッドOCRが有効な場合、Stage Fで以下のフローが実行されます：
+
+1. **F-1**: PaddleOCR（PPStructure）で表構造を高精度抽出
+2. **F-2**: Suryaでレイアウト解析・Bounding Box取得
+3. **F-3**: 画像切り出し
+4. **F-4**: PaddleOCRで日本語テキスト認識
+5. **F-5**: テキスト統合（読み順ソート）
+6. **F-6**: プロンプト構築（Stage E + PaddleOCR + Surya）
+7. **F-7**: Gemini Vision API呼び出し
+8. **F-8**: JSONクリーニング
+9. **F-9**: 全結果マージ（重複削除）
+10. **F-10**: 最終検証・出力（3種類のデータ）
+
+詳細なログが各ステップで出力されます。
+
 ## 次のステップ
 
 1. サンプル画像でテスト実行
 2. 実際のドキュメントで精度確認
-3. パイプライン全体への統合（`process_queued_documents.py` など）
+3. `models.yaml` で doc_type ごとに有効/無効を調整
 4. 必要に応じてGemini併用パターンの実装
 
 ## 技術詳細
