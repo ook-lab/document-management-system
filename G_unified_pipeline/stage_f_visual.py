@@ -29,11 +29,16 @@ import numpy as np
 from PIL import Image
 
 from C_ai_common.llm_client.llm_client import LLMClient
+import cv2
+from .image_preprocessing import preprocess_image_for_ocr, calculate_image_quality_score
+from .ocr_config import OCRConfig, OCRResultCache, PaddleOCRVersionAdapter
+from .ocr_report import OCRProcessingReport, OCRRegionStats
 
 # Surya のインポート（オプショナル）
 try:
     from surya.detection import DetectionPredictor
     from surya.layout import LayoutPredictor
+    from surya.foundation import FoundationPredictor
     SURYA_AVAILABLE = True
 except ImportError:
     SURYA_AVAILABLE = False
@@ -60,6 +65,10 @@ class StageFVisualAnalyzer:
         self.llm_client = llm_client
         self.enable_hybrid_ocr = enable_hybrid_ocr
 
+        
+        # OCR結果キャッシュ
+        self.ocr_cache = OCRResultCache() if enable_hybrid_ocr else None
+        
         # Hybrid OCR engines (lazy loading)
         self.surya_detector = None
         self.surya_layout = None
@@ -238,13 +247,37 @@ class StageFVisualAnalyzer:
                 f2_start = time.time()
                 logger.info("[F-2] Suryaレイアウト解析開始...")
 
-                # 画像読み込み
-                image = Image.open(file_path).convert("RGB")
+                # 画像読み込み（PDFの場合は最初のページを画像に変換）
+                file_ext = str(file_path).lower().split('.')[-1]
+                if file_ext == 'pdf':
+                    import fitz  # PyMuPDF
+                    doc = fitz.open(file_path)
+                    page = doc[0]  # 最初のページ
+                    # 高解像度でレンダリング (300 DPI)
+                    mat = fitz.Matrix(300/72, 300/72)
+                    pix = page.get_pixmap(matrix=mat)
+                    image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                    doc.close()
+                    logger.info(f"  ├─ PDF→画像変換完了: {pix.width}x{pix.height}px")
+                else:
+                    image = Image.open(file_path).convert("RGB")
                 img_width, img_height = image.size
+
+                # 画像サイズ制限（Suryaのメモリ問題対策）
+                # 文字認識は別で元画像を使うのでリサイズOK
+                MAX_DIMENSION = 2000  # 最大辺を2000pxに制限
+                if max(img_width, img_height) > MAX_DIMENSION:
+                    scale = MAX_DIMENSION / max(img_width, img_height)
+                    new_width = int(img_width * scale)
+                    new_height = int(img_height * scale)
+                    image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    logger.info(f"  ├─ 画像リサイズ（Surya用）: {img_width}x{img_height} → {new_width}x{new_height}px")
+                    img_width, img_height = new_width, new_height
 
                 # Suryaでレイアウト検出
                 detection_results = self.surya_detector([image])
-                text_boxes = detection_results[0].bboxes if detection_results else []
+                # PolygonBoxオブジェクトからbbox（[x1,y1,x2,y2]）を抽出
+                text_boxes = [box.bbox for box in detection_results[0].bboxes] if detection_results and detection_results[0].bboxes else []
 
                 # 平均領域サイズ計算
                 if text_boxes:
@@ -261,8 +294,19 @@ class StageFVisualAnalyzer:
                 logger.info("[F-2] Suryaレイアウト解析: スキップ（ハイブリッドモード無効）")
                 # Geminiのみの場合でも画像サイズは取得
                 try:
-                    image = Image.open(file_path).convert("RGB")
-                    img_width, img_height = image.size
+                    file_ext = str(file_path).lower().split('.')[-1]
+                    if file_ext == 'pdf':
+                        import fitz  # PyMuPDF
+                        doc = fitz.open(file_path)
+                        page = doc[0]
+                        mat = fitz.Matrix(300/72, 300/72)
+                        pix = page.get_pixmap(matrix=mat)
+                        image = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+                        img_width, img_height = pix.width, pix.height
+                        doc.close()
+                    else:
+                        image = Image.open(file_path).convert("RGB")
+                        img_width, img_height = image.size
                 except:
                     pass
 
@@ -326,15 +370,50 @@ class StageFVisualAnalyzer:
 
                 for idx, region_data in enumerate(cropped_regions):
                     try:
-                        result = self.paddle_ocr.ocr(region_data['image'], cls=True)
+                        # PaddleOCR 3.xではcls引数は廃止、use_textline_orientation初期化時に設定済み
+                        # 画像品質評価
+                        quality_score = calculate_image_quality_score(region_data['image'])
+                        
+                        # 画像前処理（品質スコアに応じて適用）
+                        preprocessed_image = region_data['image']
+                        if quality_score < 0.7:
+                            preprocessed_image, preprocess_stats = preprocess_image_for_ocr(
+                                region_data['image'],
+                                apply_clahe=True,
+                                apply_denoise=True,
+                                apply_sharpen=True,
+                                apply_binarize=False
+                            )
+                        else:
+                            preprocessed_image, preprocess_stats = preprocess_image_for_ocr(
+                                region_data['image'],
+                                apply_clahe=True,
+                                apply_denoise=False,
+                                apply_sharpen=True,
+                                apply_binarize=False
+                            )
+                        
+                        result = self.paddle_ocr.ocr(preprocessed_image)
                         text_lines = []
                         region_confidences = []
 
-                        if result and result[0]:
-                            for line in result[0]:
-                                if line[1][0]:  # テキストが存在
-                                    text_lines.append(line[1][0])
-                                    region_confidences.append(line[1][1])
+                        # PaddleOCR 3.x: OCRResultオブジェクトを処理
+                        if result and len(result) > 0:
+                            ocr_result = result[0]
+                            # PaddleOCR 3.x: OCRResultは辞書ライクオブジェクト
+                            # rec_texts, rec_scoresは属性ではなく辞書キーでアクセス
+                            if isinstance(ocr_result, dict) or hasattr(ocr_result, '__getitem__'):
+                                rec_texts = ocr_result.get('rec_texts', []) if hasattr(ocr_result, 'get') else ocr_result['rec_texts'] if 'rec_texts' in ocr_result else []
+                                rec_scores = ocr_result.get('rec_scores', []) if hasattr(ocr_result, 'get') else ocr_result['rec_scores'] if 'rec_scores' in ocr_result else []
+                                if rec_texts:
+                                    text_lines = list(rec_texts)
+                                    region_confidences = list(rec_scores) if rec_scores else []
+                            # 旧API互換（リスト形式）
+                            elif isinstance(ocr_result, list):
+                                for line in ocr_result:
+                                    if line and len(line) >= 2 and line[1]:
+                                        text_lines.append(line[1][0])
+                                        region_confidences.append(line[1][1])
 
                         text = "\n".join(text_lines)
                         avg_confidence = sum(region_confidences) / len(region_confidences) if region_confidences else 0.0
@@ -360,6 +439,7 @@ class StageFVisualAnalyzer:
 
                     except Exception as e:
                         logger.warning(f"[F-4] 領域 {idx} のOCR失敗: {e}")
+
 
                 avg_confidence = sum(confidence_scores) / len(confidence_scores) if confidence_scores else 0.0
 
@@ -441,16 +521,18 @@ class StageFVisualAnalyzer:
             # 役割説明を追加
             if extracted_text or paddle_tables or surya_full_text:
                 full_prompt += """【あなたの役割】
-上記の Stage E のテキスト、PaddleOCR の表、Surya のテキストを基準として、画像を詳細に見て以下を行ってください：
+上記の Stage E のテキスト、PaddleOCR の表、Surya のテキストを統合し、画像を詳細に見て完璧な結果を作成してください：
 
-1. **検証**: 提供されたテキストと表が正しいか画像と照合する
-2. **修正**: 間違いがあれば正しく修正する
-3. **補完**: 欠けている部分があれば補完する（画像化されたタイトル、ロゴ、装飾文字、見逃した表など）
+1. **ベース**: Stage E で抽出したテキストを `full_text` のベースとして使用する
+2. **補完**: Surya/PaddleOCR で見つかった追加のテキスト、表、レイアウト情報を追加する
+3. **検証**: 画像を見て、全ての情報が正しいか確認する
+4. **強化**: 両方で欠けている部分を補完する（画像化されたタイトル、ロゴ、装飾文字、見逃した表など）
 
-**重要**:
-- PaddleOCR が抽出した表は `layout_info.tables` に必ず含めてください
-- Surya が抽出したテキストを `full_text` のベースとして使用してください
-- 画像を詳細に見て、欠けている文字や要素を全て補完してください
+**重要な優先順位**:
+- `full_text`: **Stage E のテキストをベースに**、Surya のテキストで補完・追加する
+- `layout_info.tables`: PaddleOCR が抽出した表を必ず含め、さらに見逃した表があれば追加する
+- `layout_info.sections`: Surya のレイアウト情報を活用し、セクション構造を正確に記述する
+- 画像を詳細に見て、全ての文字と要素を漏らさず拾ってください
 """
             else:
                 full_prompt += "\n\n【注意】Stage E でテキストを抽出できませんでした。画像から全ての文字と表を拾い尽くしてください。\n"
@@ -653,22 +735,29 @@ class StageFVisualAnalyzer:
             return
 
         try:
+            logger.info("[Hybrid OCR] Initializing Surya Foundation Model...")
+            self.surya_foundation = FoundationPredictor()
+
             logger.info("[Hybrid OCR] Initializing Surya Detection...")
             self.surya_detector = DetectionPredictor()
 
             logger.info("[Hybrid OCR] Initializing Surya Layout...")
-            self.surya_layout = LayoutPredictor()
+            self.surya_layout = LayoutPredictor(self.surya_foundation)
 
             logger.info("[Hybrid OCR] Initializing PaddleOCR (lang=japan) for text recognition...")
-            self.paddle_ocr = PaddleOCR(lang='japan', use_angle_cls=True, show_log=False)
+            self.paddle_ocr = PaddleOCR(lang='japan', use_textline_orientation=True)
 
             logger.info("[Hybrid OCR] Initializing PaddleOCR PPStructure for table extraction...")
-            self.paddle_structure = PPStructure(lang='japan', use_gpu=False, show_log=False)
+            self.paddle_structure = PPStructure(lang='japan', device='cpu')
 
             logger.info("[Hybrid OCR] All engines initialized successfully!")
+            
+            # PaddleOCRバージョン検出
+            paddle_version = PaddleOCRVersionAdapter.detect_version()
+
 
         except Exception as e:
-            logger.error(f"[Hybrid OCR] Initialization failed: {e}", exc_info=True)
+            logger.error(f"[Hybrid OCR] Initialization failed: {e}")
             self.enable_hybrid_ocr = False
 
     def _extract_tables_with_paddleocr(self, file_path: Path) -> List[Dict[str, Any]]:
@@ -685,12 +774,16 @@ class StageFVisualAnalyzer:
             return []
 
         try:
-            result = self.paddle_structure(str(file_path))
+            # PPStructureV3はpredictメソッドを使用（ジェネレータを返す）
+            result = list(self.paddle_structure.predict(str(file_path)))
 
             tables = []
-            for item in result:
-                if item['type'] == 'table':
-                    html_content = item.get('res', {}).get('html', '')
+            for page_result in result:
+                # 新しいAPI: page_result['table_res_list']から表を抽出
+                table_list = page_result.get('table_res_list', []) if isinstance(page_result, dict) else getattr(page_result, 'table_res_list', [])
+                for table_res in table_list:
+                    # table_resから'html'属性を取得
+                    html_content = table_res.get('html', '') if isinstance(table_res, dict) else getattr(table_res, 'html', '')
                     if html_content:
                         table_data = self._parse_html_table(html_content)
                         if table_data:
