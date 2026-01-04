@@ -60,11 +60,6 @@ def render_email_list(emails: List[Dict[str, Any]]) -> tuple[Optional[int], pd.D
 
     df = pd.DataFrame(df_data)
 
-    # まとめて削除機能のヘッダー
-    col_list_header, col_bulk_delete = st.columns([3, 1])
-    with col_list_header:
-        st.markdown("一覧から選択してまとめて削除できます")
-
     # データエディタでチェックボックス付きの表を表示
     edited_df = st.data_editor(
         df,

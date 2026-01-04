@@ -120,9 +120,6 @@ def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
 
 def email_inbox_ui():
     """メール受信トレイUIロジック"""
-    st.markdown("#### 📬 メール受信トレイ")
-    st.caption("Gmailから取り込んだメールの確認・管理ができます")
-
     # データベースクライアントの初期化
     try:
         db_client = DatabaseClient()
@@ -371,10 +368,6 @@ def main():
         layout="wide",
         initial_sidebar_state="expanded"
     )
-
-    st.title("📬 メール受信トレイ")
-    st.markdown("Gmailから取り込んだメールの確認・管理")
-    st.markdown("---")
 
     # メール受信トレイUIを表示
     email_inbox_ui()
