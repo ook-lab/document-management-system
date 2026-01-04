@@ -151,9 +151,6 @@ def download_file_from_drive(source_id: str, file_name: str) -> Optional[str]:
 
 def pdf_review_ui():
     """ドキュメントレビューUIロジック（全てのファイルタイプ対応）"""
-    st.markdown("#### 📋 ドキュメントレビュー")
-    st.caption("AIが抽出したメタデータを確認・修正できます（PDF、テキスト、メール等の全ファイルタイプ対応）")
-
     # データベースクライアントとスキーマ検出器の初期化
     try:
         db_client = DatabaseClient()
@@ -288,15 +285,6 @@ def pdf_review_ui():
     logger.info(f"表示用DataFrameの行数: {len(df)}件")
 
     st.subheader("📁 レビュー対象ドキュメント一覧")
-
-    # まとめて削除機能
-    col_list_header, col_bulk_delete = st.columns([3, 1])
-    with col_list_header:
-        st.markdown("一覧から選択してまとめて削除できます")
-    with col_bulk_delete:
-        # セッション状態でチェックボックスの状態を管理
-        if 'selected_docs' not in st.session_state:
-            st.session_state.selected_docs = []
 
     # データエディタでチェックボックス付きの表を表示
     edited_df = st.data_editor(
@@ -1225,8 +1213,6 @@ def main():
     )
 
     st.title("📋 ドキュメントレビュー")
-    st.markdown("AIが抽出したメタデータを確認・修正（PDF、テキスト、メール等の全ファイルタイプ対応）")
-    st.markdown("---")
 
     # ドキュメントレビューUIを表示
     pdf_review_ui()
