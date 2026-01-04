@@ -242,12 +242,19 @@ class GmailConnector:
                         result['text_html'] += text
 
                 # 添付ファイルの抽出
-                elif filename:
+                elif filename or part['body'].get('attachmentId'):
+                    # Content-IDヘッダーを取得（インライン画像の場合）
+                    headers = {}
+                    if 'headers' in part:
+                        for header in part['headers']:
+                            headers[header['name']] = header['value']
+
                     attachment_info = {
                         'filename': filename,
                         'mimeType': mime_type,
                         'attachmentId': part['body'].get('attachmentId'),
-                        'size': part['body'].get('size', 0)
+                        'size': part['body'].get('size', 0),
+                        'headers': headers  # Content-IDなどのヘッダー情報
                     }
                     result['attachments'].append(attachment_info)
 
@@ -265,6 +272,89 @@ class GmailConnector:
                 parse_parts([payload])
 
         return result
+
+    def convert_html_with_inline_images(
+        self,
+        message_id: str,
+        html_content: str,
+        attachments: List[Dict[str, Any]]
+    ) -> str:
+        """
+        HTMLメール内のCID参照画像をBASE64形式に変換
+
+        Args:
+            message_id: メッセージID
+            html_content: HTML本文
+            attachments: 添付ファイル情報のリスト
+
+        Returns:
+            処理済みHTML（CID参照がdata:image形式に置換されたもの）
+        """
+        import re
+
+        if not html_content or not attachments:
+            return html_content
+
+        processed_html = html_content
+
+        # CID参照パターンを検索: src="cid:xxxxx"
+        cid_pattern = re.compile(r'src=["\']cid:([^"\']+)["\']', re.IGNORECASE)
+        cid_matches = cid_pattern.findall(html_content)
+
+        if not cid_matches:
+            return html_content
+
+        logger.info(f"CID参照画像を検出: {len(cid_matches)}件")
+
+        # 各CIDに対して処理
+        for cid in cid_matches:
+            # Content-IDが一致する添付ファイルを探す
+            matching_attachment = None
+            for att in attachments:
+                # Content-IDは通常 <xxxxx> の形式
+                att_headers = att.get('headers', {})
+                content_id = att_headers.get('Content-ID', '').strip('<>')
+
+                if content_id == cid:
+                    matching_attachment = att
+                    break
+
+            if matching_attachment:
+                attachment_id = matching_attachment.get('attachmentId')
+                mime_type = matching_attachment.get('mimeType', 'image/png')
+
+                if attachment_id:
+                    # 添付ファイルデータを取得
+                    att_data = self.get_attachment(message_id, attachment_id)
+
+                    if att_data:
+                        # BASE64エンコード（既にBASE64の場合もあるので確認）
+                        try:
+                            # att_dataがbytesの場合
+                            if isinstance(att_data, bytes):
+                                b64_data = base64.b64encode(att_data).decode('ascii')
+                            else:
+                                b64_data = att_data
+
+                            # data:image形式に変換
+                            data_uri = f"data:{mime_type};base64,{b64_data}"
+
+                            # HTMLを置換
+                            processed_html = processed_html.replace(
+                                f'src="cid:{cid}"',
+                                f'src="{data_uri}"'
+                            )
+                            processed_html = processed_html.replace(
+                                f"src='cid:{cid}'",
+                                f"src='{data_uri}'"
+                            )
+
+                            logger.info(f"CID画像を埋め込み: cid:{cid} -> {mime_type}")
+
+                        except Exception as e:
+                            logger.error(f"画像の埋め込みに失敗: cid:{cid}, {e}")
+
+        return processed_html
 
     def modify_labels(
         self,
@@ -344,3 +434,50 @@ class GmailConnector:
         except Exception as e:
             logger.error(f"ラベル一覧取得エラー: {e}")
             return []
+
+    def get_label_id_by_name(self, label_name: str) -> Optional[str]:
+        """
+        ラベル名からラベルIDを取得
+
+        Args:
+            label_name: ラベル名（例: 'processed', 'ゴミ箱'）
+
+        Returns:
+            ラベルID、見つからない場合はNone
+        """
+        labels = self.list_labels()
+        for label in labels:
+            if label.get('name') == label_name:
+                return label.get('id')
+        logger.warning(f"ラベルが見つかりません: {label_name}")
+        return None
+
+    def move_to_trash_label(self, message_id: str) -> bool:
+        """
+        メールを'processed'ラベルから'ゴミ箱'ラベルに移動
+
+        Args:
+            message_id: メッセージID
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            # processedラベルとゴミ箱ラベルのIDを取得
+            processed_label_id = self.get_label_id_by_name('processed')
+            trash_label_id = self.get_label_id_by_name('ゴミ箱')
+
+            if not processed_label_id or not trash_label_id:
+                logger.error("必要なラベルが見つかりません（'processed'または'ゴミ箱'）")
+                return False
+
+            # ラベルを変更
+            return self.modify_labels(
+                message_id,
+                add_labels=[trash_label_id],
+                remove_labels=[processed_label_id]
+            )
+
+        except Exception as e:
+            logger.error(f"ゴミ箱ラベルへの移動エラー ({message_id}): {e}")
+            return False

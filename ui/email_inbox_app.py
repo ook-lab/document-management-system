@@ -24,6 +24,8 @@ from loguru import logger
 
 from A_common.database.client import DatabaseClient
 from A_common.connectors.google_drive import GoogleDriveConnector
+from A_common.connectors.gmail_connector import GmailConnector
+import os
 
 # コンポーネントをインポート
 from ui.components.email_viewer import (
@@ -239,15 +241,32 @@ def email_inbox_ui():
                             email = emails[idx]
                             doc_id = email.get('id')
                             file_id = email.get('source_id')
+                            metadata = email.get('metadata', {})
+                            if isinstance(metadata, str):
+                                try:
+                                    metadata = json.loads(metadata)
+                                except:
+                                    metadata = {}
 
-                            # Google Driveから削除
+                            # 1. Gmailのラベルを変更（processed → ゴミ箱）
+                            message_id = metadata.get('message_id')
+                            if message_id:
+                                try:
+                                    user_email = os.getenv('GMAIL_USER_EMAIL', 'ookubo.y@workspace-o.com')
+                                    gmail_connector = GmailConnector(user_email)
+                                    gmail_connector.move_to_trash_label(message_id)
+                                    logger.info(f"Gmailラベル変更成功: {message_id}")
+                                except Exception as e:
+                                    logger.error(f"Gmailラベル変更エラー: {e}")
+
+                            # 2. Google DriveからHTMLファイルを削除
                             if file_id:
                                 try:
                                     drive_connector.trash_file(file_id)
                                 except Exception as e:
                                     logger.error(f"Google Drive削除エラー: {e}")
 
-                            # データベースから削除
+                            # 3. データベースから削除
                             if db_client.delete_document(doc_id):
                                 success_count += 1
                             else:
@@ -357,7 +376,26 @@ def email_inbox_ui():
         if st.session_state[delete_confirm_key]:
             if st.button("✅ 削除を実行", use_container_width=True, type="primary", key="single_delete_confirm"):
                 with st.spinner("削除中..."):
-                    # Google Driveから削除
+                    metadata = selected_email.get('metadata', {})
+                    if isinstance(metadata, str):
+                        try:
+                            metadata = json.loads(metadata)
+                        except:
+                            metadata = {}
+
+                    # 1. Gmailのラベルを変更（processed → ゴミ箱）
+                    message_id = metadata.get('message_id')
+                    if message_id:
+                        try:
+                            user_email = os.getenv('GMAIL_USER_EMAIL', 'ookubo.y@workspace-o.com')
+                            gmail_connector = GmailConnector(user_email)
+                            gmail_connector.move_to_trash_label(message_id)
+                            st.success(f"✅ Gmailのラベルを変更しました")
+                        except Exception as e:
+                            st.error(f"Gmailラベル変更エラー: {e}")
+                            st.warning(f"⚠️ Gmailラベルの変更に失敗しましたが、続行します")
+
+                    # 2. Google DriveからHTMLファイルを削除
                     file_id = selected_email.get('source_id')
                     if file_id:
                         try:
@@ -367,7 +405,7 @@ def email_inbox_ui():
                             st.error(f"Google Drive削除エラー: {e}")
                             st.warning(f"⚠️ Google Driveファイルの削除に失敗しましたが、データベースからは削除します")
 
-                    # データベースから削除
+                    # 3. データベースから削除
                     db_success = db_client.delete_document(doc_id)
 
                     if db_success:
