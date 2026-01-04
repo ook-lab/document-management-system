@@ -33,7 +33,11 @@ from ui.components.email_viewer import (
     render_email_detail,
     render_email_html_preview
 )
-from ui.components.table_editor import _format_field_name
+from ui.components.table_editor import _format_field_name, _render_array_table
+from ui.components.form_editor import render_form_editor
+from ui.components.json_preview import render_json_preview, render_json_diff
+from ui.components.table_creator import render_table_creator
+from ui.utils.schema_detector import SchemaDetector
 
 
 def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -248,16 +252,16 @@ def email_inbox_ui():
                                 except:
                                     metadata = {}
 
-                            # 1. Gmailのラベルを変更（processed → ゴミ箱）
+                            # 1. Gmailのメッセージをゴミ箱に移動
                             message_id = metadata.get('message_id')
                             if message_id:
                                 try:
                                     user_email = os.getenv('GMAIL_USER_EMAIL', 'ookubo.y@workspace-o.com')
                                     gmail_connector = GmailConnector(user_email)
-                                    gmail_connector.move_to_trash_label(message_id)
-                                    logger.info(f"Gmailラベル変更成功: {message_id}")
+                                    gmail_connector.trash_message(message_id)
+                                    logger.info(f"Gmailメッセージをゴミ箱に移動: {message_id}")
                                 except Exception as e:
-                                    logger.error(f"Gmailラベル変更エラー: {e}")
+                                    logger.error(f"Gmailゴミ箱移動エラー: {e}")
 
                             # 2. Google DriveからHTMLファイルを削除
                             if file_id:
@@ -305,12 +309,7 @@ def email_inbox_ui():
         render_email_html_preview(selected_email, drive_connector)
 
     with col_right:
-        st.markdown("### ✏️ メール情報")
-        render_email_detail(selected_email)
-
-        # 構造化データの表示（テキストブロックなど）
-        st.markdown("---")
-        st.markdown("### 📊 構造化データ")
+        st.markdown("### ✏️ メール情報 & メタデータ編集")
 
         # metadataを取得してパース
         metadata = selected_email.get('metadata') or {}
@@ -321,35 +320,155 @@ def email_inbox_ui():
                 logger.error(f"Failed to parse metadata JSON for email: {selected_email.get('id')}")
                 metadata = {}
 
+        # スキーマ検出器の初期化
+        schema_detector = SchemaDetector()
+        doc_type = selected_email.get('doc_type', '')
+        doc_id = selected_email.get('id')
+
+        # スキーマを検出
+        detected_schema = schema_detector.detect_schema(doc_type, metadata)
+
+        if detected_schema:
+            st.info(f"🎯 検出されたスキーマ: **{detected_schema}**")
+            editable_fields = schema_detector.get_editable_fields(detected_schema)
+        else:
+            editable_fields = []
+
         # 構造化フィールドを検出
         structured_fields = detect_structured_fields(metadata)
 
-        if structured_fields:
-            # タブで構造化データを表示
-            tab_names = [field["label"] for field in structured_fields]
-            tabs = st.tabs(tab_names)
+        # 構造化フィールドのキーセットを作成（フォーム編集から除外するため）
+        structured_field_keys = {field["key"] for field in structured_fields}
 
-            for idx, field in enumerate(structured_fields):
-                with tabs[idx]:
-                    st.markdown(f"#### {field['label']}")
-                    st.markdown(f"データ件数: {len(field['data'])} 件")
-                    st.markdown("---")
+        # タブリストを動的に構築
+        tab_names = ["📝 基本情報"]  # 基本情報タブ
 
-                    # 表形式で表示
-                    if field['data']:
-                        try:
-                            df_structured = pd.DataFrame(field['data'])
-                            st.dataframe(
-                                df_structured,
-                                use_container_width=True,
-                                height=400
+        # 構造化データごとにタブを追加
+        for field in structured_fields:
+            tab_names.append(field["label"])
+
+        # 固定タブ：表を追加、JSONプレビュー
+        tab_names.append("➕ 表を追加")
+        tab_names.append("🔍 JSONプレビュー")
+
+        # タブを動的に生成
+        tabs = st.tabs(tab_names)
+        edited_metadata = None
+
+        # タブ1: 基本情報 & フォーム編集
+        with tabs[0]:
+            # 基本情報を表示
+            render_email_detail(selected_email)
+
+            st.markdown("---")
+            st.markdown("#### メタデータ編集")
+
+            if editable_fields:
+                # 構造化データフィールドをフォームから除外
+                form_fields = [f for f in editable_fields if f["name"] not in structured_field_keys]
+
+                if form_fields:
+                    edited_metadata = render_form_editor(metadata, form_fields, doc_id)
+                else:
+                    st.info("このメールのフィールドは全て専用タブで編集できます")
+            else:
+                st.info("フォーム編集には対応するスキーマが必要です。JSONプレビュータブをご利用ください。")
+
+        # タブ2以降: 構造化データタブ（動的に生成）
+        for idx, field in enumerate(structured_fields):
+            with tabs[idx + 1]:  # 基本情報の次から
+                st.markdown(f"### {field['label']}")
+                st.markdown("表形式で編集できます")
+                st.markdown("---")
+
+                # 表エディタでレンダリング
+                edited_value = _render_array_table(
+                    f"{field['key']}_{doc_id}",
+                    field["data"],
+                    field["label"]
+                )
+
+                # edited_metadataを初期化（必要に応じて）
+                if edited_metadata is None:
+                    edited_metadata = metadata.copy()
+
+                edited_metadata[field["key"]] = edited_value
+
+        # 最後から2番目のタブ: 表を追加
+        with tabs[-2]:
+            updated_metadata = render_table_creator(doc_id, metadata.copy())
+
+            if updated_metadata:
+                edited_metadata = updated_metadata
+                st.info("💡 追加した表を保存するには、下の「💾 保存」ボタンを押してください")
+
+        # 最後のタブ: JSONプレビュー
+        with tabs[-1]:
+            edited_metadata = render_json_preview(metadata, editable=True, key_suffix=doc_id)
+
+        # 保存ボタンエリア
+        st.markdown("---")
+
+        col_save, col_validate, col_cancel = st.columns([1, 1, 1])
+
+        with col_validate:
+            if st.button("🔍 変更を確認", use_container_width=True, key=f"validate_{doc_id}"):
+                if edited_metadata:
+                    with st.expander("変更内容の詳細", expanded=True):
+                        render_json_diff(metadata, edited_metadata)
+
+        with col_save:
+            if st.button("💾 保存", type="primary", use_container_width=True, key=f"save_{doc_id}"):
+                if edited_metadata is None:
+                    st.error("編集されたデータがありません")
+                else:
+                    # スキーマ検証
+                    if detected_schema:
+                        is_valid, errors = schema_detector.validate_metadata(detected_schema, edited_metadata)
+                        if not is_valid:
+                            st.error("❌ スキーマ検証エラー:")
+                            for error in errors:
+                                st.error(f"  - {error}")
+                        else:
+                            # データベース更新（修正履歴を記録）
+                            success = db_client.record_correction(
+                                doc_id=doc_id,
+                                new_metadata=edited_metadata,
+                                new_doc_type=doc_type,
+                                corrector_email=None,
+                                notes="Email Inbox UIからの手動修正"
                             )
-                        except Exception as e:
-                            logger.error(f"構造化データの表示エラー: {e}")
-                            st.error(f"データの表示に失敗しました: {e}")
-                            st.json(field['data'])
-        else:
-            st.info("構造化データがありません")
+
+                            if success:
+                                st.success("✅ 保存に成功しました！")
+                                st.balloons()
+                                import time
+                                time.sleep(1)
+                                st.rerun()
+                            else:
+                                st.error("❌ 保存に失敗しました")
+                    else:
+                        # スキーマなしでも保存可能
+                        success = db_client.record_correction(
+                            doc_id=doc_id,
+                            new_metadata=edited_metadata,
+                            new_doc_type=doc_type,
+                            corrector_email=None,
+                            notes="Email Inbox UIからの手動修正"
+                        )
+
+                        if success:
+                            st.success("✅ 保存に成功しました！")
+                            st.balloons()
+                            import time
+                            time.sleep(1)
+                            st.rerun()
+                        else:
+                            st.error("❌ 保存に失敗しました")
+
+        with col_cancel:
+            if st.button("🔄 リセット", use_container_width=True, key=f"reset_{doc_id}"):
+                st.rerun()
 
     # 削除機能（危険な操作のため、別セクションに配置）
     st.markdown("---")
@@ -383,17 +502,17 @@ def email_inbox_ui():
                         except:
                             metadata = {}
 
-                    # 1. Gmailのラベルを変更（processed → ゴミ箱）
+                    # 1. Gmailのメッセージをゴミ箱に移動
                     message_id = metadata.get('message_id')
                     if message_id:
                         try:
                             user_email = os.getenv('GMAIL_USER_EMAIL', 'ookubo.y@workspace-o.com')
                             gmail_connector = GmailConnector(user_email)
-                            gmail_connector.move_to_trash_label(message_id)
-                            st.success(f"✅ Gmailのラベルを変更しました")
+                            gmail_connector.trash_message(message_id)
+                            st.success(f"✅ Gmailのメッセージをゴミ箱に移動しました")
                         except Exception as e:
-                            st.error(f"Gmailラベル変更エラー: {e}")
-                            st.warning(f"⚠️ Gmailラベルの変更に失敗しましたが、続行します")
+                            st.error(f"Gmailゴミ箱移動エラー: {e}")
+                            st.warning(f"⚠️ Gmailメッセージのゴミ箱移動に失敗しましたが、続行します")
 
                     # 2. Google DriveからHTMLファイルを削除
                     file_id = selected_email.get('source_id')

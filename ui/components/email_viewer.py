@@ -34,16 +34,23 @@ def render_email_list(emails: List[Dict[str, Any]]) -> tuple[Optional[int], pd.D
     for email in emails:
         metadata = email.get('metadata', {})
 
-        # メールの基本情報を取得
-        sender = metadata.get('from', '送信者不明')
-        subject = metadata.get('subject', '(件名なし)')
-        date_str = metadata.get('date', '')
+        # メールの基本情報を取得 - display_*フィールドを優先的に使用
+        # display_*フィールドはGmail取り込み時に正規化されたもの
+        sender = email.get('display_sender', metadata.get('from', '送信者不明'))
+        sender_email = email.get('display_sender_email', '')
+        subject = email.get('display_subject', metadata.get('subject', '(件名なし)'))
+        date_str = email.get('display_sent_at', metadata.get('date', ''))
 
-        # 送信者から名前とメールアドレスを抽出
-        sender_name = sender
-        if '<' in sender and '>' in sender:
-            # "名前 <email>" の形式から名前だけを取得
-            sender_name = sender.split('<')[0].strip().strip('"')
+        # 送信者名とメールアドレスを表示用に整形
+        if sender_email and sender:
+            sender_display = f"{sender} ({sender_email})"
+        elif sender_email:
+            sender_display = sender_email
+        elif sender and '<' in sender and '>' in sender:
+            # metadata.fromの場合の後方互換性: "名前 <email>" の形式から名前だけを取得
+            sender_display = sender.split('<')[0].strip().strip('"')
+        else:
+            sender_display = sender
 
         # 日付をフォーマット
         try:
@@ -54,8 +61,9 @@ def render_email_list(emails: List[Dict[str, Any]]) -> tuple[Optional[int], pd.D
         df_data.append({
             '選択': False,  # チェックボックス用
             '件名': subject,
-            '送信者': sender_name,
-            '送信日時': display_date
+            '送信者': sender_display,
+            '送信日時': display_date,
+            '送信者メール': sender_email  # CSVエクスポート用に追加
         })
 
     df = pd.DataFrame(df_data)
@@ -71,9 +79,13 @@ def render_email_list(emails: List[Dict[str, Any]]) -> tuple[Optional[int], pd.D
                 "選択",
                 help="削除するメールを選択",
                 default=False,
+            ),
+            "送信者メール": st.column_config.TextColumn(
+                "送信者メールアドレス",
+                help="送信者のメールアドレス",
             )
         },
-        disabled=["件名", "送信者", "送信日時"],
+        disabled=["件名", "送信者", "送信日時", "送信者メール"],
         key="email_list_editor"
     )
 
@@ -99,19 +111,19 @@ def render_email_detail(email: Dict[str, Any]):
 
     # デバッグ: データソースを確認
     with st.expander("🔍 データソース確認", expanded=False):
-        st.markdown("**documents.summary (最初の500文字):**")
+        st.markdown("**documents.summary:**")
         doc_summary = email.get('summary', '')
-        st.code(str(doc_summary)[:500] if doc_summary else "なし")
+        st.code(str(doc_summary) if doc_summary else "なし")
         st.markdown(f"長さ: {len(str(doc_summary)) if doc_summary else 0} 文字")
 
-        st.markdown("**metadata.summary (最初の500文字):**")
+        st.markdown("**metadata.summary:**")
         meta_summary = metadata.get('summary', '')
-        st.code(str(meta_summary)[:500] if meta_summary else "なし")
+        st.code(str(meta_summary) if meta_summary else "なし")
         st.markdown(f"長さ: {len(str(meta_summary)) if meta_summary else 0} 文字")
 
-        st.markdown("**attachment_text (最初の1000文字):**")
+        st.markdown("**attachment_text:**")
         attachment_text = email.get('attachment_text', '')
-        st.code(str(attachment_text)[:1000] if attachment_text else "なし")
+        st.code(str(attachment_text) if attachment_text else "なし")
         st.markdown(f"長さ: {len(str(attachment_text)) if attachment_text else 0} 文字")
 
     # summaryフィールドからJSONデータを抽出
@@ -166,8 +178,8 @@ def render_email_detail(email: Dict[str, Any]):
 
                     # デバッグ情報を表示
                     with st.expander("🔍 デバッグ: JSON内容を確認", expanded=False):
-                        st.markdown("**元のJSON（最初の1000文字）:**")
-                        st.code(json_str[:1000])
+                        st.markdown("**元のJSON:**")
+                        st.code(json_str)
                         st.markdown("**JSON文字列の長さ:**")
                         st.code(f"{len(json_str)} 文字")
 
@@ -229,7 +241,7 @@ def render_email_detail(email: Dict[str, Any]):
         if 'extracted_text' not in email_data or not email_data.get('extracted_text'):
             # attachment_textをextracted_textとして使用（構造化されていない場合のみ）
             attachment_text = email.get('attachment_text', '')
-            if attachment_text and '要約:' not in attachment_text[:200]:
+            if attachment_text and '要約:' not in attachment_text:
                 email_data['extracted_text'] = attachment_text
 
     st.markdown("### ✏️ メール情報")
@@ -240,15 +252,22 @@ def render_email_detail(email: Dict[str, Any]):
     with tab1:
         st.markdown("#### メール要約")
 
-        # 送信元
+        # 送信元 - display_*フィールドを優先的に使用
         st.markdown("**📤 送信元**")
-        sender = metadata.get('from', '不明')
-        # 送信者名とメールアドレスを抽出
-        sender_display = sender
-        if '<' in sender and '>' in sender:
+        sender = email.get('display_sender', metadata.get('from', '不明'))
+        sender_email = email.get('display_sender_email', '')
+        # 送信者名とメールアドレスを整形
+        if sender_email and sender:
+            sender_display = f"{sender} ({sender_email})"
+        elif sender_email:
+            sender_display = sender_email
+        elif sender and '<' in sender and '>' in sender:
+            # metadata.fromの後方互換性
             sender_display = sender.split('<')[0].strip().strip('"')
             sender_email = sender.split('<')[1].split('>')[0]
             sender_display = f"{sender_display} ({sender_email})"
+        else:
+            sender_display = sender
         st.info(sender_display)
 
         # 宛先
@@ -256,9 +275,9 @@ def render_email_detail(email: Dict[str, Any]):
         recipient = metadata.get('to', '不明')
         st.info(recipient)
 
-        # 送信日
+        # 送信日 - display_sent_atを優先的に使用
         st.markdown("**📅 送信日**")
-        send_date = metadata.get('date', '不明')
+        send_date = email.get('display_sent_at', metadata.get('date', '不明'))
         st.info(send_date)
 
         # 受信日（created_atを使用）
@@ -283,13 +302,11 @@ def render_email_detail(email: Dict[str, Any]):
         if summary_text and not (summary_text.startswith('{') or summary_text.startswith('```')):
             st.info(summary_text)
         else:
-            # 要約が見つからない場合は、extracted_textの先頭を要約として表示
+            # 要約が見つからない場合は、extracted_textの全文を表示
             extracted = email_data.get('extracted_text', '')
             if extracted:
-                # 最初の200文字を要約として表示
-                summary_preview = extracted[:200] + "..." if len(extracted) > 200 else extracted
                 # From:, To:などのメタデータ行を除外
-                lines = summary_preview.split('\n')
+                lines = extracted.split('\n')
                 clean_lines = [line for line in lines if not (line.startswith('From:') or line.startswith('To:') or line.startswith('Date:'))]
                 summary_preview = '\n'.join(clean_lines).strip()
                 st.info(summary_preview)
@@ -317,7 +334,7 @@ def render_email_detail(email: Dict[str, Any]):
         if not extracted_text:
             attachment_text = email.get('attachment_text', '')
             # attachment_textに「要約:」などの構造が含まれている場合は除外
-            if attachment_text and '要約:' not in attachment_text[:100]:
+            if attachment_text and '要約:' not in attachment_text:
                 extracted_text = attachment_text
 
         if extracted_text:
@@ -354,8 +371,8 @@ def render_email_detail(email: Dict[str, Any]):
                 st.markdown("**metadataのキー:**")
                 st.code(str(list(metadata.keys())))
                 if summary:
-                    st.markdown("**summary (最初の500文字):**")
-                    st.code(summary[:500])
+                    st.markdown("**summary:**")
+                    st.code(summary)
 
     with tab3:
         st.markdown("#### 重要な情報")

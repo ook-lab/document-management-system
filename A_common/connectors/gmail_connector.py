@@ -481,3 +481,25 @@ class GmailConnector:
         except Exception as e:
             logger.error(f"ゴミ箱ラベルへの移動エラー ({message_id}): {e}")
             return False
+
+    def trash_message(self, message_id: str) -> bool:
+        """
+        Gmail APIを使ってメールをゴミ箱に移動（実際にGmailのゴミ箱に入る）
+
+        Args:
+            message_id: メッセージID
+
+        Returns:
+            成功したかどうか
+        """
+        try:
+            self.service.users().messages().trash(
+                userId='me',
+                id=message_id
+            ).execute()
+            logger.info(f"メールをゴミ箱に移動しました: {message_id}")
+            return True
+
+        except Exception as e:
+            logger.error(f"メールのゴミ箱移動エラー ({message_id}): {e}")
+            return False
