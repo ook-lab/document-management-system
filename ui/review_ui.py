@@ -256,7 +256,8 @@ def pdf_review_ui():
             search_query=search_query if search_query else None,
             workspace=workspace_value,
             file_type=file_type_value,
-            review_status=review_status_value
+            review_status=review_status_value,
+            exclude_workspace='gmail'  # Gmailワークスペースを除外
         )
 
     # デバッグログ: 取得後の確認
@@ -1230,8 +1231,14 @@ def email_inbox_ui():
     # サイドバー: フィルタ設定
     st.sidebar.header("🔍 フィルタ")
 
-    # メールフィルタを使用
-    filter_settings = render_email_filters()
+    # Doc typeフィルタ（メール種別）
+    doc_type_options = ["全て", "DM-mail", "JOB-mail"]
+    doc_type_filter = st.sidebar.selectbox(
+        "メール種別",
+        options=doc_type_options,
+        index=0,
+        help="メールの種類でフィルタリング"
+    )
 
     # 取得件数
     limit = st.sidebar.number_input(
@@ -1248,12 +1255,16 @@ def email_inbox_ui():
     if st.sidebar.button("🔄 リストを更新", use_container_width=True, key="refresh_email_list"):
         st.rerun()
 
-    # メールを取得（workspace='gmail'）
+    # メールを取得（workspace='gmail', doc_typeでフィルタ）
     with st.spinner("メールを取得中..."):
+        # Doc typeフィルタの値を変換（"全て"の場合はNone）
+        doc_type_value = doc_type_filter if doc_type_filter != "全て" else None
+
         # get_documents_for_reviewを使用してメールを取得
         emails = db_client.get_documents_for_review(
             limit=limit,
             workspace="gmail",  # Gmailのみ
+            doc_type=doc_type_value,  # Doc typeでフィルタ
             review_status="all"  # 全てのステータス
         )
 
@@ -1347,6 +1358,49 @@ def email_inbox_ui():
     with col_right:
         st.markdown("### ✏️ メール情報")
         render_email_detail(selected_email)
+
+        # 構造化データの表示（テキストブロックなど）
+        st.markdown("---")
+        st.markdown("### 📊 構造化データ")
+
+        # metadataを取得してパース
+        metadata = selected_email.get('metadata') or {}
+        if isinstance(metadata, str):
+            try:
+                metadata = json.loads(metadata)
+            except json.JSONDecodeError:
+                logger.error(f"Failed to parse metadata JSON for email: {selected_email.get('id')}")
+                metadata = {}
+
+        # 構造化フィールドを検出
+        structured_fields = detect_structured_fields(metadata)
+
+        if structured_fields:
+            # タブで構造化データを表示
+            tab_names = [field["label"] for field in structured_fields]
+            tabs = st.tabs(tab_names)
+
+            for idx, field in enumerate(structured_fields):
+                with tabs[idx]:
+                    st.markdown(f"#### {field['label']}")
+                    st.markdown(f"データ件数: {len(field['data'])} 件")
+                    st.markdown("---")
+
+                    # 表形式で表示
+                    if field['data']:
+                        try:
+                            df_structured = pd.DataFrame(field['data'])
+                            st.dataframe(
+                                df_structured,
+                                use_container_width=True,
+                                height=400
+                            )
+                        except Exception as e:
+                            logger.error(f"構造化データの表示エラー: {e}")
+                            st.error(f"データの表示に失敗しました: {e}")
+                            st.json(field['data'])
+        else:
+            st.info("構造化データがありません")
 
     # 削除機能（危険な操作のため、別セクションに配置）
     st.markdown("---")
