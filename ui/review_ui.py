@@ -30,6 +30,12 @@ from ui.utils.schema_detector import SchemaDetector
 from ui.components.form_editor import render_form_editor
 from ui.components.table_editor import render_table_editor, _render_array_table, _format_field_name
 from ui.components.json_preview import render_json_preview, render_json_diff
+from ui.components.email_viewer import (
+    render_email_list,
+    render_email_detail,
+    render_email_html_preview,
+    render_email_filters
+)
 
 
 def detect_structured_fields(metadata: Dict[str, Any]) -> List[Dict[str, Any]]:
@@ -1208,6 +1214,198 @@ structured_field_keys:
         st.caption(f"🎨 検出スキーマ: {detected_schema or 'N/A'}")
 
 
+def email_inbox_ui():
+    """メール受信トレイUIロジック"""
+    st.markdown("#### 📬 メール受信トレイ")
+    st.caption("Gmailから取り込んだメールの確認・管理ができます")
+
+    # データベースクライアントの初期化
+    try:
+        db_client = DatabaseClient()
+        drive_connector = GoogleDriveConnector()
+    except Exception as e:
+        st.error(f"初期化エラー: {e}")
+        st.stop()
+
+    # サイドバー: フィルタ設定
+    st.sidebar.header("🔍 フィルタ")
+
+    # メールフィルタを使用
+    filter_settings = render_email_filters()
+
+    # 取得件数
+    limit = st.sidebar.number_input(
+        "取得件数",
+        min_value=10,
+        max_value=500,
+        value=50,
+        step=10,
+        help="表示するメールの最大件数"
+    )
+
+    # リスト更新ボタン
+    st.sidebar.markdown("---")
+    if st.sidebar.button("🔄 リストを更新", use_container_width=True, key="refresh_email_list"):
+        st.rerun()
+
+    # メールを取得（workspace='gmail'）
+    with st.spinner("メールを取得中..."):
+        # get_documents_for_reviewを使用してメールを取得
+        emails = db_client.get_documents_for_review(
+            limit=limit,
+            workspace="gmail",  # Gmailのみ
+            review_status="all"  # 全てのステータス
+        )
+
+    logger.info(f"DBから取得したメール数: {len(emails)}件")
+
+    if not emails:
+        st.info("メールがありません")
+        return
+
+    st.sidebar.success(f"✅ {len(emails)}件のメール")
+
+    # メール一覧を表示
+    selected_index, edited_df = render_email_list(emails)
+
+    if selected_index is None:
+        st.info("メールを選択してください")
+        return
+
+    # 選択されたメールを取得
+    selected_indices = edited_df[edited_df['選択'] == True].index.tolist() if edited_df is not None else []
+    selected_count = len(selected_indices)
+
+    # まとめて削除ボタン
+    if selected_count > 0:
+        col_bulk1, col_bulk2, col_spacer = st.columns([1, 1, 2])
+
+        with col_bulk1:
+            st.warning(f"⚠️ {selected_count}件のメールが選択されています")
+
+        with col_bulk2:
+            # 一括削除確認用のセッション状態
+            if 'bulk_delete_confirm_email' not in st.session_state:
+                st.session_state.bulk_delete_confirm_email = False
+
+            if not st.session_state.bulk_delete_confirm_email:
+                if st.button(f"🗑️ {selected_count}件をまとめて削除", use_container_width=True, type="secondary"):
+                    st.session_state.bulk_delete_confirm_email = True
+                    st.rerun()
+            else:
+                if st.button(f"✅ {selected_count}件の削除を実行", use_container_width=True, type="primary"):
+                    with st.spinner(f"{selected_count}件のメールを削除中..."):
+                        success_count = 0
+                        fail_count = 0
+
+                        for idx in selected_indices:
+                            email = emails[idx]
+                            doc_id = email.get('id')
+                            file_id = email.get('source_id')
+
+                            # Google Driveから削除
+                            if file_id:
+                                try:
+                                    drive_connector.trash_file(file_id)
+                                except Exception as e:
+                                    logger.error(f"Google Drive削除エラー: {e}")
+
+                            # データベースから削除
+                            if db_client.delete_document(doc_id):
+                                success_count += 1
+                            else:
+                                fail_count += 1
+
+                        if success_count > 0:
+                            st.success(f"✅ {success_count}件のメールを削除しました")
+                        if fail_count > 0:
+                            st.error(f"❌ {fail_count}件の削除に失敗しました")
+
+                        st.session_state.bulk_delete_confirm_email = False
+                        st.balloons()
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+
+                if st.button("❌ キャンセル", use_container_width=True):
+                    st.session_state.bulk_delete_confirm_email = False
+                    st.rerun()
+
+    # メール詳細表示
+    st.markdown("---")
+    st.subheader("📧 メール詳細")
+
+    selected_email = emails[selected_index]
+
+    # レイアウト: 左にHTMLプレビュー、右に詳細情報
+    col_left, col_right = st.columns([1, 1.2])
+
+    with col_left:
+        st.markdown("### 📄 メールプレビュー")
+        render_email_html_preview(selected_email, drive_connector)
+
+    with col_right:
+        st.markdown("### ✏️ メール情報")
+        render_email_detail(selected_email)
+
+    # 削除機能（危険な操作のため、別セクションに配置）
+    st.markdown("---")
+    st.markdown("### ⚠️ 危険な操作")
+
+    doc_id = selected_email.get('id')
+
+    # 削除確認用のセッション状態
+    delete_confirm_key = f"delete_confirm_email_{doc_id}"
+    if delete_confirm_key not in st.session_state:
+        st.session_state[delete_confirm_key] = False
+
+    col_delete1, col_delete2, col_spacer = st.columns([1, 1, 2])
+
+    with col_delete1:
+        if not st.session_state[delete_confirm_key]:
+            if st.button("🗑️ このメールを削除", use_container_width=True, type="secondary", key="single_delete"):
+                st.session_state[delete_confirm_key] = True
+                st.rerun()
+        else:
+            st.warning("本当に削除しますか？")
+
+    with col_delete2:
+        if st.session_state[delete_confirm_key]:
+            if st.button("✅ 削除を実行", use_container_width=True, type="primary", key="single_delete_confirm"):
+                with st.spinner("削除中..."):
+                    # Google Driveから削除
+                    file_id = selected_email.get('source_id')
+                    if file_id:
+                        try:
+                            drive_connector.trash_file(file_id)
+                            st.success(f"✅ Google Driveのファイルをゴミ箱に移動しました")
+                        except Exception as e:
+                            st.error(f"Google Drive削除エラー: {e}")
+                            st.warning(f"⚠️ Google Driveファイルの削除に失敗しましたが、データベースからは削除します")
+
+                    # データベースから削除
+                    db_success = db_client.delete_document(doc_id)
+
+                    if db_success:
+                        st.success("✅ データベースからメールを削除しました")
+                        st.balloons()
+                        st.session_state[delete_confirm_key] = False
+                        import time
+                        time.sleep(1)
+                        st.rerun()
+                    else:
+                        st.error("❌ データベースからの削除に失敗しました")
+                        st.session_state[delete_confirm_key] = False
+
+            if st.button("❌ キャンセル", use_container_width=True, key="single_delete_cancel"):
+                st.session_state[delete_confirm_key] = False
+                st.rerun()
+
+    # フッター
+    st.markdown("---")
+    st.caption("Document Management System - Email Inbox UI v1.0")
+
+
 def main():
     """メインUIロジック - タブ切り替え"""
     st.set_page_config(
@@ -1227,14 +1425,7 @@ def main():
         pdf_review_ui()
 
     with tab2:
-        # メール受信トレイ機能（開発中）
-        st.info("📬 メール受信トレイ機能は現在開発中です。")
-        st.markdown("""
-        この機能では以下が可能になります：
-        - メールの一覧表示
-        - メールの内容プレビュー
-        - メールの分類と管理
-        """)
+        email_inbox_ui()
 
 
 if __name__ == "__main__":
