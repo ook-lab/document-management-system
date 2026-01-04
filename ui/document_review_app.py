@@ -1212,8 +1212,6 @@ def main():
         initial_sidebar_state="expanded"
     )
 
-    st.title("📋 ドキュメントレビュー")
-
     # ドキュメントレビューUIを表示
     pdf_review_ui()
 
