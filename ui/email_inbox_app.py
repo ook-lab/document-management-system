@@ -262,6 +262,8 @@ def email_inbox_ui():
                                     logger.info(f"Gmailメッセージをゴミ箱に移動: {message_id}")
                                 except Exception as e:
                                     logger.error(f"Gmailゴミ箱移動エラー: {e}")
+                            else:
+                                logger.warning(f"message_idが見つかりません（古いデータの可能性）: doc_id={doc_id}")
 
                             # 2. Google DriveからHTMLファイルを削除
                             if file_id:
@@ -513,6 +515,8 @@ def email_inbox_ui():
                         except Exception as e:
                             st.error(f"Gmailゴミ箱移動エラー: {e}")
                             st.warning(f"⚠️ Gmailメッセージのゴミ箱移動に失敗しましたが、続行します")
+                    else:
+                        st.warning(f"⚠️ message_idが見つかりません（古いデータのため、Gmailの削除はスキップされました）")
 
                     # 2. Google DriveからHTMLファイルを削除
                     file_id = selected_email.get('source_id')
