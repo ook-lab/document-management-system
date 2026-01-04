@@ -187,24 +187,50 @@ def email_inbox_ui():
     selected_indices = edited_df[edited_df['選択'] == True].index.tolist() if edited_df is not None else []
     selected_count = len(selected_indices)
 
-    # まとめて削除ボタン
-    if selected_count > 0:
-        col_bulk1, col_bulk2, col_spacer = st.columns([1, 1, 2])
+    # まとめて操作ボタン（一覧の直下に常に表示）
+    col_approve, col_delete, col_spacer = st.columns([1, 1, 2])
 
-        with col_bulk1:
-            st.warning(f"⚠️ {selected_count}件のメールが選択されています")
+    with col_approve:
+        if selected_count > 0:
+            if st.button(f"✅ まとめて承認 ({selected_count}件)", use_container_width=True, type="primary"):
+                with st.spinner(f"{selected_count}件のメールを承認中..."):
+                    success_count = 0
+                    fail_count = 0
 
-        with col_bulk2:
-            # 一括削除確認用のセッション状態
-            if 'bulk_delete_confirm_email' not in st.session_state:
-                st.session_state.bulk_delete_confirm_email = False
+                    for idx in selected_indices:
+                        email = emails[idx]
+                        doc_id = email.get('id')
 
+                        # レビュー済みとしてマーク
+                        if db_client.mark_document_reviewed(doc_id):
+                            success_count += 1
+                        else:
+                            fail_count += 1
+
+                    if success_count > 0:
+                        st.success(f"✅ {success_count}件のメールを承認しました")
+                    if fail_count > 0:
+                        st.error(f"❌ {fail_count}件の承認に失敗しました")
+
+                    st.balloons()
+                    import time
+                    time.sleep(1)
+                    st.rerun()
+        else:
+            st.button("✅ まとめて承認", use_container_width=True, disabled=True)
+
+    with col_delete:
+        # 一括削除確認用のセッション状態
+        if 'bulk_delete_confirm_email' not in st.session_state:
+            st.session_state.bulk_delete_confirm_email = False
+
+        if selected_count > 0:
             if not st.session_state.bulk_delete_confirm_email:
-                if st.button(f"🗑️ {selected_count}件をまとめて削除", use_container_width=True, type="secondary"):
+                if st.button(f"🗑️ まとめて削除 ({selected_count}件)", use_container_width=True, type="secondary"):
                     st.session_state.bulk_delete_confirm_email = True
                     st.rerun()
             else:
-                if st.button(f"✅ {selected_count}件の削除を実行", use_container_width=True, type="primary"):
+                if st.button(f"⚠️ 削除を実行 ({selected_count}件)", use_container_width=True, type="primary"):
                     with st.spinner(f"{selected_count}件のメールを削除中..."):
                         success_count = 0
                         fail_count = 0
@@ -237,10 +263,14 @@ def email_inbox_ui():
                         import time
                         time.sleep(1)
                         st.rerun()
+        else:
+            st.button("🗑️ まとめて削除", use_container_width=True, disabled=True)
 
-                if st.button("❌ キャンセル", use_container_width=True):
-                    st.session_state.bulk_delete_confirm_email = False
-                    st.rerun()
+    # 削除確認中はキャンセルボタン表示
+    if st.session_state.get('bulk_delete_confirm_email', False):
+        if st.button("❌ キャンセル", use_container_width=True):
+            st.session_state.bulk_delete_confirm_email = False
+            st.rerun()
 
     # メール詳細表示
     st.markdown("---")
