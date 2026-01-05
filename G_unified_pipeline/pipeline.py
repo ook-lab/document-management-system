@@ -14,11 +14,11 @@ from loguru import logger
 
 from C_ai_common.llm_client.llm_client import LLMClient
 from A_common.database.client import DatabaseClient
+from A_common.connectors.google_drive import GoogleDriveConnector
 
 from .config_loader import ConfigLoader
 from .stage_e_preprocessing import StageEPreprocessor
 from .stage_f_visual import StageFVisualAnalyzer
-from .stage_g_formatting import StageGTextFormatter
 from .stage_h_structuring import StageHStructuring
 from .stage_h_kakeibo import StageHKakeibo
 from .stage_i_synthesis import StageISynthesis
@@ -67,6 +67,7 @@ class UnifiedDocumentPipeline:
         """
         self.llm_client = llm_client or LLMClient()
         self.db = db_client or DatabaseClient(use_service_role=True)  # RLSバイパスのためService Role使用
+        self.drive_connector = GoogleDriveConnector()  # Google Drive ファイル名更新用
 
         # 設定ローダーを初期化
         self.config = ConfigLoader(config_dir)
@@ -79,7 +80,6 @@ class UnifiedDocumentPipeline:
         # 各ステージを初期化
         self.stage_e = StageEPreprocessor(self.llm_client)
         self.stage_f = StageFVisualAnalyzer(self.llm_client, enable_hybrid_ocr=enable_hybrid_ocr)
-        self.stage_g = StageGTextFormatter(self.llm_client)
         self.stage_h = StageHStructuring(self.llm_client)
         self.stage_h_kakeibo = StageHKakeibo(self.db)  # 家計簿専用Stage H
         self.stage_i = StageISynthesis(self.llm_client)
@@ -149,26 +149,53 @@ class UnifiedDocumentPipeline:
                 file_path=file_path,
                 prompt=prompt_f,
                 model=model_f,
-                extracted_text=extracted_text
+                extracted_text=extracted_text,
+                workspace=workspace
             )
             logger.info(f"[Stage F完了] Vision結果: {len(vision_raw)}文字")
 
             # ============================================
-            # Stage G: スキップ（Stage F が完璧な出力を生成）
+            # Stage F 結果パース: JSON から構造化情報を取得
             # ============================================
-            # Stage F の JSON 出力をパースして構造化情報を取得
             import json
             try:
                 vision_json = json.loads(vision_raw)
-                combined_text = vision_json.get('full_text', '')
+                ocr_text = vision_json.get('full_text', '')
                 stage_f_structure = {
                     'sections': vision_json.get('layout_info', {}).get('sections', []),
                     'tables': vision_json.get('layout_info', {}).get('tables', []),
                     'visual_elements': vision_json.get('visual_elements', {}),
-                    'full_text': combined_text
+                    'full_text': ocr_text
                 }
+
+                # combined_textの構築（複数ソースから統合）
+                text_parts = []
+
+                # 1. 投稿文テキスト（Classroom等のメタデータから）
+                if extra_metadata:
+                    display_post_text = extra_metadata.get('display_post_text', '')
+                    if display_post_text and display_post_text.strip():
+                        text_parts.append(f"[投稿文]\n{display_post_text}")
+                        logger.info(f"[Stage F→H] display_post_text追加: {len(display_post_text)}文字")
+
+                # 2. OCR抽出テキスト
+                if ocr_text and ocr_text.strip():
+                    text_parts.append(f"[OCR抽出テキスト]\n{ocr_text}")
+
+                # 3. 画像の視覚的説明（visual_elements.notes）
+                visual_elements = vision_json.get('visual_elements', {})
+                notes = visual_elements.get('notes', [])
+                if notes:
+                    notes_text = '\n'.join(notes)
+                    text_parts.append(f"[画像の視覚的説明]\n{notes_text}")
+                    logger.info(f"[Stage F→H] visual_elements.notes追加: {len(notes_text)}文字")
+
+                # 統合テキスト生成
+                combined_text = '\n\n'.join(text_parts)
+
                 logger.info(f"[Stage F→H] 構造化情報を抽出:")
-                logger.info(f"  ├─ full_text: {len(combined_text)}文字")
+                logger.info(f"  ├─ combined_text: {len(combined_text)}文字")
+                logger.info(f"  ├─ OCR full_text: {len(ocr_text)}文字")
                 logger.info(f"  ├─ sections: {len(stage_f_structure.get('sections', []))}個")
                 logger.info(f"  └─ tables: {len(stage_f_structure.get('tables', []))}個")
             except json.JSONDecodeError as e:
@@ -176,14 +203,10 @@ class UnifiedDocumentPipeline:
                 combined_text = vision_raw
                 stage_f_structure = None
 
-            # Stage G の結果をチェック（空のコンテンツは警告のみ、エラーではない）
+            # 空のコンテンツをチェック（空のドキュメントは警告のみ、エラーではない）
             if not combined_text or not combined_text.strip():
-                logger.warning(f"[Stage G警告] 統合テキストが空です（テキストのないドキュメントの可能性）")
+                logger.warning(f"[Stage F→H] 統合テキストが空です（テキストのないドキュメントの可能性）")
                 combined_text = ""  # 空文字列として継続
-
-            logger.info(f"[Stage G完了] 統合テキスト: {len(combined_text)}文字")
-            if stage_f_structure:
-                logger.info(f"[Stage G完了] 構造化情報: tables={len(stage_f_structure.get('tables', []))}, sections={len(stage_f_structure.get('sections', []))}")
 
             # ============================================
             # Stage H: Structuring
@@ -196,7 +219,7 @@ class UnifiedDocumentPipeline:
             if custom_handler == 'kakeibo':
                 logger.info(f"[Stage H] 家計簿構造化開始... (custom_handler=kakeibo)")
 
-                # Stage G の出力を辞書に変換（combined_text が JSON 文字列の場合）
+                # Stage F の出力を辞書に変換（combined_text が JSON 文字列の場合）
                 import json
                 import re
                 try:
@@ -208,14 +231,14 @@ class UnifiedDocumentPipeline:
                         json_text = re.sub(r'\n```\s*$', '', json_text)
 
                     logger.debug(f"[Stage H] JSON パース前の最初の500文字:\n{json_text[:500]}")
-                    stage_g_output = json.loads(json_text)
+                    stage_f_output = json.loads(json_text)
                 except (json.JSONDecodeError, TypeError) as e:
                     logger.error(f"[Stage H] combined_text が JSON 形式ではありません: {e}")
                     logger.error(f"[Stage H] combined_text の内容:\n{combined_text[:1000]}")
-                    raise ValueError("Stage G output must be JSON for kakeibo processing")
+                    raise ValueError("Stage F output must be JSON for kakeibo processing")
 
                 # 家計簿専用 Stage H で処理
-                stageH_result = self.stage_h_kakeibo.process(stage_g_output)
+                stageH_result = self.stage_h_kakeibo.process(stage_f_output)
 
                 # 家計簿専用のDB保存
                 logger.info("[DB保存] 家計簿データをDBに保存...")
@@ -318,6 +341,25 @@ class UnifiedDocumentPipeline:
 
                 logger.info(f"[Stage I完了] calendar_events={len(calendar_events)}件, tasks={len(tasks)}件")
 
+                # ============================================
+                # Google Drive ファイル名更新（タイトルに基づく）
+                # ============================================
+                if title and source_id:
+                    # ファイル名から拡張子を抽出
+                    import os
+                    file_extension = os.path.splitext(file_name)[1]  # 例: ".pdf"
+
+                    # 新しいファイル名を生成（タイトル + 拡張子）
+                    new_file_name = title + file_extension
+
+                    # Google Drive のファイル名を更新
+                    try:
+                        self.drive_connector.rename_file(source_id, new_file_name)
+                        logger.info(f"[Google Drive] ファイル名更新成功: {new_file_name}")
+                    except Exception as e:
+                        # ファイル名更新失敗はエラーログのみ（処理は継続）
+                        logger.warning(f"[Google Drive] ファイル名更新失敗: {e}")
+
             # ============================================
             # Stage J: Chunking
             # ============================================
@@ -336,6 +378,37 @@ class UnifiedDocumentPipeline:
             # ============================================
             document_id = existing_document_id
             try:
+                # 既存ドキュメントの attachment_text, metadata, display_* フィールドを取得（nullで上書きしないため）
+                existing_attachment_text = None
+                existing_metadata = {}
+                existing_display_fields = {}
+                if existing_document_id:
+                    try:
+                        existing_doc = self.db.client.table('Rawdata_FILE_AND_MAIL').select(
+                            'attachment_text, metadata, display_sender, display_sender_email, display_subject, display_sent_at, display_post_text'
+                        ).eq('id', existing_document_id).execute()
+                        if existing_doc.data and len(existing_doc.data) > 0:
+                            doc = existing_doc.data[0]
+                            existing_attachment_text = doc.get('attachment_text', '')
+                            # 既存 metadata を保持（message_id, thread_id, subject など）
+                            existing_metadata = doc.get('metadata', {})
+                            if isinstance(existing_metadata, str):
+                                import json
+                                existing_metadata = json.loads(existing_metadata)
+                            # display_* フィールドを保持
+                            existing_display_fields = {
+                                'display_sender': doc.get('display_sender'),
+                                'display_sender_email': doc.get('display_sender_email'),
+                                'display_subject': doc.get('display_subject'),
+                                'display_sent_at': doc.get('display_sent_at'),
+                                'display_post_text': doc.get('display_post_text')
+                            }
+                            logger.debug(f"[DB保存] 既存attachment_text取得: {len(existing_attachment_text or '')}文字")
+                            logger.debug(f"[DB保存] 既存metadata取得: {list(existing_metadata.keys())}")
+                            logger.debug(f"[DB保存] 既存display_*フィールド取得: sender={existing_display_fields.get('display_sender')}, subject={existing_display_fields.get('display_subject')}")
+                    except Exception as e:
+                        logger.warning(f"[DB保存警告] 既存フィールド取得失敗: {e}")
+
                 # テキストフィールドをサニタイズ（null文字を除去）
                 sanitized_combined_text = self._sanitize_text(combined_text)
                 sanitized_summary = self._sanitize_text(summary)
@@ -372,6 +445,27 @@ class UnifiedDocumentPipeline:
                 # titleをサニタイズ
                 sanitized_title = self._sanitize_text(title)
 
+                # attachment_text の決定ロジック
+                # - Stage Eが正当にテキストを抽出した場合（sanitized_combined_text が空でない）→ 使用（正当な上書き）
+                # - Stage Eが失敗した場合（sanitized_combined_text が空）→ 既存値を保持（nullで上書きしない）
+                final_attachment_text = sanitized_combined_text
+                if not sanitized_combined_text and existing_attachment_text:
+                    final_attachment_text = existing_attachment_text
+                    logger.info(f"[DB保存] Stage Eが空のため、既存attachment_textを保持: {len(final_attachment_text)}文字")
+
+                # metadata のマージロジック
+                # 既存の metadata（message_id, thread_id, subject など）を保持しつつ、
+                # Stage H の metadata（LLMが生成した構造化データ）を追加
+                final_metadata = {}
+                if existing_document_id and existing_metadata:
+                    # 既存の metadata をベースにする
+                    final_metadata = existing_metadata.copy()
+                    logger.info(f"[DB保存] 既存metadataを保持: {list(existing_metadata.keys())}")
+                # Stage H の metadata を追加・更新
+                if stageH_metadata:
+                    final_metadata.update(stageH_metadata)
+                    logger.info(f"[DB保存] Stage H metadataをマージ: {list(stageH_metadata.keys())}")
+
                 doc_data = {
                     'source_id': source_id,
                     'source_type': 'unified_pipeline',
@@ -379,11 +473,11 @@ class UnifiedDocumentPipeline:
                     'workspace': workspace,
                     'doc_type': doc_type,
                     'title': sanitized_title,
-                    'attachment_text': sanitized_combined_text,
+                    'attachment_text': final_attachment_text,
                     'summary': sanitized_summary,
                     'tags': tags,
                     'document_date': document_date,
-                    'metadata': stageH_metadata,
+                    'metadata': final_metadata,
                     'processing_status': 'completed',
                     # 各ステージの出力を保存
                     # E1-E3: 現在は未実装のため、E4と同じ値を保存（将来的に個別エンジンを実装予定）
@@ -400,12 +494,29 @@ class UnifiedDocumentPipeline:
                     'stage_j_chunks_json': json.dumps(chunks, ensure_ascii=False, indent=2)  # Stage J の出力
                 }
 
+                # 既存ドキュメントの場合、display_* フィールドを保持（Gmail ingestion時に設定された値を上書きしないため）
+                if existing_document_id and existing_display_fields:
+                    for key, value in existing_display_fields.items():
+                        if value is not None:  # Noneでない値のみ保持
+                            doc_data[key] = value
+                    logger.debug(f"[DB保存] display_*フィールドを保持: {list(existing_display_fields.keys())}")
+
                 # extra_metadata をマージ
                 if extra_metadata:
-                    if isinstance(doc_data['metadata'], dict):
-                        doc_data['metadata'].update(extra_metadata)
-                    else:
-                        doc_data['metadata'] = extra_metadata
+                    # display_*フィールドは最上位フィールドとして保存
+                    display_fields = ['display_subject', 'display_sender', 'display_sender_email', 'display_sent_at', 'display_post_text', 'display_type']
+                    for field in display_fields:
+                        if field in extra_metadata and extra_metadata[field] is not None:
+                            doc_data[field] = extra_metadata[field]
+                            logger.debug(f"[DB保存] extra_metadataから{field}を設定: {extra_metadata[field]}")
+
+                    # display_*以外のフィールドはmetadataにマージ
+                    other_metadata = {k: v for k, v in extra_metadata.items() if k not in display_fields}
+                    if other_metadata:
+                        if isinstance(doc_data['metadata'], dict):
+                            doc_data['metadata'].update(other_metadata)
+                        else:
+                            doc_data['metadata'] = other_metadata
 
                 # 既存ドキュメントを更新 or 新規作成
                 if existing_document_id:
