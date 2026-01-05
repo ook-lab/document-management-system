@@ -469,4 +469,17 @@ async def main():
 
 
 if __name__ == "__main__":
+    # ⚠️ 安全ガード：誤実行防止
+    import sys
+    print("\n" + "="*70)
+    print("⚠️  警告: このスクリプトは高額なAPI料金が発生します")
+    print("⚠️  処理内容: 未分類商品を最大1000件Gemini APIで自動分類")
+    print("⚠️  推定コスト: 約50-200円/回（辞書ヒット率により変動）")
+    print("="*70)
+    confirm = input("\n本当に実行しますか？ (YES と大文字で入力): ")
+    if confirm != "YES":
+        print("❌ 実行を中止しました")
+        sys.exit(0)
+    print("\n✅ 実行を開始します...\n")
+
     asyncio.run(main())

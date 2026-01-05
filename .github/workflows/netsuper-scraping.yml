@@ -1,11 +1,11 @@
 name: ネットスーパースクレイピング
 
 on:
-  # 定期実行: 毎日午前2時（JST 午前11時 = UTC+9）
-  schedule:
-    - cron: '0 17 * * *'  # UTC 17:00 = JST 02:00（翌日）
+  # ⚠️ 自動実行を無効化（コスト削減のため）
+  # schedule:
+  #   - cron: '0 17 * * *'  # UTC 17:00 = JST 02:00（翌日）
 
-  # 手動実行も可能
+  # 手動実行のみ可能
   workflow_dispatch:
     inputs:
       store:

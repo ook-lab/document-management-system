@@ -76,12 +76,21 @@ class PDFProcessor:
             pdfplumber_result = self._extract_with_pdfplumber(file_path)
 
             if not pdfplumber_result["success"]:
-                logger.error(f"pdfplumber完全失敗: {file_path.name}")
-                return pdfplumber_result
+                logger.warning(f"pdfplumber完全失敗: {file_path.name} → E-4で全面補完を実行します")
+                # pdfplumberが失敗してもE-4（Gemini Vision）で全面補完する
+                # 空のpage_textsを用意してE-4に進む
+                import fitz  # PyMuPDF
+                pdf_doc = fitz.open(file_path)
+                page_count = len(pdf_doc)
+                pdf_doc.close()
 
-            page_texts = pdfplumber_result["page_texts"]
-            page_images = pdfplumber_result["page_images"]
-            metadata = pdfplumber_result["metadata"]
+                page_texts = [""] * page_count  # 全ページ空テキスト
+                page_images = [True] * page_count  # 全ページ画像あり扱い
+                metadata = {"total_pages": page_count, "total_tables": 0, "pdfplumber_failed": True}
+            else:
+                page_texts = pdfplumber_result["page_texts"]
+                page_images = pdfplumber_result["page_images"]
+                metadata = pdfplumber_result["metadata"]
 
             total_tables = metadata.get('total_tables', 0)
             logger.info(f"pdfplumber抽出完了（E-1~E-3）: {len(page_texts)} ページ, {total_tables} 表")

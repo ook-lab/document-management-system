@@ -172,7 +172,8 @@ class StageFVisualAnalyzer:
         file_path: Path,
         prompt: str,
         model: str,
-        extracted_text: str = ""
+        extracted_text: str = "",
+        workspace: str = "default"
     ) -> str:
         """
         画像/PDFから視覚情報を抽出（F-1～F-10の完全フロー）
@@ -182,6 +183,7 @@ class StageFVisualAnalyzer:
             prompt: プロンプトテキスト（config/prompts/stage_f/*.md から読み込み）
             model: モデル名（config/models.yaml から取得）
             extracted_text: Stage E で抽出した完全なテキスト
+            workspace: ワークスペース名（gmail の場合は表抽出をスキップ）
 
         Returns:
             vision_raw: 3つの情報（full_text, layout_info, visual_elements）のJSONテキスト
@@ -213,7 +215,10 @@ class StageFVisualAnalyzer:
             paddle_text_chars = 0
             total_cells = 0
 
-            if self.enable_hybrid_ocr and self.paddle_structure:
+            # Gmail処理では表抽出をスキップ（ハング問題回避）
+            if workspace == 'gmail':
+                logger.info("[F-1] PaddleOCR表抽出: スキップ（Gmail処理のため無効化）")
+            elif self.enable_hybrid_ocr and PADDLEOCR_AVAILABLE:
                 f1_start = time.time()
                 logger.info("[F-1] PaddleOCR 表構造抽出開始...")
 
@@ -316,7 +321,10 @@ class StageFVisualAnalyzer:
             cropped_regions = []
             min_w = min_h = max_w = max_h = avg_w = avg_h = 0
 
-            if self.enable_hybrid_ocr and text_boxes:
+            # Gmail はレイアウト検出のみ、切り出し＆OCRはスキップ
+            if workspace == 'gmail':
+                logger.info("[F-3] 画像切り出し: スキップ（Gmail軽量モード: Suryaレイアウトのみ使用）")
+            elif self.enable_hybrid_ocr and text_boxes:
                 f3_start = time.time()
                 logger.info("[F-3] 画像切り出し開始...")
 
@@ -518,6 +526,12 @@ class StageFVisualAnalyzer:
                 full_prompt += f"```\n{surya_full_text}\n```\n\n"
                 surya_chars = len(surya_full_text)
 
+            # Suryaレイアウト情報を追加（Gmail軽量モード用）
+            elif text_boxes and workspace == 'gmail':
+                full_prompt += "\n\n---\n\n【Surya で検出したレイアウト構造】\n"
+                full_prompt += f"{len(text_boxes)}個のテキスト領域を検出しました。\n"
+                full_prompt += "画像を見て、これらの領域の内容とレイアウト構造を正確に記述してください。\n\n"
+
             # 役割説明を追加
             if extracted_text or paddle_tables or surya_full_text:
                 full_prompt += """【あなたの役割】
@@ -533,6 +547,17 @@ class StageFVisualAnalyzer:
 - `layout_info.tables`: PaddleOCR が抽出した表を必ず含め、さらに見逃した表があれば追加する
 - `layout_info.sections`: Surya のレイアウト情報を活用し、セクション構造を正確に記述する
 - 画像を詳細に見て、全ての文字と要素を漏らさず拾ってください
+"""
+            elif text_boxes and workspace == 'gmail':
+                full_prompt += """【あなたの役割】
+上記の Stage E のテキストと Surya のレイアウト構造を活用し、画像を見て完璧な結果を作成してください：
+
+1. **ベース**: Stage E で抽出したテキストを `full_text` のベースとして使用する
+2. **レイアウト**: Surya が検出したレイアウト構造を `layout_info.sections` に記述する
+3. **視覚要素**: 画像、チャート、強調されたテキストなどを `visual_elements` に記述する
+4. **検証**: 画像を見て、テキストとレイアウトが正確か確認する
+
+**注意**: これはGmail HTMLメールのため、テキストは既に抽出済みです。視覚的な構造と要素に集中してください。
 """
             else:
                 full_prompt += "\n\n【注意】Stage E でテキストを抽出できませんでした。画像から全ての文字と表を拾い尽くしてください。\n"
@@ -629,24 +654,40 @@ class StageFVisualAnalyzer:
             surya_len = len(surya_full_text)
             gemini_len = 0
             total_len = 0
+            merged_full_text = ""
 
             try:
                 vision_data = json.loads(vision_cleaned)
                 gemini_full_text = vision_data.get('full_text', '')
                 gemini_len = len(gemini_full_text)
 
-                # Surya テキストがある場合は優先的に使用（Geminiが補完）
+                # 最適なfull_textを選択してマージ
                 if surya_full_text and gemini_full_text:
                     # Geminiのテキストに Surya のテキストが含まれていれば、Geminiを使用
-                    # そうでなければ、Suryaをベースにする
                     if surya_full_text in gemini_full_text:
+                        merged_full_text = gemini_full_text
                         total_len = gemini_len
                     else:
-                        # Suryaのテキストに、Geminiで見つかった追加要素をマージ
-                        total_len = max(surya_len, gemini_len)
-                else:
-                    total_len = max(stage_e_len, surya_len, gemini_len)
-            except:
+                        # Suryaのテキストを優先（より詳細な可能性）
+                        merged_full_text = surya_full_text
+                        total_len = surya_len
+                elif surya_full_text:
+                    merged_full_text = surya_full_text
+                    total_len = surya_len
+                elif gemini_full_text:
+                    merged_full_text = gemini_full_text
+                    total_len = gemini_len
+                elif extracted_text:
+                    # Stage Eのテキストをフォールバックとして使用
+                    merged_full_text = extracted_text
+                    total_len = stage_e_len
+
+                # vision_dataのfull_textを更新
+                vision_data['full_text'] = merged_full_text
+                vision_cleaned = json.dumps(vision_data, ensure_ascii=False)
+
+            except Exception as e:
+                logger.warning(f"[F-9] full_textマージ失敗: {e}")
                 total_len = len(vision_cleaned)
 
             f9_elapsed = time.time() - f9_start
@@ -747,8 +788,9 @@ class StageFVisualAnalyzer:
             logger.info("[Hybrid OCR] Initializing PaddleOCR (lang=japan) for text recognition...")
             self.paddle_ocr = PaddleOCR(lang='japan', use_textline_orientation=True)
 
-            logger.info("[Hybrid OCR] Initializing PaddleOCR PPStructure for table extraction...")
-            self.paddle_structure = PPStructure(lang='japan', device='cpu')
+            # PPStructureはキャッシュせず、都度初期化する（メモリリーク対策）
+            self.paddle_structure = None
+            logger.info("[Hybrid OCR] PPStructure: 都度初期化モード（メモリリーク対策）")
 
             logger.info("[Hybrid OCR] All engines initialized successfully!")
             
@@ -762,7 +804,7 @@ class StageFVisualAnalyzer:
 
     def _extract_tables_with_paddleocr(self, file_path: Path) -> List[Dict[str, Any]]:
         """
-        PaddleOCR で表構造を抽出
+        PaddleOCR で表構造を抽出（毎回初期化・削除でメモリリーク対策）
 
         Args:
             file_path: 画像/PDFファイルパス
@@ -770,12 +812,107 @@ class StageFVisualAnalyzer:
         Returns:
             抽出された表のリスト [{"rows": [[]], "caption": ""}]
         """
-        if not self.paddle_structure:
-            return []
+        import gc
+        import psutil
+        import os
+        import shutil
+        import tempfile
+        from PIL import Image
 
+        # 毎回新しいPPStructureインスタンスを作成
+        paddle_structure = None
         try:
-            # PPStructureV3はpredictメソッドを使用（ジェネレータを返す）
-            result = list(self.paddle_structure.predict(str(file_path)))
+            # ====== 診断情報収集 ======
+            logger.info("=" * 60)
+            logger.info("[F-1 診断] 詳細診断開始")
+
+            # 1. ファイル情報
+            file_exists = file_path.exists()
+            file_size = file_path.stat().st_size if file_exists else 0
+            file_name = file_path.name
+            file_str = str(file_path)
+            has_japanese = any(ord(c) > 127 for c in file_name)
+
+            logger.info(f"[F-1 診断] ファイル情報:")
+            logger.info(f"  ├─ パス: {file_str}")
+            logger.info(f"  ├─ ファイル名: {file_name}")
+            logger.info(f"  ├─ 存在: {file_exists}")
+            logger.info(f"  ├─ サイズ: {file_size:,} bytes")
+            logger.info(f"  ├─ 日本語文字含む: {has_japanese}")
+            logger.info(f"  └─ 拡張子: {file_path.suffix}")
+
+            # 2. 画像情報
+            try:
+                img = Image.open(file_path)
+                img_size = img.size
+                img_mode = img.mode
+                img_format = img.format
+                logger.info(f"[F-1 診断] 画像情報:")
+                logger.info(f"  ├─ サイズ: {img_size[0]}x{img_size[1]}px")
+                logger.info(f"  ├─ モード: {img_mode}")
+                logger.info(f"  └─ フォーマット: {img_format}")
+                img.close()
+            except Exception as e:
+                logger.error(f"[F-1 診断] 画像読み込み失敗: {e}")
+
+            # 3. システムリソース
+            process = psutil.Process(os.getpid())
+            mem_info = process.memory_info()
+            cpu_percent = process.cpu_percent(interval=0.1)
+            logger.info(f"[F-1 診断] システムリソース:")
+            logger.info(f"  ├─ メモリ使用量: {mem_info.rss / 1024 / 1024:.1f} MB")
+            logger.info(f"  └─ CPU使用率: {cpu_percent:.1f}%")
+
+            logger.info("=" * 60)
+
+            # ====== メモリ診断開始 ======
+            import time
+            process = psutil.Process(os.getpid())
+
+            mem_start = process.memory_info().rss / 1024 / 1024
+            logger.info(f"[F-1 メモリ] 処理開始時: {mem_start:.1f} MB")
+
+            # ====== PPStructure初期化 ======
+            logger.debug("[F-1] PPStructure初期化開始...")
+            init_start = time.time()
+            paddle_structure = PPStructure(lang='japan', device='cpu')
+            init_time = time.time() - init_start
+
+            mem_after_init = process.memory_info().rss / 1024 / 1024
+            mem_init_increase = mem_after_init - mem_start
+            logger.debug(f"[F-1] PPStructure初期化完了 ({init_time:.2f}秒)")
+            logger.info(f"[F-1 メモリ] 初期化後: {mem_after_init:.1f} MB (+{mem_init_increase:.1f} MB)")
+
+            # ====== 診断テスト: ASCII名でコピー ======
+            logger.info("[F-1 診断] テスト1: ASCII名で一時ファイル作成")
+            with tempfile.NamedTemporaryFile(suffix=file_path.suffix, delete=False) as tmp:
+                tmp_path = tmp.name
+                shutil.copy(file_path, tmp_path)
+                logger.info(f"  └─ 一時ファイル: {tmp_path}")
+
+            # ====== predict実行（タイムアウト監視） ======
+            logger.info("[F-1 診断] predict実行開始（ASCII名で）...")
+            predict_start = time.time()
+
+            try:
+                result = list(paddle_structure.predict(tmp_path))
+                predict_time = time.time() - predict_start
+
+                mem_after_predict = process.memory_info().rss / 1024 / 1024
+                mem_predict_increase = mem_after_predict - mem_after_init
+
+                logger.info(f"[F-1 診断] predict成功！ ({predict_time:.2f}秒)")
+                logger.info(f"  └─ 結果件数: {len(result)}件")
+                logger.info(f"[F-1 メモリ] predict後: {mem_after_predict:.1f} MB (+{mem_predict_increase:.1f} MB)")
+
+                # 一時ファイル削除
+                os.unlink(tmp_path)
+
+            except Exception as predict_error:
+                predict_time = time.time() - predict_start
+                logger.error(f"[F-1 診断] predict失敗 ({predict_time:.2f}秒): {predict_error}")
+                os.unlink(tmp_path)
+                raise
 
             tables = []
             for page_result in result:
@@ -797,6 +934,25 @@ class StageFVisualAnalyzer:
         except Exception as e:
             logger.warning(f"[F-1] PaddleOCR 表抽出失敗: {e}")
             return []
+
+        finally:
+            # 必ずリソースを解放（メモリリーク対策）
+            if paddle_structure is not None:
+                logger.debug("[F-1] PPStructure リソース解放開始...")
+
+                mem_before_cleanup = process.memory_info().rss / 1024 / 1024
+
+                del paddle_structure
+                gc.collect()  # ガベージコレクション強制実行
+
+                mem_after_cleanup = process.memory_info().rss / 1024 / 1024
+                mem_freed = mem_before_cleanup - mem_after_cleanup
+                mem_leaked = mem_after_cleanup - mem_start
+
+                logger.debug("[F-1] PPStructure リソース解放完了")
+                logger.info(f"[F-1 メモリ] cleanup後: {mem_after_cleanup:.1f} MB (解放: {mem_freed:.1f} MB)")
+                logger.info(f"[F-1 メモリ] 最終リーク量: {mem_leaked:.1f} MB")
+                logger.info("=" * 60)
 
     def _parse_html_table(self, html: str) -> List[List[str]]:
         """

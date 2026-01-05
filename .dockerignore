@@ -1,36 +1,55 @@
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-env/
-venv/
-.venv/
-
-# Directories not needed in Cloud Run
-B_ingestion/
-H_streamlit/
-I_frontend/
-J_resources/
-
-# Git
+# Git関連
 .git/
 .gitignore
+.github/
 
-# IDE
+# Python関連
+__pycache__/
+*.py[cod]
+*.class
+*.so
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# 仮想環境
+venv/
+env/
+ENV/
+.venv/
+
+# IDE設定
 .vscode/
 .idea/
 *.swp
 *.swo
+*.bak
 
-# OS
-.DS_Store
-Thumbs.db
-
-# Logs
+# ローカルファイル
+temp/
 *.log
+.env
+.env.*
 
-# Test files
+# Cloud Run
+cloudbuild.yaml
+.dockerignore
+Dockerfile*
+
+# ドキュメント・設定
+*.md
+README*
+LICENSE
+.editorconfig
+
+# テスト
+tests/
 test_*.py
 *_test.py
+
+# UI関連（処理ジョブには不要）
+ui/
+K_kakeibo/
+B_ingestion/*_ui.py

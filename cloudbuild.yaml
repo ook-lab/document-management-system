@@ -1,0 +1,11 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    args:
+      - 'build'
+      - '-t'
+      - 'asia-northeast1-docker.pkg.dev/consummate-yew-479020-u2/cloud-run-repo/doc-processor:latest'
+      - '-f'
+      - 'Dockerfile.processor'
+      - '.'
+images:
+  - 'asia-northeast1-docker.pkg.dev/consummate-yew-479020-u2/cloud-run-repo/doc-processor:latest'

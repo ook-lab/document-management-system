@@ -98,8 +98,11 @@ class StageKEmbedding:
             except Exception as e:
                 logger.warning(f"[Stage K 警告] chunk_count更新エラー（継続）: {e}")
 
+        # 成功条件: 最低1チャンク以上保存 & 失敗なし
+        is_success = saved_count > 0 and failed_count == 0
+
         return {
-            'success': saved_count > 0,
+            'success': is_success,
             'saved_count': saved_count,
             'failed_count': failed_count
         }

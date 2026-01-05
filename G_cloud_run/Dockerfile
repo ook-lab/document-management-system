@@ -33,5 +33,5 @@ COPY C_ai_common/ ./C_ai_common/
 # 6. ポート環境変数を設定（念のため）
 ENV PORT=8080
 
-# 7. サーバーを起動
-CMD ["python", "app.py"]
+# 7. サーバーを起動（gunicornを使用）
+CMD exec gunicorn --bind :$PORT --workers 1 --threads 8 --timeout 0 app:app

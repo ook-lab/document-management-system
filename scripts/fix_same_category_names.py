@@ -191,4 +191,18 @@ def main():
         print(f"  {cat}: {count}件")
 
 if __name__ == "__main__":
+    # ⚠️ 安全ガード：誤実行防止
+    import sys
+    print("\n" + "="*70)
+    print("⚠️  警告: このスクリプトは高額なAPI料金が発生します")
+    print("⚠️  処理内容: 中分類=小分類の商品を20件バッチでGemini分類")
+    print("⚠️  max_output_tokens: 8000トークン/バッチ")
+    print("⚠️  推定コスト: 商品数により変動（100件で約50-100円）")
+    print("="*70)
+    confirm = input("\n本当に実行しますか？ (YES と大文字で入力): ")
+    if confirm != "YES":
+        print("❌ 実行を中止しました")
+        sys.exit(0)
+    print("\n✅ 実行を開始します...\n")
+
     main()

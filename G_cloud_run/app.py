@@ -3,7 +3,7 @@ Flask Web Application
 質問・回答システムのWebインターフェース
 """
 import os
-from typing import Dict, List, Any
+from typing import Dict, List, Any, Optional
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 
@@ -1009,6 +1009,118 @@ def debug_database():
             'success': False,
             'error': str(e),
             'error_type': type(e).__name__
+        }), 500
+
+
+@app.route('/api/process/stats', methods=['GET'])
+def get_process_stats():
+    """
+    処理キューの統計情報を取得
+    """
+    try:
+        from A_common.database.client import DatabaseClient
+        db = DatabaseClient()
+
+        workspace = request.args.get('workspace', 'all')
+
+        query = db.client.table('Rawdata_FILE_AND_MAIL').select('processing_status, workspace')
+
+        if workspace != 'all':
+            query = query.eq('workspace', workspace)
+
+        response = query.execute()
+
+        stats = {
+            'pending': 0,
+            'processing': 0,
+            'completed': 0,
+            'failed': 0,
+            'null': 0
+        }
+
+        for doc in response.data:
+            status = doc.get('processing_status')
+            if status is None:
+                stats['null'] += 1
+            else:
+                stats[status] = stats.get(status, 0) + 1
+
+        stats['total'] = len(response.data)
+
+        processed = stats['completed'] + stats['failed']
+        if processed > 0:
+            stats['success_rate'] = round(stats['completed'] / processed * 100, 1)
+        else:
+            stats['success_rate'] = 0.0
+
+        return jsonify({
+            'success': True,
+            'stats': stats
+        })
+
+    except Exception as e:
+        print(f"[ERROR] 統計取得エラー: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/process/start', methods=['POST'])
+def start_processing():
+    """
+    ドキュメント処理を開始
+    """
+    try:
+        import asyncio
+        from process_queued_documents import DocumentProcessor
+
+        data = request.get_json()
+        workspace = data.get('workspace', 'all')
+        limit = data.get('limit', 100)
+        preserve_workspace = data.get('preserve_workspace', True)
+
+        processor = DocumentProcessor()
+
+        # pending ドキュメントを取得
+        docs = processor.get_pending_documents(workspace, limit)
+
+        if not docs:
+            return jsonify({
+                'success': True,
+                'message': '処理対象のドキュメントがありません',
+                'processed': 0
+            })
+
+        # 非同期処理を実行
+        async def process_all():
+            success_count = 0
+            failed_count = 0
+
+            for doc in docs:
+                success = await processor.process_document(doc, preserve_workspace)
+                if success:
+                    success_count += 1
+                else:
+                    failed_count += 1
+
+            return success_count, failed_count
+
+        success_count, failed_count = asyncio.run(process_all())
+
+        return jsonify({
+            'success': True,
+            'message': '処理が完了しました',
+            'processed': len(docs),
+            'success_count': success_count,
+            'failed_count': failed_count
+        })
+
+    except Exception as e:
+        print(f"[ERROR] 処理開始エラー: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
         }), 500
 
 

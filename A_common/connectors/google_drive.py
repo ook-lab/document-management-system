@@ -25,23 +25,16 @@ class GoogleDriveConnector:
     
     def _authenticate(self):
         """サービスアカウント認証の実行（環境変数を優先、Streamlit Secretsは補助）"""
-        import httplib2
-
-        # タイムアウト設定（秒）- Google Drive APIアップロード用に延長
-        timeout = 300  # 5分
-
-        # HTTPクライアントを作成（タイムアウト付き）
-        http = httplib2.Http(timeout=timeout)
-
         # 優先順位1: 環境変数 GOOGLE_APPLICATION_CREDENTIALS
         if CREDENTIALS_PATH and os.path.exists(CREDENTIALS_PATH):
             try:
                 creds = service_account.Credentials.from_service_account_file(
                     CREDENTIALS_PATH, scopes=SCOPES
                 )
-                logger.info(f"環境変数から認証成功: {CREDENTIALS_PATH} (timeout={timeout}s)")
-                # タイムアウト付きHTTPクライアントを使用
-                return build('drive', 'v3', credentials=creds, http=http)
+                logger.info(f"環境変数から認証成功: {CREDENTIALS_PATH}")
+                # credentialsを渡すだけ（内部でHTTPクライアントが自動生成される）
+                # タイムアウトはリトライ処理で対処
+                return build('drive', 'v3', credentials=creds)
             except Exception as e:
                 logger.warning(f"環境変数からの認証失敗、Streamlit Secretsにフォールバック: {e}")
 
@@ -53,9 +46,8 @@ class GoogleDriveConnector:
                 creds = service_account.Credentials.from_service_account_info(
                     creds_dict, scopes=SCOPES
                 )
-                logger.info(f"Streamlit Secretsから認証成功 (timeout={timeout}s)")
-                # タイムアウト付きHTTPクライアントを使用
-                return build('drive', 'v3', credentials=creds, http=http)
+                logger.info("Streamlit Secretsから認証成功")
+                return build('drive', 'v3', credentials=creds)
         except ImportError:
             # Streamlitがインストールされていない場合はスキップ
             pass

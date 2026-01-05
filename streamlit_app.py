@@ -1,16 +1,13 @@
 """
 Streamlit UI for Document Processing
-process_queued_documents.py を実行するUI
+Cloud Run APIを呼び出してドキュメント処理を実行
 """
 import streamlit as st
-import asyncio
-from datetime import datetime
-import sys
-from pathlib import Path
+import requests
+import time
 
-sys.path.insert(0, str(Path(__file__).parent))
-
-from process_queued_documents import DocumentProcessor
+# Backend API URL
+BACKEND_URL = "https://mail-doc-search-system-983922127476.asia-northeast1.run.app"
 
 st.set_page_config(
     page_title="ドキュメント処理システム",
@@ -22,23 +19,10 @@ st.title("📄 ドキュメント処理システム")
 st.markdown("---")
 
 # Initialize session state
-if 'processor' not in st.session_state:
-    st.session_state.processor = None
 if 'processing' not in st.session_state:
     st.session_state.processing = False
-if 'logs' not in st.session_state:
-    st.session_state.logs = []
-
-# Initialize processor
-@st.cache_resource
-def get_processor():
-    return DocumentProcessor()
-
-try:
-    processor = get_processor()
-except Exception as e:
-    st.error(f"❌ 初期化エラー: {str(e)}")
-    st.stop()
+if 'last_result' not in st.session_state:
+    st.session_state.last_result = None
 
 # Sidebar settings
 with st.sidebar:
@@ -76,46 +60,55 @@ with col1:
     st.header("📊 処理キューの状態")
 
     try:
-        stats = processor.get_queue_stats(workspace)
+        response = requests.get(
+            f"{BACKEND_URL}/api/process/stats",
+            params={"workspace": workspace},
+            timeout=10
+        )
 
-        if stats:
-            # Metrics in columns
-            metric_cols = st.columns(5)
+        if response.status_code == 200:
+            data = response.json()
+            if data.get('success'):
+                stats = data.get('stats', {})
 
-            with metric_cols[0]:
-                st.metric("⏳ 待機中", stats.get('pending', 0))
-            with metric_cols[1]:
-                st.metric("🔄 処理中", stats.get('processing', 0))
-            with metric_cols[2]:
-                st.metric("✅ 完了", stats.get('completed', 0))
-            with metric_cols[3]:
-                st.metric("❌ 失敗", stats.get('failed', 0))
-            with metric_cols[4]:
-                st.metric("📝 未処理", stats.get('null', 0))
+                # Metrics in columns
+                metric_cols = st.columns(5)
 
-            st.markdown("---")
+                with metric_cols[0]:
+                    st.metric("⏳ 待機中", stats.get('pending', 0))
+                with metric_cols[1]:
+                    st.metric("🔄 処理中", stats.get('processing', 0))
+                with metric_cols[2]:
+                    st.metric("✅ 完了", stats.get('completed', 0))
+                with metric_cols[3]:
+                    st.metric("❌ 失敗", stats.get('failed', 0))
+                with metric_cols[4]:
+                    st.metric("📝 未処理", stats.get('null', 0))
 
-            # Summary
-            col_summary1, col_summary2 = st.columns(2)
-            with col_summary1:
-                st.metric("📦 合計", stats.get('total', 0))
-            with col_summary2:
-                processed = stats.get('completed', 0) + stats.get('failed', 0)
-                if processed > 0:
+                st.markdown("---")
+
+                # Summary
+                col_summary1, col_summary2 = st.columns(2)
+                with col_summary1:
+                    st.metric("📦 合計", stats.get('total', 0))
+                with col_summary2:
                     success_rate = stats.get('success_rate', 0)
                     st.metric("✨ 成功率", f"{success_rate:.1f}%")
-                else:
-                    st.metric("✨ 成功率", "N/A")
+
+                pending_count = stats.get('pending', 0)
+            else:
+                st.error(f"エラー: {data.get('error', '不明なエラー')}")
+                pending_count = 0
         else:
-            st.warning("統計情報を取得できませんでした")
+            st.error(f"❌ API エラー: {response.status_code}")
+            pending_count = 0
 
     except Exception as e:
         st.error(f"❌ 統計取得エラー: {str(e)}")
+        pending_count = 0
 
 with col2:
     st.header("🚀 処理実行")
-
-    pending_count = stats.get('pending', 0) if stats else 0
 
     if pending_count == 0:
         st.info("処理待ちのドキュメントはありません")
@@ -131,7 +124,6 @@ with col2:
         disabled=process_button_disabled or st.session_state.processing
     ):
         st.session_state.processing = True
-        st.session_state.logs = []
         st.rerun()
 
 # Processing section
@@ -139,85 +131,45 @@ if st.session_state.processing:
     st.markdown("---")
     st.header("🔄 処理中...")
 
-    progress_bar = st.progress(0)
-    status_text = st.empty()
-    log_container = st.container()
-
-    async def run_processing():
-        """処理を実行"""
+    with st.spinner("Cloud Runで処理を実行中..."):
         try:
-            # pending ドキュメントを取得
-            docs = processor.get_pending_documents(workspace, limit)
+            response = requests.post(
+                f"{BACKEND_URL}/api/process/start",
+                json={
+                    "workspace": workspace,
+                    "limit": limit,
+                    "preserve_workspace": preserve_workspace
+                },
+                timeout=3600  # 1時間のタイムアウト
+            )
 
-            if not docs:
-                st.session_state.logs.append("処理対象のドキュメントがありません")
-                return
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success'):
+                    st.session_state.last_result = data
+                    st.success("✅ 処理が完了しました！")
 
-            total = len(docs)
-            st.session_state.logs.append(f"処理対象: {total}件")
-
-            success_count = 0
-            failed_count = 0
-
-            for i, doc in enumerate(docs, 1):
-                file_name = doc.get('file_name', 'unknown')
-                title = doc.get('title', '')
-                display_name = title if title else '(タイトル未生成)'
-
-                # Update progress
-                progress = i / total
-                progress_bar.progress(progress)
-                status_text.text(f"[{i}/{total}] 処理中: {display_name}")
-
-                # Log
-                log_msg = f"[{i}/{total}] 処理開始: {display_name}"
-                st.session_state.logs.append(log_msg)
-
-                # Process document
-                success = await processor.process_document(doc, preserve_workspace)
-
-                if success:
-                    success_count += 1
-                    result_msg = f"✅ 成功: {display_name}"
+                    # Show results
+                    col_res1, col_res2, col_res3 = st.columns(3)
+                    with col_res1:
+                        st.metric("処理数", data.get('processed', 0))
+                    with col_res2:
+                        st.metric("成功", data.get('success_count', 0))
+                    with col_res3:
+                        st.metric("失敗", data.get('failed_count', 0))
                 else:
-                    failed_count += 1
-                    result_msg = f"❌ 失敗: {display_name}"
+                    st.error(f"❌ エラー: {data.get('error', '不明なエラー')}")
+            else:
+                st.error(f"❌ API エラー: {response.status_code}")
 
-                st.session_state.logs.append(result_msg)
-
-                # Update log display
-                with log_container:
-                    for log in st.session_state.logs[-10:]:  # Show last 10 logs
-                        st.text(log)
-
-            # Final summary
-            st.session_state.logs.append("=" * 80)
-            st.session_state.logs.append("処理完了")
-            st.session_state.logs.append(f"成功: {success_count}件")
-            st.session_state.logs.append(f"失敗: {failed_count}件")
-            st.session_state.logs.append(f"合計: {total}件")
-
-            progress_bar.progress(1.0)
-            status_text.text("✅ 処理完了")
-
+        except requests.exceptions.Timeout:
+            st.error("❌ タイムアウトエラー: 処理に時間がかかりすぎています")
         except Exception as e:
-            st.session_state.logs.append(f"❌ エラー: {str(e)}")
-            status_text.text(f"❌ エラー発生: {str(e)}")
+            st.error(f"❌ エラー: {str(e)}")
 
         finally:
             st.session_state.processing = False
 
-    # Run async processing
-    asyncio.run(run_processing())
-
-    # Show complete logs
-    with st.expander("📋 完全なログを表示", expanded=True):
-        for log in st.session_state.logs:
-            st.text(log)
-
-    # Rerun to update UI
-    if not st.session_state.processing:
-        st.success("✅ 処理が完了しました！")
         if st.button("🔄 ページを更新"):
             st.rerun()
 
@@ -235,11 +187,14 @@ with st.sidebar:
 
     3. **処理を開始**
        - ▶️ ボタンをクリック
-       - OCR処理、チャンク化、埋め込み生成を実行
+       - Cloud RunでOCR処理を実行
 
     4. **結果を確認**
-       - 処理状況をリアルタイムで確認
+       - 処理完了後に結果を表示
     """)
+
+    st.markdown("---")
+    st.info(f"バックエンド: {BACKEND_URL}")
 
 # Footer
 st.markdown("---")

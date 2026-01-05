@@ -231,17 +231,42 @@ class DocumentProcessor:
 
             # ステータス更新
             if success:
+                # screenshot_url がある場合：PNGを削除してクリア
+                screenshot_url = doc.get('screenshot_url')
+                if screenshot_url:
+                    try:
+                        # screenshot_url からファイルIDを抽出
+                        import re
+                        match = re.search(r'/d/([a-zA-Z0-9_-]+)', screenshot_url)
+                        if match:
+                            png_file_id = match.group(1)
+
+                            # PNGをゴミ箱に移動（共有ドライブでは完全削除不可）
+                            from A_common.connectors.google_drive import GoogleDriveConnector
+                            drive = GoogleDriveConnector()
+                            drive.trash_file(png_file_id)
+                            print(f"[OK] OCR用PNGをゴミ箱に移動: {png_file_id}")
+
+                            # screenshot_url をクリア
+                            self.db.client.table('Rawdata_FILE_AND_MAIL').update({
+                                'screenshot_url': None
+                            }).eq('id', document_id).execute()
+                            print(f"[OK] screenshot_url をクリアしました")
+
+                    except Exception as e:
+                        print(f"WARNING: PNG削除処理でエラー（処理は継続）: {e}")
+
                 self.mark_as_completed(document_id)
-                print(f"✅ 処理成功: {display_name}")
+                print(f"[OK] 処理成功: {display_name}")
             else:
                 self.mark_as_failed(document_id, error_msg)
-                print("ERROR:", f"❌ 処理失敗: {display_name} - {error_msg}")
+                print("ERROR:", f"[FAIL] 処理失敗: {display_name} - {error_msg}")
 
             return success
 
         except Exception as e:
             error_msg = f"処理中にエラー: {str(e)}"
-            print("ERROR:", f"❌ {error_msg}")
+            print("ERROR:", f"[FAIL] {error_msg}")
             self.mark_as_failed(document_id, error_msg)
             return False
 
@@ -393,10 +418,30 @@ class DocumentProcessor:
             # 動画ファイルはスキップ扱いで成功とする
             return True
 
+        # screenshot_url があればPNGをダウンロード（OCR用）、なければ通常ファイル
+        screenshot_url = doc.get('screenshot_url')
+        screenshot_file_id = None
+        download_file_id = drive_file_id
+        download_file_name = file_name
+
+        if screenshot_url:
+            # screenshot_url からファイルIDを抽出
+            import re
+            match = re.search(r'/d/([a-zA-Z0-9_-]+)', screenshot_url)
+            if match:
+                screenshot_file_id = match.group(1)
+                download_file_id = screenshot_file_id
+                # PNGファイル名に変更
+                base_name = Path(file_name).stem
+                download_file_name = f"{base_name}.png"
+                print(f"[OCR用] PNGをダウンロード: {download_file_name} (screenshot_url使用)")
+            else:
+                print("WARNING:", f"screenshot_url からファイルIDを抽出できません: {screenshot_url}")
+
         # Driveからダウンロード
         try:
-            self.drive.download_file(drive_file_id, file_name, str(self.temp_dir))
-            local_path = self.temp_dir / file_name
+            self.drive.download_file(download_file_id, download_file_name, str(self.temp_dir))
+            local_path = self.temp_dir / download_file_name
         except Exception as e:
             # 404エラー（ファイルが存在しない）の場合、テキストのみ処理にフォールバック
             error_str = str(e)
@@ -433,6 +478,7 @@ class DocumentProcessor:
                     'display_post_text': doc.get('display_post_text'),
                     'attachment_text': doc.get('attachment_text'),
                     'display_sender': doc.get('display_sender'),
+                    'display_sender_email': doc.get('display_sender_email'),
                     'display_type': doc.get('display_type'),
                     'display_sent_at': doc.get('display_sent_at'),
                     'classroom_sender_email': doc.get('classroom_sender_email')
@@ -502,9 +548,9 @@ class DocumentProcessor:
         print("\n" + "="*80)
         print("処理完了")
         print("="*80)
-        print(f"✅ 成功: {stats['success']}件")
-        print(f"❌ 失敗: {stats['failed']}件")
-        print(f"📊 合計: {stats['total']}件")
+        print(f"[OK] 成功: {stats['success']}件")
+        print(f"[FAIL] 失敗: {stats['failed']}件")
+        print(f"[TOTAL] 合計: {stats['total']}件")
         print("="*80)
 
 
