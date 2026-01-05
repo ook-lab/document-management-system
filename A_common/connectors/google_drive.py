@@ -25,14 +25,23 @@ class GoogleDriveConnector:
     
     def _authenticate(self):
         """サービスアカウント認証の実行（環境変数を優先、Streamlit Secretsは補助）"""
+        import httplib2
+
+        # タイムアウト設定（秒）- Google Drive APIアップロード用に延長
+        timeout = 300  # 5分
+
+        # HTTPクライアントを作成（タイムアウト付き）
+        http = httplib2.Http(timeout=timeout)
+
         # 優先順位1: 環境変数 GOOGLE_APPLICATION_CREDENTIALS
         if CREDENTIALS_PATH and os.path.exists(CREDENTIALS_PATH):
             try:
                 creds = service_account.Credentials.from_service_account_file(
                     CREDENTIALS_PATH, scopes=SCOPES
                 )
-                logger.info(f"環境変数から認証成功: {CREDENTIALS_PATH}")
-                return build('drive', 'v3', credentials=creds)
+                logger.info(f"環境変数から認証成功: {CREDENTIALS_PATH} (timeout={timeout}s)")
+                # タイムアウト付きHTTPクライアントを使用
+                return build('drive', 'v3', credentials=creds, http=http)
             except Exception as e:
                 logger.warning(f"環境変数からの認証失敗、Streamlit Secretsにフォールバック: {e}")
 
@@ -44,8 +53,9 @@ class GoogleDriveConnector:
                 creds = service_account.Credentials.from_service_account_info(
                     creds_dict, scopes=SCOPES
                 )
-                logger.info("Streamlit Secretsから認証成功")
-                return build('drive', 'v3', credentials=creds)
+                logger.info(f"Streamlit Secretsから認証成功 (timeout={timeout}s)")
+                # タイムアウト付きHTTPクライアントを使用
+                return build('drive', 'v3', credentials=creds, http=http)
         except ImportError:
             # Streamlitがインストールされていない場合はスキップ
             pass
@@ -280,56 +290,100 @@ class GoogleDriveConnector:
             logger.error(f"ファイル移動エラー ({file_id}): {e}")
             return False
 
+    def rename_file(self, file_id: str, new_name: str) -> bool:
+        """
+        Google Driveのファイル名を変更
+
+        Args:
+            file_id: 変更するファイルのID
+            new_name: 新しいファイル名（拡張子を含む）
+
+        Returns:
+            成功した場合True、失敗した場合False
+        """
+        try:
+            # ファイル名を更新
+            self.service.files().update(
+                fileId=file_id,
+                body={'name': new_name},
+                fields='id, name',
+                supportsAllDrives=True  # 共有ドライブ対応
+            ).execute()
+
+            logger.info(f"ファイル名変更成功: {file_id} -> {new_name}")
+            return True
+
+        except Exception as e:
+            logger.error(f"ファイル名変更エラー ({file_id}): {e}")
+            return False
+
     def upload_file(
         self,
         file_content: Union[bytes, str],
         file_name: str,
         mime_type: str,
-        folder_id: Optional[str] = None
+        folder_id: Optional[str] = None,
+        max_retries: int = 3
     ) -> Optional[str]:
         """
-        ファイルをGoogle Driveにアップロード（共有ドライブ対応）
+        ファイルをGoogle Driveにアップロード（共有ドライブ対応、リトライ機能付き）
 
         Args:
             file_content: ファイルの内容（バイトまたは文字列）
             file_name: ファイル名
             mime_type: MIMEタイプ（例: 'text/html', 'application/pdf'）
             folder_id: 保存先フォルダID（Noneの場合はルート）
+            max_retries: 最大リトライ回数（デフォルト: 3）
 
         Returns:
             アップロードされたファイルのID、失敗時はNone
         """
-        try:
-            # ファイルメタデータ
-            file_metadata = {'name': file_name}
-            if folder_id:
-                file_metadata['parents'] = [folder_id]
+        import time
 
-            # 文字列の場合はバイトに変換
-            if isinstance(file_content, str):
-                file_content = file_content.encode('utf-8')
+        # ファイルメタデータ
+        file_metadata = {'name': file_name}
+        if folder_id:
+            file_metadata['parents'] = [folder_id]
 
-            # メモリ上のデータからアップロード
-            media = MediaInMemoryUpload(
-                file_content,
-                mimetype=mime_type,
-                resumable=True
-            )
+        # 文字列の場合はバイトに変換
+        if isinstance(file_content, str):
+            file_content = file_content.encode('utf-8')
 
-            # 共有ドライブ対応: supportsAllDrives=True を追加
-            file = self.service.files().create(
-                body=file_metadata,
-                media_body=media,
-                fields='id, name, webViewLink',
-                supportsAllDrives=True
-            ).execute()
+        # リトライループ
+        for attempt in range(max_retries):
+            try:
+                # メモリ上のデータからアップロード
+                media = MediaInMemoryUpload(
+                    file_content,
+                    mimetype=mime_type,
+                    resumable=True
+                )
 
-            logger.info(f"ファイルアップロード成功: {file_name} (ID: {file['id']})")
-            return file['id']
+                # 共有ドライブ対応: supportsAllDrives=True を追加
+                file = self.service.files().create(
+                    body=file_metadata,
+                    media_body=media,
+                    fields='id, name, webViewLink',
+                    supportsAllDrives=True
+                ).execute()
 
-        except Exception as e:
-            logger.error(f"ファイルアップロードエラー ({file_name}): {e}")
-            return None
+                logger.info(f"ファイルアップロード成功: {file_name} (ID: {file['id']})")
+                return file['id']
+
+            except Exception as e:
+                error_message = str(e)
+                is_timeout = 'timeout' in error_message.lower() or 'timed out' in error_message.lower()
+
+                if attempt < max_retries - 1:
+                    wait_time = (attempt + 1) * 2  # 2秒、4秒、6秒...
+                    logger.warning(
+                        f"ファイルアップロードエラー ({file_name}): {error_message} "
+                        f"- リトライ {attempt + 1}/{max_retries} ({wait_time}秒待機)"
+                    )
+                    time.sleep(wait_time)
+                else:
+                    logger.error(f"ファイルアップロード失敗（最終試行） ({file_name}): {error_message}")
+                    return None
 
     def upload_file_from_path(
         self,
@@ -422,7 +476,21 @@ class GoogleDriveConnector:
         Returns:
             成功した場合True、失敗した場合False
         """
+        from googleapiclient.errors import HttpError
+
         try:
+            # 削除前にファイル情報を取得（デバッグ用）
+            try:
+                file_info = self.service.files().get(
+                    fileId=file_id,
+                    fields='id, name, trashed, parents, capabilities/canDelete',
+                    supportsAllDrives=True
+                ).execute()
+                logger.debug(f"削除対象ファイル情報: name={file_info.get('name')}, trashed={file_info.get('trashed')}, canDelete={file_info.get('capabilities', {}).get('canDelete')}")
+            except Exception as e:
+                logger.warning(f"ファイル情報取得失敗 ({file_id}): {e}")
+
+            # ファイル削除実行
             self.service.files().delete(
                 fileId=file_id,
                 supportsAllDrives=True
@@ -431,6 +499,12 @@ class GoogleDriveConnector:
             logger.info(f"ファイルを完全に削除しました: {file_id}")
             return True
 
+        except HttpError as e:
+            if e.resp.status == 404:
+                logger.warning(f"ファイルが見つかりません (404): {file_id} - 既に削除されているか、アクセス権がない可能性があります")
+            else:
+                logger.error(f"ファイルの完全削除エラー ({file_id}): HTTP {e.resp.status} - {e}")
+            return False
         except Exception as e:
             logger.error(f"ファイルの完全削除エラー ({file_id}): {e}")
             return False
