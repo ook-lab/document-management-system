@@ -1,291 +1,246 @@
+"""
+Streamlit UI for Document Processing
+process_queued_documents.py を実行するUI
+"""
 import streamlit as st
-import requests
-from typing import Dict, List, Any, Optional
-import json
+import asyncio
+from datetime import datetime
+import sys
+from pathlib import Path
 
-# Backend API URL
-BACKEND_URL = "https://mail-doc-search-system-983922127476.asia-northeast1.run.app"
+sys.path.insert(0, str(Path(__file__).parent))
+
+from process_queued_documents import DocumentProcessor
 
 st.set_page_config(
-    page_title="メール・ドキュメント検索システム",
-    page_icon="🔍",
+    page_title="ドキュメント処理システム",
+    page_icon="📄",
     layout="wide"
 )
 
-# Custom CSS for better UI
-st.markdown("""
-<style>
-    .stButton>button {
-        width: 100%;
-    }
-    .search-result {
-        padding: 15px;
-        border-radius: 5px;
-        background-color: #f0f2f6;
-        margin-bottom: 10px;
-    }
-    .answer-box {
-        padding: 20px;
-        border-radius: 10px;
-        background-color: #e8f4f8;
-        border-left: 5px solid #1f77b4;
-        margin: 20px 0;
-    }
-</style>
-""", unsafe_allow_html=True)
-
-# Initialize session state
-if 'search_results' not in st.session_state:
-    st.session_state.search_results = None
-if 'answer' not in st.session_state:
-    st.session_state.answer = None
-if 'filters' not in st.session_state:
-    st.session_state.filters = None
-
-# Title
-st.title("🔍 メール・ドキュメント検索システム")
+st.title("📄 ドキュメント処理システム")
 st.markdown("---")
 
-# Sidebar for filters
+# Initialize session state
+if 'processor' not in st.session_state:
+    st.session_state.processor = None
+if 'processing' not in st.session_state:
+    st.session_state.processing = False
+if 'logs' not in st.session_state:
+    st.session_state.logs = []
+
+# Initialize processor
+@st.cache_resource
+def get_processor():
+    return DocumentProcessor()
+
+try:
+    processor = get_processor()
+except Exception as e:
+    st.error(f"❌ 初期化エラー: {str(e)}")
+    st.stop()
+
+# Sidebar settings
 with st.sidebar:
-    st.header("フィルター設定")
+    st.header("⚙️ 処理設定")
 
-    # Fetch available filters
-    if st.session_state.filters is None:
-        try:
-            response = requests.get(f"{BACKEND_URL}/api/filters", timeout=10)
-            if response.status_code == 200:
-                st.session_state.filters = response.json()
-        except Exception as e:
-            st.error(f"フィルター取得エラー: {str(e)}")
-            st.session_state.filters = {}
-
-    # Date range filter
-    st.subheader("📅 日付範囲")
-    date_from = st.date_input("開始日", value=None, key="date_from")
-    date_to = st.date_input("終了日", value=None, key="date_to")
-
-    # Sender filter
-    st.subheader("👤 送信者")
-    if st.session_state.filters and 'senders' in st.session_state.filters:
-        selected_senders = st.multiselect(
-            "送信者を選択",
-            options=st.session_state.filters.get('senders', []),
-            key="senders"
-        )
-    else:
-        sender_input = st.text_input("送信者を入力", key="sender_input")
-        selected_senders = [sender_input] if sender_input else []
-
-    # Tag filter
-    st.subheader("🏷️ タグ")
-    if st.session_state.filters and 'tags' in st.session_state.filters:
-        selected_tags = st.multiselect(
-            "タグを選択",
-            options=st.session_state.filters.get('tags', []),
-            key="tags"
-        )
-    else:
-        selected_tags = []
-
-    # Search parameters
-    st.subheader("⚙️ 検索設定")
-    top_k = st.slider("表示件数", min_value=1, max_value=20, value=5, key="top_k")
-    search_mode = st.selectbox(
-        "検索モード",
-        options=["hybrid", "semantic", "keyword"],
-        index=0,
-        key="search_mode"
+    workspace = st.text_input(
+        "ワークスペース",
+        value="all",
+        help="'all' で全ワークスペース、または特定のワークスペース名を入力"
     )
 
-# Main content area
+    limit = st.number_input(
+        "処理件数上限",
+        min_value=1,
+        max_value=1000,
+        value=100,
+        help="一度に処理する最大件数"
+    )
+
+    preserve_workspace = st.checkbox(
+        "ワークスペースを保持",
+        value=True,
+        help="ドキュメントのworkspaceを保持するか"
+    )
+
+    st.markdown("---")
+
+    if st.button("🔄 統計情報を更新", use_container_width=True):
+        st.rerun()
+
+# Main content
 col1, col2 = st.columns([2, 1])
 
 with col1:
-    # Search input
-    query = st.text_input(
-        "検索クエリを入力してください",
-        placeholder="例: プロジェクトの進捗について",
-        key="query_input"
-    )
+    st.header("📊 処理キューの状態")
 
-    col_search, col_answer = st.columns(2)
+    try:
+        stats = processor.get_queue_stats(workspace)
 
-    with col_search:
-        search_button = st.button("🔍 検索", type="primary", use_container_width=True)
+        if stats:
+            # Metrics in columns
+            metric_cols = st.columns(5)
 
-    with col_answer:
-        answer_button = st.button("💡 AI回答を生成", use_container_width=True)
+            with metric_cols[0]:
+                st.metric("⏳ 待機中", stats.get('pending', 0))
+            with metric_cols[1]:
+                st.metric("🔄 処理中", stats.get('processing', 0))
+            with metric_cols[2]:
+                st.metric("✅ 完了", stats.get('completed', 0))
+            with metric_cols[3]:
+                st.metric("❌ 失敗", stats.get('failed', 0))
+            with metric_cols[4]:
+                st.metric("📝 未処理", stats.get('null', 0))
 
-# Execute search
-if search_button and query:
-    with st.spinner("検索中..."):
-        try:
-            # Prepare request payload
-            payload = {
-                "query": query,
-                "top_k": top_k,
-                "mode": search_mode
-            }
+            st.markdown("---")
 
-            # Add filters
-            if date_from:
-                payload["date_from"] = date_from.isoformat()
-            if date_to:
-                payload["date_to"] = date_to.isoformat()
-            if selected_senders:
-                payload["senders"] = selected_senders
-            if selected_tags:
-                payload["tags"] = selected_tags
-
-            # Make API request
-            response = requests.post(
-                f"{BACKEND_URL}/api/search",
-                json=payload,
-                timeout=30
-            )
-
-            if response.status_code == 200:
-                st.session_state.search_results = response.json()
-                st.success(f"✅ {len(st.session_state.search_results.get('results', []))} 件の結果が見つかりました")
-            else:
-                st.error(f"❌ 検索エラー: {response.status_code}")
-                st.session_state.search_results = None
-
-        except Exception as e:
-            st.error(f"❌ エラーが発生しました: {str(e)}")
-            st.session_state.search_results = None
-
-# Execute answer generation
-if answer_button and query:
-    with st.spinner("AI回答を生成中..."):
-        try:
-            # Prepare request payload
-            payload = {
-                "query": query,
-                "top_k": top_k,
-                "mode": search_mode
-            }
-
-            # Add filters
-            if date_from:
-                payload["date_from"] = date_from.isoformat()
-            if date_to:
-                payload["date_to"] = date_to.isoformat()
-            if selected_senders:
-                payload["senders"] = selected_senders
-            if selected_tags:
-                payload["tags"] = selected_tags
-
-            # Make API request
-            response = requests.post(
-                f"{BACKEND_URL}/api/answer",
-                json=payload,
-                timeout=60
-            )
-
-            if response.status_code == 200:
-                st.session_state.answer = response.json()
-                st.success("✅ AI回答を生成しました")
-            else:
-                st.error(f"❌ 回答生成エラー: {response.status_code}")
-                st.session_state.answer = None
-
-        except Exception as e:
-            st.error(f"❌ エラーが発生しました: {str(e)}")
-            st.session_state.answer = None
-
-# Display AI answer
-if st.session_state.answer:
-    st.markdown("### 💡 AI回答")
-    answer_data = st.session_state.answer
-
-    st.markdown(f"""
-    <div class="answer-box">
-        <h4>回答</h4>
-        <p>{answer_data.get('answer', '')}</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    # Show metadata
-    with st.expander("📊 詳細情報"):
-        col_meta1, col_meta2 = st.columns(2)
-        with col_meta1:
-            st.metric("使用したドキュメント数", answer_data.get('num_documents_used', 0))
-        with col_meta2:
-            st.metric("検索スコア", f"{answer_data.get('search_score', 0):.3f}")
-
-        if 'sources' in answer_data and answer_data['sources']:
-            st.markdown("**参照元:**")
-            for idx, source in enumerate(answer_data['sources'], 1):
-                st.markdown(f"{idx}. {source}")
-
-# Display search results
-if st.session_state.search_results:
-    st.markdown("### 📄 検索結果")
-
-    results = st.session_state.search_results.get('results', [])
-
-    if not results:
-        st.info("検索結果がありません")
-    else:
-        for idx, result in enumerate(results, 1):
-            with st.expander(f"📧 {idx}. {result.get('title', '無題')} (スコア: {result.get('score', 0):.3f})"):
-                # Metadata
-                col_meta1, col_meta2, col_meta3 = st.columns(3)
-                with col_meta1:
-                    st.markdown(f"**送信者:** {result.get('sender', 'N/A')}")
-                with col_meta2:
-                    st.markdown(f"**日付:** {result.get('date', 'N/A')}")
-                with col_meta3:
-                    tags = result.get('tags', [])
-                    if tags:
-                        st.markdown(f"**タグ:** {', '.join(tags)}")
-
-                st.markdown("---")
-
-                # Content
-                st.markdown("**内容:**")
-                content = result.get('content', '')
-                if len(content) > 500:
-                    st.markdown(content[:500] + "...")
-                    if st.button(f"全文を表示 ({idx})", key=f"show_full_{idx}"):
-                        st.markdown(content)
+            # Summary
+            col_summary1, col_summary2 = st.columns(2)
+            with col_summary1:
+                st.metric("📦 合計", stats.get('total', 0))
+            with col_summary2:
+                processed = stats.get('completed', 0) + stats.get('failed', 0)
+                if processed > 0:
+                    success_rate = stats.get('success_rate', 0)
+                    st.metric("✨ 成功率", f"{success_rate:.1f}%")
                 else:
-                    st.markdown(content)
+                    st.metric("✨ 成功率", "N/A")
+        else:
+            st.warning("統計情報を取得できませんでした")
 
-                # Additional metadata
-                if result.get('file_path'):
-                    st.markdown(f"**ファイルパス:** `{result.get('file_path')}`")
+    except Exception as e:
+        st.error(f"❌ 統計取得エラー: {str(e)}")
 
 with col2:
+    st.header("🚀 処理実行")
+
+    pending_count = stats.get('pending', 0) if stats else 0
+
+    if pending_count == 0:
+        st.info("処理待ちのドキュメントはありません")
+        process_button_disabled = True
+    else:
+        st.success(f"{pending_count} 件のドキュメントが処理待ちです")
+        process_button_disabled = False
+
+    if st.button(
+        "▶️ 処理を開始",
+        type="primary",
+        use_container_width=True,
+        disabled=process_button_disabled or st.session_state.processing
+    ):
+        st.session_state.processing = True
+        st.session_state.logs = []
+        st.rerun()
+
+# Processing section
+if st.session_state.processing:
+    st.markdown("---")
+    st.header("🔄 処理中...")
+
+    progress_bar = st.progress(0)
+    status_text = st.empty()
+    log_container = st.container()
+
+    async def run_processing():
+        """処理を実行"""
+        try:
+            # pending ドキュメントを取得
+            docs = processor.get_pending_documents(workspace, limit)
+
+            if not docs:
+                st.session_state.logs.append("処理対象のドキュメントがありません")
+                return
+
+            total = len(docs)
+            st.session_state.logs.append(f"処理対象: {total}件")
+
+            success_count = 0
+            failed_count = 0
+
+            for i, doc in enumerate(docs, 1):
+                file_name = doc.get('file_name', 'unknown')
+                title = doc.get('title', '')
+                display_name = title if title else '(タイトル未生成)'
+
+                # Update progress
+                progress = i / total
+                progress_bar.progress(progress)
+                status_text.text(f"[{i}/{total}] 処理中: {display_name}")
+
+                # Log
+                log_msg = f"[{i}/{total}] 処理開始: {display_name}"
+                st.session_state.logs.append(log_msg)
+
+                # Process document
+                success = await processor.process_document(doc, preserve_workspace)
+
+                if success:
+                    success_count += 1
+                    result_msg = f"✅ 成功: {display_name}"
+                else:
+                    failed_count += 1
+                    result_msg = f"❌ 失敗: {display_name}"
+
+                st.session_state.logs.append(result_msg)
+
+                # Update log display
+                with log_container:
+                    for log in st.session_state.logs[-10:]:  # Show last 10 logs
+                        st.text(log)
+
+            # Final summary
+            st.session_state.logs.append("=" * 80)
+            st.session_state.logs.append("処理完了")
+            st.session_state.logs.append(f"成功: {success_count}件")
+            st.session_state.logs.append(f"失敗: {failed_count}件")
+            st.session_state.logs.append(f"合計: {total}件")
+
+            progress_bar.progress(1.0)
+            status_text.text("✅ 処理完了")
+
+        except Exception as e:
+            st.session_state.logs.append(f"❌ エラー: {str(e)}")
+            status_text.text(f"❌ エラー発生: {str(e)}")
+
+        finally:
+            st.session_state.processing = False
+
+    # Run async processing
+    asyncio.run(run_processing())
+
+    # Show complete logs
+    with st.expander("📋 完全なログを表示", expanded=True):
+        for log in st.session_state.logs:
+            st.text(log)
+
+    # Rerun to update UI
+    if not st.session_state.processing:
+        st.success("✅ 処理が完了しました！")
+        if st.button("🔄 ページを更新"):
+            st.rerun()
+
+# Instructions
+with st.sidebar:
+    st.markdown("---")
     st.markdown("### ℹ️ 使い方")
     st.markdown("""
-    1. **検索クエリを入力**
-       - 探したい内容をテキストボックスに入力
+    1. **ワークスペースを選択**
+       - 'all' で全ワークスペース
+       - または特定のワークスペース名
 
-    2. **フィルターを設定** (任意)
-       - 左サイドバーから日付、送信者、タグなどを選択
+    2. **処理件数を設定**
+       - 一度に処理する最大件数
 
-    3. **検索実行**
-       - 🔍 検索: 関連するドキュメントを検索
-       - 💡 AI回答: AIが回答を生成
+    3. **処理を開始**
+       - ▶️ ボタンをクリック
+       - OCR処理、チャンク化、埋め込み生成を実行
 
     4. **結果を確認**
-       - 検索結果や回答を確認
+       - 処理状況をリアルタイムで確認
     """)
 
-    st.markdown("---")
-    st.markdown("### 📊 システム情報")
-    st.info(f"バックエンド: {BACKEND_URL}")
-
-    # Health check
-    if st.button("接続確認"):
-        try:
-            response = requests.get(f"{BACKEND_URL}/", timeout=5)
-            if response.status_code == 200:
-                st.success("✅ バックエンドに接続できました")
-            else:
-                st.warning(f"⚠️ ステータスコード: {response.status_code}")
-        except Exception as e:
-            st.error(f"❌ 接続エラー: {str(e)}")
+# Footer
+st.markdown("---")
+st.markdown("**注意:** 処理には時間がかかる場合があります。ブラウザを閉じずにお待ちください。")
