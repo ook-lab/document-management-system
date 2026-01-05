@@ -1,44 +1,40 @@
 # Streamlit Cloud用 requirements.txt
-streamlit==1.31.0
+streamlit
 
 # Database
-supabase==2.10.0
+supabase
 
 # Google API
-google-api-python-client==2.108.0
-google-auth==2.25.2
-google-auth-oauthlib==1.2.0
-google-auth-httplib2==0.2.0
+google-api-python-client
+google-auth
+google-auth-oauthlib
+google-auth-httplib2
 
 # AI APIs
-google-generativeai==0.8.0
-anthropic==0.39.0
-openai==1.54.0
+google-generativeai
+anthropic
+openai
 
 # Document Processing
-pdfplumber==0.10.3
-python-docx==1.1.0
-python-pptx==0.6.21
-openpyxl==3.1.2
-Pillow==10.2.0
-pytesseract==0.3.10
-pypdf==3.17.4
-pdf2image==1.17.0
-opencv-python-headless==4.8.1.78
-
-# Data Processing
-numpy==1.26.4
-pandas==2.1.4
+pdfplumber
+python-docx
+python-pptx
+openpyxl
+Pillow
+pytesseract
+pypdf
+pdf2image
+opencv-python-headless
 
 # Utilities
-python-dotenv==1.0.0
-loguru==0.7.2
-pydantic==2.5.3
-pydantic-settings==2.1.0
-tenacity==8.2.3
-jsonschema==4.20.0
-pyyaml==6.0.1
-json_repair==0.25.2
-beautifulsoup4==4.12.3
-lxml==5.1.0
-requests==2.31.0
+python-dotenv
+loguru
+pydantic
+pydantic-settings
+tenacity
+jsonschema
+pyyaml
+json_repair
+beautifulsoup4
+lxml
+requests
