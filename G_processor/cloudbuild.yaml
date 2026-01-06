@@ -28,6 +28,13 @@ steps:
       - 'asia-northeast1'
       - '--platform'
       - 'managed'
+      - '--memory'
+      - '4Gi'
+      - '--cpu'
+      - '2'
+      - '--timeout'
+      - '3600'
+      - '--allow-unauthenticated'
 
 images:
   - 'gcr.io/$PROJECT_ID/doc-processor:$COMMIT_SHA'

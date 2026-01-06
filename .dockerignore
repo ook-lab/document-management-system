@@ -34,9 +34,7 @@ temp/
 .env.*
 
 # Cloud Run
-cloudbuild.yaml
-.dockerignore
-Dockerfile*
+.gcloudignore
 
 # ドキュメント・設定
 *.md
@@ -51,5 +49,4 @@ test_*.py
 
 # UI関連（処理ジョブには不要）
 ui/
-K_kakeibo/
 B_ingestion/*_ui.py
