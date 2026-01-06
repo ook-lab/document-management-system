@@ -37,7 +37,7 @@ echo ""
 echo "Cloud Runにデプロイしています..."
 # プロジェクトルートに移動（Dockerfileがプロジェクトルートからのパスを使用するため）
 cd "$PROJECT_ROOT"
-gcloud run deploy mail-doc-search-system \
+gcloud run deploy doc-processor \
   --source . \
   --region asia-northeast1 \
   --allow-unauthenticated \
@@ -58,7 +58,6 @@ echo "✓ デプロイが完了しました！"
 echo "================================"
 echo ""
 echo "確認コマンド:"
-echo "  curl https://mail-doc-search-system-983922127476.asia-northeast1.run.app/api/health"
-echo "  curl https://mail-doc-search-system-983922127476.asia-northeast1.run.app/api/filters"
-echo "  curl https://mail-doc-search-system-983922127476.asia-northeast1.run.app/api/debug/database"
+echo "  curl https://doc-processor-983922127476.asia-northeast1.run.app/processing"
+echo "  curl https://doc-processor-983922127476.asia-northeast1.run.app/api/health"
 echo ""

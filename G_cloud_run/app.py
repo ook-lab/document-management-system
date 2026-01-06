@@ -3,7 +3,16 @@ Flask Web Application
 質問・回答システムのWebインターフェース
 """
 import os
+import sys
+from pathlib import Path
+
+# プロジェクトルートをPythonパスに追加（ローカル実行時用）
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
+
 from typing import Dict, List, Any, Optional
+from datetime import datetime
 from flask import Flask, render_template, request, jsonify
 from flask_cors import CORS
 
@@ -14,6 +23,17 @@ CORS(app)
 db_client = None
 llm_client = None
 query_expander = None
+
+# 処理進捗の管理
+processing_status = {
+    'is_processing': False,
+    'current_index': 0,
+    'total_count': 0,
+    'current_file': '',
+    'success_count': 0,
+    'failed_count': 0,
+    'logs': []
+}
 
 
 def get_clients():
@@ -1012,6 +1032,81 @@ def debug_database():
         }), 500
 
 
+@app.route('/api/process/progress', methods=['GET'])
+def get_process_progress():
+    """
+    処理進捗とシステムリソースを取得
+    """
+    try:
+        import psutil
+
+        # CPU使用率
+        cpu_percent = psutil.cpu_percent(interval=0.1)
+
+        # メモリ使用率
+        memory = psutil.virtual_memory()
+        memory_percent = memory.percent
+        memory_used_gb = memory.used / (1024 ** 3)
+        memory_total_gb = memory.total / (1024 ** 3)
+
+        return jsonify({
+            'success': True,
+            'processing': processing_status['is_processing'],
+            'current_index': processing_status['current_index'],
+            'total_count': processing_status['total_count'],
+            'current_file': processing_status['current_file'],
+            'success_count': processing_status['success_count'],
+            'failed_count': processing_status['failed_count'],
+            'logs': processing_status['logs'][-50:],  # 最新50件
+            'system': {
+                'cpu_percent': round(cpu_percent, 1),
+                'memory_percent': round(memory_percent, 1),
+                'memory_used_gb': round(memory_used_gb, 2),
+                'memory_total_gb': round(memory_total_gb, 2)
+            }
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
+@app.route('/api/workspaces', methods=['GET'])
+def get_workspaces():
+    """
+    ワークスペース一覧を取得
+    """
+    try:
+        from A_common.database.client import DatabaseClient
+        db = DatabaseClient()
+
+        # ワークスペース一覧を取得
+        query = db.client.table('Rawdata_FILE_AND_MAIL').select('workspace').execute()
+
+        # ユニークなワークスペースを抽出
+        workspaces = set()
+        for row in query.data:
+            workspace = row.get('workspace')
+            if workspace:
+                workspaces.add(workspace)
+
+        # ソートしてリスト化
+        workspace_list = sorted(list(workspaces))
+
+        return jsonify({
+            'success': True,
+            'workspaces': workspace_list
+        })
+
+    except Exception as e:
+        print(f"[ERROR] ワークスペース取得エラー: {e}")
+        return jsonify({
+            'success': False,
+            'error': str(e)
+        }), 500
+
+
 @app.route('/api/process/stats', methods=['GET'])
 def get_process_stats():
     """
@@ -1069,11 +1164,22 @@ def get_process_stats():
 @app.route('/api/process/start', methods=['POST'])
 def start_processing():
     """
-    ドキュメント処理を開始
+    ドキュメント処理を開始（バックグラウンド実行）
     """
+    global processing_status
+
+    # 既に処理中の場合はエラー
+    if processing_status['is_processing']:
+        return jsonify({
+            'success': False,
+            'error': '既に処理が実行中です'
+        }), 400
+
     try:
-        import asyncio
         from process_queued_documents import DocumentProcessor
+        from datetime import datetime
+        import threading
+        import asyncio
 
         data = request.get_json()
         workspace = data.get('workspace', 'all')
@@ -1092,36 +1198,118 @@ def start_processing():
                 'processed': 0
             })
 
-        # 非同期処理を実行
-        async def process_all():
-            success_count = 0
-            failed_count = 0
+        # 進捗状況を初期化
+        processing_status['is_processing'] = True
+        processing_status['current_index'] = 0
+        processing_status['total_count'] = len(docs)
+        processing_status['current_file'] = ''
+        processing_status['success_count'] = 0
+        processing_status['failed_count'] = 0
+        processing_status['logs'] = [f"[{datetime.now().strftime('%H:%M:%S')}] 処理開始: {len(docs)}件"]
 
-            for doc in docs:
-                success = await processor.process_document(doc, preserve_workspace)
-                if success:
-                    success_count += 1
-                else:
-                    failed_count += 1
+        # バックグラウンド処理関数
+        def background_processing():
+            global processing_status
 
-            return success_count, failed_count
+            async def process_all():
+                for i, doc in enumerate(docs, 1):
+                    # 停止フラグをチェック
+                    if not processing_status['is_processing']:
+                        processing_status['logs'].append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ 処理が中断されました"
+                        )
+                        break
 
-        success_count, failed_count = asyncio.run(process_all())
+                    file_name = doc.get('file_name', 'unknown')
+                    title = doc.get('title', '') or '(タイトル未生成)'
 
+                    # 進捗を更新
+                    processing_status['current_index'] = i
+                    processing_status['current_file'] = title
+                    processing_status['logs'].append(
+                        f"[{datetime.now().strftime('%H:%M:%S')}] [{i}/{len(docs)}] 処理中: {title}"
+                    )
+
+                    # ログは最大100件まで保持
+                    if len(processing_status['logs']) > 100:
+                        processing_status['logs'] = processing_status['logs'][-100:]
+
+                    success = await processor.process_document(doc, preserve_workspace)
+
+                    if success:
+                        processing_status['success_count'] += 1
+                        processing_status['logs'].append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}] ✅ 成功: {title}"
+                        )
+                    else:
+                        processing_status['failed_count'] += 1
+                        processing_status['logs'].append(
+                            f"[{datetime.now().strftime('%H:%M:%S')}] ❌ 失敗: {title}"
+                        )
+
+            try:
+                asyncio.run(process_all())
+
+                # 処理完了
+                processing_status['is_processing'] = False
+                processing_status['current_file'] = ''
+                processing_status['logs'].append(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] 処理完了: 成功={processing_status['success_count']}, 失敗={processing_status['failed_count']}"
+                )
+            except Exception as e:
+                processing_status['is_processing'] = False
+                processing_status['logs'].append(
+                    f"[{datetime.now().strftime('%H:%M:%S')}] ❌ エラー: {str(e)}"
+                )
+                print(f"[ERROR] バックグラウンド処理エラー: {e}")
+
+        # 別スレッドで処理を開始
+        thread = threading.Thread(target=background_processing, daemon=True)
+        thread.start()
+
+        # すぐにレスポンスを返す
         return jsonify({
             'success': True,
-            'message': '処理が完了しました',
-            'processed': len(docs),
-            'success_count': success_count,
-            'failed_count': failed_count
+            'message': '処理を開始しました',
+            'total_count': len(docs)
         })
 
     except Exception as e:
+        processing_status['is_processing'] = False
         print(f"[ERROR] 処理開始エラー: {e}")
         return jsonify({
             'success': False,
             'error': str(e)
         }), 500
+@app.route('/api/process/stop', methods=['POST'])
+def stop_processing():
+    """
+    処理を停止
+    """
+    global processing_status
+
+    if not processing_status['is_processing']:
+        return jsonify({
+            'success': False,
+            'error': '実行中の処理がありません'
+        }), 400
+
+    # 停止フラグを立てる
+    processing_status['is_processing'] = False
+    processing_status['logs'].append(
+        f"[{datetime.now().strftime('%H:%M:%S')}] ⚠️ ユーザーによって停止されました"
+    )
+
+    return jsonify({
+        'success': True,
+        'message': '処理を停止しました'
+    })
+
+
+@app.route('/processing')
+def processing():
+    """ドキュメント処理システムのメインページ"""
+    return render_template('processing.html')
 
 
 if __name__ == '__main__':
