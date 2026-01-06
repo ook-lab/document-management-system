@@ -47,7 +47,6 @@ gcloud run deploy doc-processor \
   --set-env-vars "SUPABASE_URL=$SUPABASE_URL" \
   --set-env-vars "SUPABASE_KEY=$SUPABASE_KEY" \
   --set-env-vars "GOOGLE_AI_API_KEY=$GOOGLE_AI_API_KEY" \
-  --set-env-vars "ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY" \
   --set-env-vars "OPENAI_API_KEY=$OPENAI_API_KEY" \
   --set-env-vars "LOG_LEVEL=${LOG_LEVEL:-INFO}" \
   --set-env-vars "RERANK_ENABLED=${RERANK_ENABLED:-true}"
